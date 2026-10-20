@@ -12,6 +12,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PHP_BIN="${PHP_BIN:-php}"
 PORT="${PORT:-18080}"
 BASE="http://127.0.0.1:${PORT}"
+CORS_ORIGIN="http://127.0.0.1:3000"
 TMP_DIR="$(mktemp -d)"
 LOG="${TMP_DIR}/server.log"
 SERVER_PID=""
@@ -53,7 +54,7 @@ json_get() {
 
 request() {
   local method="$1" path="$2" body="${3:-}" origin="${4:-}"
-  local args=(-sS -m 10 -o "${TMP_DIR}/body" -w "%{http_code}" -X "${method}" "${BASE}${path}")
+  local args=(-sS -m 10 -o "${TMP_DIR}/body" -D "${TMP_DIR}/headers" -w "%{http_code}" -X "${method}" "${BASE}${path}")
 
   if [[ -n "${body}" ]]; then
     args+=(-H "Content-Type: application/json" --data "${body}")
@@ -69,6 +70,7 @@ request() {
 echo "Starting PHP server on ${BASE} with a temporary database"
 FURNACE_DB="${TMP_DIR}/test.sqlite" \
 FURNACE_INGEST_KEY="" \
+FURNACE_ALLOWED_ORIGINS="${CORS_ORIGIN}" \
 "${PHP_BIN}" -S "127.0.0.1:${PORT}" -t "${ROOT}/backend" "${ROOT}/backend/index.php" >"${LOG}" 2>&1 &
 SERVER_PID=$!
 
@@ -130,12 +132,43 @@ assert_eq "${status}" "422" "wrong channel count is rejected"
 status="$(request POST /api/ingest '{"samples":[{"u":1,"t":[1,2,3,9999],"f":[0,0,0,0]}]}')"
 assert_eq "${status}" "422" "out of range temperature is rejected"
 
+# --- CORS ----------------------------------------------------------------
+status="$(request GET /api/health "" "${CORS_ORIGIN}")"
+assert_eq "${status}" "200" "allowed-origin read"
+grep -qi "^Access-Control-Allow-Origin: ${CORS_ORIGIN}" "${TMP_DIR}/headers" \
+  || fail "allowed origin should be echoed in Access-Control-Allow-Origin"
+
+status="$(request GET /api/health)"
+assert_eq "${status}" "200" "read without Origin"
+if grep -qi '^Access-Control-Allow-Origin:' "${TMP_DIR}/headers"; then
+  fail "requests without an Origin header should not receive CORS headers"
+fi
+
+status="$(curl -sS -m 5 -o /dev/null -D "${TMP_DIR}/preflight" -w "%{http_code}" -X OPTIONS \
+  -H "Origin: ${CORS_ORIGIN}" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: content-type,x-api-key" \
+  "${BASE}/api/ingest")"
+assert_eq "${status}" "204" "CORS preflight"
+grep -qi "^Access-Control-Allow-Origin: ${CORS_ORIGIN}" "${TMP_DIR}/preflight" \
+  || fail "preflight is missing Access-Control-Allow-Origin"
+grep -qi '^Access-Control-Allow-Headers: .*X-Api-Key' "${TMP_DIR}/preflight" \
+  || fail "preflight is missing the X-Api-Key header"
+
+status="$(curl -sS -m 5 -o /dev/null -w "%{http_code}" -X OPTIONS \
+  -H "Origin: http://evil.example" \
+  -H "Access-Control-Request-Method: POST" \
+  "${BASE}/api/ingest")"
+assert_eq "${status}" "403" "preflight from an unknown origin is rejected"
+
 # --- run reset -----------------------------------------------------------
 status="$(request POST /api/runs/reset '{}' "http://evil.example")"
-assert_eq "${status}" "403" "cross-origin reset is rejected"
+assert_eq "${status}" "403" "reset from an unknown origin is rejected"
 
-status="$(request POST /api/runs/reset '{}' "${BASE}")"
-assert_eq "${status}" "200" "same-origin reset is accepted"
+status="$(request POST /api/runs/reset '{}' "${CORS_ORIGIN}")"
+assert_eq "${status}" "200" "reset from the UI origin is accepted"
+grep -qi "^Access-Control-Allow-Origin: ${CORS_ORIGIN}" "${TMP_DIR}/headers" \
+  || fail "reset response is missing CORS headers"
 reset="$(cat "${TMP_DIR}/body")"
 NEW_RUN_ID="$(echo "${reset}" | json_get run.id)"
 [[ "${NEW_RUN_ID}" -gt "${RUN_ID}" ]] || fail "reset should create a newer run"
@@ -143,16 +176,20 @@ NEW_RUN_ID="$(echo "${reset}" | json_get run.id)"
 status="$(request GET "/api/live?run=${RUN_ID}")"
 assert_eq "$(echo "$(cat "${TMP_DIR}/body")" | json_get active_run_id)" "${NEW_RUN_ID}" "old run polls report the new active run"
 
-# --- static UI -----------------------------------------------------------
-status="$(curl -sS -m 5 -o "${TMP_DIR}/index.html" -w "%{http_code}" "${BASE}/")"
-assert_eq "${status}" "200" "dashboard index"
-grep -q "Furnace Monitor" "${TMP_DIR}/index.html" || fail "dashboard markup missing"
+status="$(request POST /api/runs/reset '{}' "${BASE}")"
+assert_eq "${status}" "200" "reset from the API's own origin is accepted"
+
+# --- API-only hosting ----------------------------------------------------
+status="$(curl -sS -m 5 -o "${TMP_DIR}/root.json" -w "%{http_code}" "${BASE}/")"
+assert_eq "${status}" "200" "API root"
+grep -q '"name":"furnace-monitor-api"' "${TMP_DIR}/root.json" \
+  || fail "API root should describe the service"
 
 status="$(curl -sS -m 5 -o /dev/null -w "%{http_code}" "${BASE}/assets/js/main.js")"
-assert_eq "${status}" "200" "dashboard module"
+assert_eq "${status}" "404" "the API must not serve dashboard files"
 
 status="$(curl -sS -m 5 -o /dev/null -w "%{http_code}" "${BASE}/../backend/config.php")"
-[[ "${status}" == "404" || "${status}" == "400" ]] || fail "path traversal must not leak config (got ${status})"
+assert_eq "${status}" "404" "path traversal must not leak config"
 
 # --- retention job -------------------------------------------------------
 FURNACE_DB="${TMP_DIR}/test.sqlite" "${PHP_BIN}" "${ROOT}/backend/bin/maintenance.php" --all > "${TMP_DIR}/maintenance.log"

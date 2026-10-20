@@ -6,8 +6,10 @@ WIFI_SSID = "your-wifi"
 WIFI_PASSWORD = "your-password"
 
 # --- PHP backend ---------------------------------------------------------
-# Use the LAN address of the machine running Apache / php -S.
-API_BASE = "http://192.168.1.50:8080"
+# Production API host (HTTPS is supported by Pico W MicroPython).
+API_BASE = "https://apitemp.futurefounderco.com"
+# Local development backend instead:
+# API_BASE = "http://192.168.1.50:8080"
 # Must match FURNACE_INGEST_KEY on the server. Leave empty if it is disabled.
 API_KEY = ""
 

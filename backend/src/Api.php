@@ -68,31 +68,148 @@ final class Api
     }
 
     /**
-     * Reject cross-site writes. Browsers send Origin, so a mismatched host
-     * blocks CSRF while command line tools and the Pico keep working.
+     * CORS configuration as a list of full origins (scheme + host + port).
+     * The special value "*" allows any origin.
+     *
+     * @param array<string, mixed> $config
+     * @return list<string>
      */
-    public static function requireSameOrigin(): void
+    public static function allowedOrigins(array $config): array
     {
-        $origin = $_SERVER['HTTP_ORIGIN'] ?? null;
+        $raw = trim((string) ($config['allowed_origins'] ?? ''));
 
-        if ($origin === null || $origin === '') {
+        if ($raw === '') {
+            return [];
+        }
+
+        $origins = [];
+
+        foreach (explode(',', $raw) as $origin) {
+            $origin = rtrim(trim($origin), '/');
+
+            if ($origin !== '') {
+                $origins[] = $origin;
+            }
+        }
+
+        return array_values(array_unique($origins));
+    }
+
+    /**
+     * Emit CORS headers when the browser origin is allowed.
+     *
+     * The dashboard is normally served by a different static server than this
+     * API, so the UI origin must be listed in FURNACE_ALLOWED_ORIGINS.
+     *
+     * @param array<string, mixed> $config
+     */
+    public static function applyCors(array $config): void
+    {
+        $origin = (string) ($_SERVER['HTTP_ORIGIN'] ?? '');
+
+        if ($origin === '') {
             return;
         }
 
+        $allowed = self::allowedOrigins($config);
+
+        if ($allowed === []) {
+            return;
+        }
+
+        if (in_array('*', $allowed, true)) {
+            header('Access-Control-Allow-Origin: *');
+        } elseif (in_array($origin, $allowed, true)) {
+            header('Access-Control-Allow-Origin: ' . $origin);
+            header('Vary: Origin');
+        } else {
+            return;
+        }
+
+        header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+        header('Access-Control-Allow-Headers: Content-Type, X-Api-Key');
+        header('Access-Control-Max-Age: 600');
+    }
+
+    /**
+     * True when the current request may read or write.
+     *
+     * Requests without an Origin header (Pico, curl, cron) are always allowed.
+     * Browser requests must either come from an allow-listed UI origin or from
+     * the same host and port as this API.
+     *
+     * @param array<string, mixed> $config
+     */
+    public static function isOriginAllowed(array $config): bool
+    {
+        $origin = (string) ($_SERVER['HTTP_ORIGIN'] ?? '');
+
+        if ($origin === '') {
+            return true;
+        }
+
+        $allowed = self::allowedOrigins($config);
+
+        if (in_array('*', $allowed, true) || in_array($origin, $allowed, true)) {
+            return true;
+        }
+
+        return self::isSameServerOrigin($origin);
+    }
+
+    /**
+     * Reject writes from origins that are not trusted.
+     *
+     * @param array<string, mixed> $config
+     */
+    public static function requireTrustedOrigin(array $config): void
+    {
+        if (!self::isOriginAllowed($config)) {
+            throw new ApiError(403, 'Origin is not allowed to write');
+        }
+    }
+
+    /**
+     * Compare host and port with the API's own Host header, ignoring the
+     * scheme so a reverse proxy can terminate TLS.
+     */
+    private static function isSameServerOrigin(string $origin): bool
+    {
         $requestHost = (string) ($_SERVER['HTTP_HOST'] ?? '');
 
         if ($requestHost === '') {
-            throw new ApiError(400, 'Missing Host header');
+            return false;
         }
 
-        // Compare hosts only: the dashboard may be served over http on a local
-        // network and https behind a reverse proxy at the same address.
-        $requestHost = preg_replace('/:\d+$/', '', $requestHost);
+        $requestPort = null;
+
+        if (preg_match('/^(.+):(\d+)$/', $requestHost, $matches)) {
+            $requestHost = $matches[1];
+            $requestPort = (int) $matches[2];
+        }
+
         $originHost = parse_url($origin, PHP_URL_HOST);
+        $originPort = parse_url($origin, PHP_URL_PORT);
 
-        if (!is_string($originHost) || $originHost === '' || strcasecmp($originHost, (string) $requestHost) !== 0) {
-            throw new ApiError(403, 'Cross-origin writes are not allowed');
+        if (!is_string($originHost) || $originHost === '' || strcasecmp($originHost, $requestHost) !== 0) {
+            return false;
         }
+
+        // Treat an omitted port as the scheme default.
+        if ($originPort === null) {
+            $scheme = parse_url($origin, PHP_URL_SCHEME);
+            $originPort = $scheme === 'https' ? 443 : 80;
+        }
+
+        if ($requestPort === null) {
+            $forwarded = $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '';
+            $scheme = $forwarded === 'https' || (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                ? 'https'
+                : 'http';
+            $requestPort = $scheme === 'https' ? 443 : 80;
+        }
+
+        return $originPort === $requestPort;
     }
 
     /**

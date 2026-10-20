@@ -1,8 +1,17 @@
 # Furnace Monitor
 
 Four-channel furnace temperature monitoring with a Raspberry Pi Pico, four
-MAX31855 thermocouple amplifiers, a PHP + SQLite backend and a browser
-dashboard.
+MAX31855 thermocouple amplifiers, a PHP + SQLite API and a browser dashboard.
+
+The **UI and the API run on separate servers**:
+
+| Service | Production URL |
+| ------- | -------------- |
+| Dashboard (static files) | <https://temp.futurefounderco.com> |
+| API (PHP + SQLite) | <https://apitemp.futurefounderco.com> |
+
+The browser calls the API cross-origin; the API allows only the origins listed
+in `FURNACE_ALLOWED_ORIGINS` (defaults to the dashboard above).
 
 ![Furnace dashboard](artifacts/dashboard-desktop.png)
 
@@ -25,59 +34,58 @@ dashboard.
 ## Architecture
 
 ```
-┌────────────────────────┐    POST /api/ingest (JSON, 1 s batch)    ┌─────────────────────┐
-│ Pico W + 4x MAX31855   │ ───────────────────────────────────────▶ │ PHP API (backend/)  │
-│ 10 samples/s per ch.   │ ◀─────────────────────────────────────── │ SQLite, WAL mode    │
-└────────────────────────┘              200 OK                       └──────────┬──────────┘
-                                                                                 │ JSON
-                                                                      ┌──────────▼──────────┐
-                                                                      │ Web app (ui/)       │
-                                                                      │ Chart.js, no build  │
-                                                                      └─────────────────────┘
+┌──────────────────────────────┐       HTTPS + CORS        ┌──────────────────────────────┐
+│ temp.futurefounderco.com     │  GET /api/live, /history  │ apitemp.futurefounderco.com  │
+│ static dashboard (ui/)       │  POST /api/runs/reset     │ PHP API + SQLite (backend/)  │
+└──────────────▲───────────────┘ ────────────────────────▶ └──────────────▲───────────────┘
+               │                                                          │ POST /api/ingest
+        ┌──────┴──────┐                                            ┌──────┴───────────────┐
+        │ Operator    │                                            │ Pico W + 4x MAX31855 │
+        └─────────────┘                                            │ 10 samples/s         │
+                                                                   └──────────────────────┘
 ```
 
 | Folder      | Contents                                                        |
 | ----------- | --------------------------------------------------------------- |
-| `backend/`  | PHP front controller, JSON API, SQLite schema, CLI tools, tests  |
+| `backend/`  | PHP API only: JSON endpoints, SQLite schema, CLI tools, tests    |
+| `ui/`       | Static dashboard: HTML, design tokens, CSS, ES modules, config   |
 | `module/`   | Pico firmware (WiFi + USB), serial bridge, simulator             |
-| `ui/`       | Static web application: HTML, design tokens, CSS, ES modules     |
 | `tests/`    | Node unit tests for the timer and formatting helpers             |
 | `artifacts/`| Dashboard screenshots                                           |
-
-The previous prototype kept a Python web server inside `ui/`. That server has
-been removed; the backend now lives entirely in `backend/` and is written in
-PHP.
 
 ## Quick start (no hardware)
 
 Requirements:
 
 - PHP **8.1 or newer** with `pdo_sqlite` (and `json`, which is built in).
-- Python 3.9+ for the simulator (standard library only).
+- Python 3.9+ for the static UI server and the simulator.
 
 ```bash
 # 1. create the database
 php backend/bin/install.php
 
-# 2. serve the API and the web app on the same origin
+# 2. API server
 php -S 0.0.0.0:8080 -t backend backend/index.php
 
-# 3. in a second terminal, send fake furnace data at 10 Hz
-python3 module/simulator.py --url http://127.0.0.1:8080
+# 3. UI server (second terminal), then open http://localhost:3000
+python3 -m http.server 3000 --directory ui
+
+# 4. fake furnace data (third terminal)
+python3 module/simulator.py --url http://localhost:8080
 ```
 
-Open <http://localhost:8080>.
+The local UI automatically calls `http://localhost:8080` (see `ui/config.js`).
+No CORS environment variable is needed locally: the API already allows
+`http://localhost:3000` and `http://127.0.0.1:3000`.
 
 ### Demo history (optional)
-
-To preview multi-hour windows without waiting, seed a 26-hour firing run:
 
 ```bash
 FURNACE_DB=backend/var/demo.sqlite php backend/bin/seed_demo.php --hours=26
 FURNACE_DB=backend/var/demo.sqlite php -S 0.0.0.0:8080 -t backend backend/index.php
 ```
 
-The seeded run ends at the moment of seeding, so the timer starts at roughly
+The seeded run ends at the moment of seeding, so the timer starts near
 `26:00:00:0` and the "All" window shows the whole firing curve.
 
 ## Hardware
@@ -104,27 +112,54 @@ Wiring, firmware upload and calibration are documented in
 - Below the digits, the same duration is spelled out with days, hours, minutes
   and seconds.
 
-## Tests
-
-```bash
-# API + database + static UI smoke test (temporary database)
-PHP_BIN=php bash backend/tests/smoke.sh
-
-# timer, axis and number formatting
-node --test tests/format.test.mjs
-```
-
 ## Configuration
 
 The backend reads environment variables; see
 [backend/README.md](backend/README.md#configuration) for the full table.
 The most important ones:
 
-| Variable               | Default                     | Purpose                              |
-| ---------------------- | --------------------------- | ------------------------------------ |
-| `FURNACE_DB`           | `backend/var/furnace.sqlite`| SQLite file                          |
-| `FURNACE_INGEST_KEY`   | empty                       | Shared key the Pico must send        |
-| `FURNACE_UI_DIR`       | `<repo>/ui`                 | Directory served as the web app      |
+| Variable                | Default (production included) | Purpose                          |
+| ----------------------- | ----------------------------- | -------------------------------- |
+| `FURNACE_DB`            | `backend/var/furnace.sqlite`  | SQLite file                      |
+| `FURNACE_INGEST_KEY`    | empty                         | Shared key the Pico must send    |
+| `FURNACE_ALLOWED_ORIGINS` | dashboard + localhost origins | Browser origins allowed by CORS |
+
+The UI reads its API origin from `ui/config.js`:
+
+```js
+window.FURNACE_CONFIG = {
+  apiBaseUrl: 'https://apitemp.futurefounderco.com', // '' for same-origin
+};
+```
+
+## Production deployment
+
+1. **API** — point `apitemp.futurefounderco.com` at `backend/` with PHP-FPM and
+   enable the bundled `.htaccess` (Apache) or the equivalent Nginx rewrite.
+   The front controller answers only `/api/*`; `/` returns a small JSON banner.
+2. **UI** — point `temp.futurefounderco.com` at `ui/` as a plain static site.
+   Do not proxy API calls; the browser calls `apitemp` directly and needs CORS.
+3. **CORS** — keep `FURNACE_ALLOWED_ORIGINS=https://temp.futurefounderco.com`
+   on the API host (this is the built-in default). Add other origins only if
+   you really serve other dashboards.
+4. **TLS** — both hosts must use HTTPS. A page loaded over HTTPS cannot call an
+   HTTP API (mixed content).
+5. **Cron** — run `php backend/bin/maintenance.php --all` once a minute on the
+   API host for rollups and retention.
+
+Detailed Apache/Nginx examples and security notes are in
+[backend/README.md](backend/README.md#deployment) and
+[ui/README.md](ui/README.md#hosting).
+
+## Tests
+
+```bash
+# API, CORS, database and maintenance smoke test (temporary database)
+PHP_BIN=php bash backend/tests/smoke.sh
+
+# timer, axis and number formatting
+node --test tests/format.test.mjs
+```
 
 ## Safety
 

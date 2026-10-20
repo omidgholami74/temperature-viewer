@@ -12,8 +12,12 @@ return [
     // SQLite file. Keep it outside the web root when possible.
     'db_path' => getenv('FURNACE_DB') ?: __DIR__ . '/var/furnace.sqlite',
 
-    // Static web application that is served by the front controller.
-    'ui_dir' => getenv('FURNACE_UI_DIR') ?: dirname(__DIR__) . '/ui',
+    // Browser origins allowed to call this API. The production dashboard is
+    // https://temp.futurefounderco.com; the localhost entries keep local
+    // development working with `python3 -m http.server 3000 --directory ui`.
+    // Override with FURNACE_ALLOWED_ORIGINS on the server.
+    // Use "*" only on a fully trusted network: it also allows cross-site reset.
+    'allowed_origins' => (string) (getenv('FURNACE_ALLOWED_ORIGINS') ?: 'https://temp.futurefounderco.com,http://localhost:3000,http://127.0.0.1:3000'),
 
     // Shared secret the Pico must send with ingest requests.
     // Leave empty to disable authentication (trusted local network only).

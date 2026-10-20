@@ -3,6 +3,11 @@
 Firmware, a USB bridge and a simulator for the furnace monitor. All four
 thermocouples share one SPI bus and each MAX31855 has its own chip-select pin.
 
+The API is a separate PHP service (`backend/`). In production it runs at
+`https://apitemp.futurefounderco.com`; the dashboard at
+`https://temp.futurefounderco.com` is a different server and does not affect
+the firmware (the Pico sends no browser `Origin` header).
+
 ## Files
 
 | File               | Runs on | Purpose                                              |
@@ -47,8 +52,14 @@ twisted, with the shield grounded at one end only.
    `main.py` (WiFi) or `main_usb.py` (USB) to the Pico.
 4. Run the file in Thonny. To start automatically, save it as `main.py`.
 
-The Pico W only joins **2.4 GHz** networks. `API_BASE` must be the LAN address
-of the PHP server, for example `http://192.168.1.50:8080` — not `localhost`.
+The Pico W only joins **2.4 GHz** networks. `API_BASE` defaults to
+`https://apitemp.futurefounderco.com`; use the LAN address of a local backend
+(`http://192.168.1.50:8080`) when testing without internet access. Never use
+`localhost` on the Pico.
+
+HTTPS on the Pico W uses TLS and needs a few extra seconds for the handshake,
+but the uploads remain one small POST per second. If memory is tight, lower
+`MAX_BUFFERED_SAMPLES` and keep a single HTTP connection per batch.
 
 ### USB mode
 
@@ -58,6 +69,8 @@ that can reach the backend:
 ```bash
 python -m pip install -r module/requirements.txt
 python module/bridge.py --url http://127.0.0.1:8080 --port COM5 --baud 115200
+# or, against production:
+# python module/bridge.py --url https://apitemp.futurefounderco.com --key change-me --port COM5
 ```
 
 The bridge auto-detects common Pico serial ports when `--port` is omitted.
@@ -119,6 +132,9 @@ sampling slots are skipped (the gap is visible in the chart) — raise
 python3 module/simulator.py --url http://127.0.0.1:8080
 python3 module/simulator.py --url http://127.0.0.1:8080 --key change-me --post-every 2
 ```
+
+Use the local backend for tests; pointing the simulator at production writes
+demo data into the real firing history.
 
 It generates four furnace curves at 10 Hz, posts one batch per second and
 prints each accepted batch. A short open-thermocouple event is injected on

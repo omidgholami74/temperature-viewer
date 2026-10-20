@@ -23,11 +23,25 @@ $path = rawurldecode((string) (parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL
 $path = rtrim($path, '/') ?: '/';
 
 try {
+    if ($path === '/') {
+        Api::json([
+            'name' => 'furnace-monitor-api',
+            'status' => 'ok',
+            'endpoints' => [
+                'GET /api/health',
+                'GET /api/live?since=<id>&run=<id>',
+                'GET /api/history?window=<seconds>&max_points=<n>',
+                'POST /api/ingest',
+                'POST /api/runs/reset',
+            ],
+        ]);
+    }
+
     if ($path === '/api' || str_starts_with($path, '/api/')) {
         handleApi($method, substr($path, 4) ?: '/', $config);
     }
 
-    serveUi($method, $path, $config);
+    throw new ApiError(404, 'Not found');
 } catch (ApiError $exception) {
     Api::json(
         array_filter([
@@ -49,9 +63,19 @@ try {
  */
 function handleApi(string $method, string $route, array $config): never
 {
-    // The dashboard is served from the same origin as the API, so no CORS
-    // headers are needed. Mutating endpoints additionally require a
-    // same-origin Origin header (CSRF protection).
+    // The dashboard is typically hosted on a different server, so the API
+    // answers CORS preflights and echoes allow-listed UI origins.
+    Api::applyCors($config);
+
+    if ($method === 'OPTIONS') {
+        if (!Api::isOriginAllowed($config)) {
+            throw new ApiError(403, 'Origin is not allowed');
+        }
+
+        http_response_code(204);
+        exit;
+    }
+
     $pdo = Database::connect($config);
     $runs = new RunRepository($pdo);
     $readings = new ReadingRepository($pdo);
@@ -223,7 +247,7 @@ function handleApi(string $method, string $route, array $config): never
             ]);
 
         case 'POST /runs/reset':
-            Api::requireSameOrigin();
+            Api::requireTrustedOrigin($config);
             $body = Api::readJsonBody((int) $config['max_request_bytes']);
             $label = isset($body['label']) && is_string($body['label'])
                 ? cutString(trim($body['label']), 80)
@@ -260,82 +284,6 @@ function handleApi(string $method, string $route, array $config): never
         default:
             throw new ApiError(404, sprintf('Unknown API route: %s %s', $method, $route));
     }
-}
-
-/**
- * Serve the static dashboard from the ui directory.
- *
- * @param array<string, mixed> $config
- */
-function serveUi(string $method, string $path, array $config): never
-{
-    if ($method !== 'GET' && $method !== 'HEAD') {
-        throw new ApiError(405, 'Method not allowed');
-    }
-
-    $uiDir = realpath((string) $config['ui_dir']);
-
-    if ($uiDir === false || !is_dir($uiDir)) {
-        throw new ApiError(500, 'UI directory is missing');
-    }
-
-    $relative = $path === '/' ? '/index.html' : $path;
-
-    if (!preg_match('#^/[A-Za-z0-9._/-]+$#', $relative) || str_contains($relative, '..')) {
-        throw new ApiError(404, 'Not found');
-    }
-
-    $file = realpath($uiDir . $relative);
-
-    if ($file === false || !is_file($file) || !str_starts_with($file, $uiDir . DIRECTORY_SEPARATOR)) {
-        throw new ApiError(404, 'Not found');
-    }
-
-    $types = [
-        'html' => 'text/html; charset=utf-8',
-        'css' => 'text/css; charset=utf-8',
-        'js' => 'text/javascript; charset=utf-8',
-        'json' => 'application/json; charset=utf-8',
-        'svg' => 'image/svg+xml',
-        'png' => 'image/png',
-        'ico' => 'image/x-icon',
-        'webmanifest' => 'application/manifest+json',
-        'woff2' => 'font/woff2',
-    ];
-
-    $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-
-    if (!isset($types[$extension])) {
-        throw new ApiError(404, 'Not found');
-    }
-
-    $mtime = (int) filemtime($file);
-    $etag = sprintf('"%x-%x"', $mtime, (int) filesize($file));
-
-    header('Content-Type: ' . $types[$extension]);
-    header('Cache-Control: no-cache');
-    header('ETag: ' . $etag);
-    header('X-Content-Type-Options: nosniff');
-    header('Referrer-Policy: no-referrer');
-    header('X-Frame-Options: SAMEORIGIN');
-
-    if ($extension === 'html') {
-        header("Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'");
-    }
-
-    if (($_SERVER['HTTP_IF_NONE_MATCH'] ?? '') === $etag) {
-        http_response_code(304);
-        exit;
-    }
-
-    header('Content-Length: ' . filesize($file));
-
-    if ($method === 'HEAD') {
-        exit;
-    }
-
-    readfile($file);
-    exit;
 }
 
 function nowMs(): int

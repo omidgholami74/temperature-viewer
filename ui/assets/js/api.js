@@ -1,9 +1,13 @@
 /**
  * Thin fetch wrapper for the PHP API. Requests are aborted after a timeout so
- * a stalled backend can never freeze the live view.
+ * a stalled backend can never freeze the live view. The API origin comes from
+ * config.js because the UI is hosted by a separate static server.
  */
 
 const TIMEOUT_MS = 6000;
+const CONFIG = window.FURNACE_CONFIG ?? {};
+const API_BASE = String(CONFIG.apiBaseUrl ?? '').trim().replace(/\/+$/, '');
+const endpoint = (path) => `${API_BASE}${path}`;
 
 export class ApiError extends Error {
   constructor(message, status = 0) {
@@ -25,7 +29,7 @@ async function request(path, { method = 'GET', body, timeout = TIMEOUT_MS } = {}
         : { Accept: 'application/json', 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
       cache: 'no-store',
-      credentials: 'same-origin',
+      credentials: 'omit',
       signal: controller.signal,
     });
 
@@ -70,7 +74,7 @@ export const api = {
     }
 
     const query = params.toString();
-    return request(`/api/live${query ? `?${query}` : ''}`);
+    return request(endpoint(`/api/live${query ? `?${query}` : ''}`));
   },
 
   history({ window = 600, maxPoints = 1400, run = null } = {}) {
@@ -83,11 +87,11 @@ export const api = {
       params.set('run', String(run));
     }
 
-    return request(`/api/history?${params}`);
+    return request(endpoint(`/api/history?${params}`));
   },
 
   reset(label = '') {
-    return request('/api/runs/reset', {
+    return request(endpoint('/api/runs/reset'), {
       method: 'POST',
       body: { label },
       timeout: 8000,

@@ -1,14 +1,19 @@
 # Backend — PHP API + SQLite
 
-A dependency-free PHP 8.1+ service that stores 10 Hz furnace samples and serves
-the dashboard. One front controller (`index.php`) routes the JSON API and the
-static files from `../ui`.
+A dependency-free PHP 8.1+ service that stores 10 Hz furnace samples. This
+folder is **API only**: the dashboard is a separate static site (`ui/`) served
+by its own web server and calls this API cross-origin.
+
+Production API: <https://apitemp.futurefounderco.com>
+
+Production dashboard: <https://temp.futurefounderco.com>
 
 ## Requirements
 
 - PHP 8.1 or newer
 - `pdo_sqlite` and `json` extensions (`mbstring` is optional)
 - Write permission for `backend/var/`
+- HTTPS in production (the dashboard is served over HTTPS)
 
 ## Install and run
 
@@ -17,22 +22,50 @@ php bin/install.php
 php -S 0.0.0.0:8080 -t . index.php
 ```
 
-The second command serves the API **and** the dashboard on
-<http://localhost:8080>. Point the document root at `backend/` when using
-Apache or Nginx.
+- API base: <http://localhost:8080/api>
+- `GET /` returns a small JSON description, not HTML.
+- The UI is **not** served here; use `python3 -m http.server 3000 --directory ui`
+  locally or point a static host at `ui/`.
 
 ## Configuration
 
-| Environment variable              | Default                      | Description                                     |
-| --------------------------------- | ---------------------------- | ----------------------------------------------- |
-| `FURNACE_DB`                      | `backend/var/furnace.sqlite` | SQLite database file                            |
-| `FURNACE_UI_DIR`                  | `<repo>/ui`                  | Directory with `index.html` and assets          |
-| `FURNACE_INGEST_KEY`              | empty (open)                 | Value the device must send as `X-Api-Key`       |
-| `FURNACE_RAW_RETENTION_HOURS`     | `48`                         | Raw 10 Hz rows kept before pruning              |
-| `FURNACE_AGGREGATE_RETENTION_DAYS`| `180`                        | One-second rollup rows kept                     |
+| Environment variable               | Default                                                              | Description                                    |
+| ---------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------- |
+| `FURNACE_DB`                       | `backend/var/furnace.sqlite`                                          | SQLite database file                           |
+| `FURNACE_ALLOWED_ORIGINS`          | `https://temp.futurefounderco.com,http://localhost:3000,http://127.0.0.1:3000` | Comma-separated browser origins allowed by CORS |
+| `FURNACE_INGEST_KEY`               | empty (open)                                                          | Value the device must send as `X-Api-Key`      |
+| `FURNACE_RAW_RETENTION_HOURS`      | `48`                                                                  | Raw 10 Hz rows kept before pruning             |
+| `FURNACE_AGGREGATE_RETENTION_DAYS` | `180`                                                                 | One-second rollup rows kept                    |
 
 Configuration lives in `config.php` and only reads environment variables, so
-the same files work on a laptop and on a plant server.
+the same files work locally and on the production host. On the API server,
+override the allow-list explicitly:
+
+```apache
+SetEnv FURNACE_ALLOWED_ORIGINS "https://temp.futurefounderco.com"
+SetEnv FURNACE_INGEST_KEY "change-me"
+```
+
+For PHP-FPM, set the variables in the pool (`env[...]`) or the unit
+environment, not with `SetEnv` (which is Apache-only).
+
+## CORS and write protection
+
+The dashboard origin is different from the API origin, so the browser sends
+CORS preflights:
+
+- `GET /api/live` and `GET /api/history` are simple requests; the API echoes
+  the allow-listed origin in `Access-Control-Allow-Origin`.
+- `POST /api/ingest` and `POST /api/runs/reset` use JSON, so the browser first
+  sends `OPTIONS`; the API answers `204` with `Access-Control-Allow-Methods`
+  and `Access-Control-Allow-Headers: Content-Type, X-Api-Key`.
+- Requests without an `Origin` header (Pico, curl, cron) are unaffected.
+- Writes (`/api/runs/reset`) require an allow-listed origin or the API's own
+  origin; any other `Origin` gets `403`. This is the CSRF boundary.
+- `FURNACE_ALLOWED_ORIGINS=*` is supported for fully trusted networks, but it
+  also removes the reset CSRF protection. Do not use it on the public internet.
+
+The API does not use cookies, so `Access-Control-Allow-Credentials` is not sent.
 
 ## API
 
@@ -57,8 +90,6 @@ Accepts 1–600 samples per request. Send `X-Api-Key` when
   `-270..1800`.
 - `f` — four fault bit masks: `1` open thermocouple, `2` short to GND,
   `4` short to VCC, `8` read error.
-
-Response:
 
 ```json
 { "ok": true, "run_id": 3, "accepted": 10, "server_time_ms": 1792523131653 }
@@ -120,12 +151,12 @@ run.
 ### `POST /api/runs/reset`
 
 Starts a new run and freezes the previous one. Optional body:
-`{"label": "Firing 42"}`. Cross-origin requests are rejected with `403`.
+`{"label": "Firing 42"}`. Requires an allow-listed `Origin`.
 
 ### `GET /api/health`
 
-Database path is never exposed; returns schema version, row count and whether
-an ingest key is required.
+Returns schema version, raw row count and whether an ingest key is required.
+The database path is never exposed.
 
 ## Storage model
 
@@ -144,7 +175,7 @@ queries aggregate inside SQLite instead of transferring raw rows.
 
 ## Maintenance (rollup + retention)
 
-Run once a minute:
+Run once a minute on the API host:
 
 ```cron
 * * * * * php /srv/furnace/backend/bin/maintenance.php --all
@@ -173,27 +204,35 @@ Never point it at production data.
 
 ## Deployment
 
-### Apache
+### Apache (API host)
 
-Point `DocumentRoot` at `backend/` and allow the bundled `.htaccess`:
+Point `apitemp.futurefounderco.com` at this directory, enable HTTPS, and allow
+the bundled `.htaccess`:
 
 ```apache
-<Directory /srv/furnace/backend>
-    AllowOverride All
-    Require all granted
-</Directory>
+<VirtualHost *:443>
+    ServerName apitemp.futurefounderco.com
+    DocumentRoot /srv/furnace/backend
+
+    SetEnv FURNACE_ALLOWED_ORIGINS "https://temp.futurefounderco.com"
+    SetEnv FURNACE_INGEST_KEY "change-me"
+
+    <Directory /srv/furnace/backend>
+        AllowOverride All
+        Require all granted
+    </Directory>
+</VirtualHost>
 ```
 
-`mod_rewrite` sends every request to `index.php`; `backend/var/` also has its
-own deny rule. The dashboard files live outside the document root and are
-streamed by the front controller with an allow-list of extensions.
+`mod_rewrite` sends every request to `index.php`; `backend/var/` has its own
+deny rule so the SQLite file is never downloadable.
 
 ### Nginx + PHP-FPM
 
 ```nginx
 server {
-    listen 80;
-    server_name furnace.local;
+    listen 443 ssl;
+    server_name apitemp.futurefounderco.com;
     root /srv/furnace/backend;
 
     location / {
@@ -203,6 +242,8 @@ server {
     location = /index.php {
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME $document_root/index.php;
+        fastcgi_param FURNACE_ALLOWED_ORIGINS "https://temp.futurefounderco.com";
+        fastcgi_param FURNACE_INGEST_KEY "change-me";
         fastcgi_pass unix:/run/php/php8.3-fpm.sock;
     }
 
@@ -210,16 +251,21 @@ server {
 }
 ```
 
+### Dashboard
+
+Serve `ui/` as static files on `temp.futurefounderco.com`; do not proxy it
+through this API. See [../ui/README.md](../ui/README.md#hosting).
+
 ### Security notes
 
 - Set `FURNACE_INGEST_KEY` and the matching `API_KEY` in `module/config.py` on
   any network that is not fully trusted.
-- The dashboard itself has no login. Put it behind a reverse-proxy login or a
-  firewall rule if the plant network is shared.
-- Writes are same-origin checked, responses are `no-store`, and the HTML is
-  served with a strict Content-Security-Policy.
+- The dashboard itself has no login. The API only allows the configured UI
+  origins to write; reads from other origins are blocked by the browser but the
+  data is not secret. Add a reverse-proxy login if the data is sensitive.
 - Keep the SQLite file out of the web root when possible; the default location
-  is protected by `var/.htaccess` but not by every server configuration.
+  is protected by `var/.htaccess`, but not by every server configuration.
+- Apply a Content-Security-Policy on the **UI** server, not here.
 
 ## Tests
 
@@ -227,7 +273,7 @@ server {
 PHP_BIN=php bash tests/smoke.sh
 ```
 
-The script creates a temporary database, starts two `php -S` servers
-(unkeyed and keyed), and checks ingestion, incremental live data, history,
-validation errors, reset + CSRF protection, static assets, traversal
-protection, the maintenance job and API-key enforcement.
+The script creates a temporary database and starts two `php -S` servers
+(unkeyed and keyed). It checks ingestion, incremental live data, history,
+validation errors, CORS headers and preflights, origin-checked reset, the
+API-only root, maintenance and API-key enforcement.

@@ -237,5 +237,51 @@ assert_eq "${status}" "200" "ingest with key"
 kill "${KEY_PID}" 2>/dev/null || true
 wait "${KEY_PID}" 2>/dev/null || true
 
+# --- absolute sample times (collector replaying a stored log) -------------
+# A fresh database, so the first batch defines the run start.
+ABS_PORT="$((PORT + 2))"
+ABS_BASE="http://127.0.0.1:${ABS_PORT}"
+FURNACE_DB="${TMP_DIR}/absolute.sqlite" \
+FURNACE_INGEST_KEY="" \
+"${PHP_BIN}" -S "127.0.0.1:${ABS_PORT}" -t "${ROOT}/backend" "${ROOT}/backend/index.php" >"${TMP_DIR}/absolute.log" 2>&1 &
+ABS_PID=$!
+
+for _ in $(seq 1 40); do
+  if curl -s -m 1 -o /dev/null "${ABS_BASE}/api/health"; then
+    break
+  fi
+  sleep 0.1
+done
+
+AT_BASE=1792523131000
+abs_payload="$("${PHP_BIN}" -r '
+  $base = 1792523131000;
+  $samples = [];
+  for ($i = 0; $i < 3; $i++) {
+      $samples[] = ["u" => $i * 100, "at" => $base + $i * 100, "t" => [700, 710, 720, 730], "f" => [0, 0, 0, 0]];
+  }
+  echo json_encode(["samples" => $samples]);
+')"
+
+status="$(curl -sS -m 10 -o "${TMP_DIR}/body" -w "%{http_code}" -X POST \
+  -H "Content-Type: application/json" --data "${abs_payload}" "${ABS_BASE}/api/ingest")"
+assert_eq "${status}" "200" "absolute-time ingest status"
+ingest="$(cat "${TMP_DIR}/body")"
+assert_eq "$(echo "${ingest}" | json_get accepted)" "3" "absolute-time accepted samples"
+
+curl -sS -m 10 -o "${TMP_DIR}/body" "${ABS_BASE}/api/live"
+live="$(cat "${TMP_DIR}/body")"
+assert_eq "$(echo "${live}" | json_get run.started_at_ms)" "${AT_BASE}" "run starts at the first absolute sample"
+assert_eq "$(echo "${live}" | json_get latest.t_ms)" "200" "absolute times keep the 100 ms grid"
+
+status="$(curl -sS -m 10 -o /dev/null -w "%{http_code}" -X POST \
+  -H "Content-Type: application/json" \
+  --data '{"samples":[{"u":1,"at":1.5,"t":[1,2,3,4],"f":[0,0,0,0]}]}' \
+  "${ABS_BASE}/api/ingest")"
+assert_eq "${status}" "422" "fractional absolute time is rejected"
+
+kill "${ABS_PID}" 2>/dev/null || true
+wait "${ABS_PID}" 2>/dev/null || true
+
 echo
 echo "All API smoke tests passed."

@@ -128,8 +128,11 @@ php -S 0.0.0.0:8080 -t backend backend/index.php
 python3 -m http.server 3000 --directory ui
 
 # terminal 3 — simulated Pico
-python3 module/simulator.py --url http://localhost:8080
+python3 module/simulator.py
 ```
+
+The simulator needs no arguments; edit `API_URL`, `API_KEY` and the intervals
+at the top of `module/simulator.py` if you change the API host.
 
 Open <http://localhost:3000>. The local branch of `config.js` points at port
 8080 and the backend already allows the localhost origins.

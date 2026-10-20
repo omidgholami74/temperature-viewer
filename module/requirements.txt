@@ -1,5 +1,0 @@
-# Only needed for the PC side USB bridge (bridge.py).
-# The simulator uses the standard library only and the firmware runs on
-# MicroPython, so neither needs these packages.
-pyserial>=3.5,<4.0
-requests>=2.31,<3.0

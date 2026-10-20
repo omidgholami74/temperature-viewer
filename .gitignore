@@ -6,6 +6,11 @@ backend/var/*.sqlite-shm
 # Pico credentials
 module/config.py
 
+# Pico logs and the collector's spool/checkpoint
+*.jsonl
+module/samples.jsonl.old
+collector/data/
+
 # Python
 __pycache__/
 *.py[cod]

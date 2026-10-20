@@ -201,22 +201,42 @@ function handleApi(string $method, string $route, array $config): never
 
             $result = Database::transaction($pdo, static function (PDO $pdo) use ($runs, $readings, $samples, $now): array {
                 $lastUptime = $samples[array_key_last($samples)]['u'];
+                $firstAbsolute = null;
+
+                foreach ($samples as $sample) {
+                    if ($sample['at'] !== null) {
+                        $firstAbsolute = $sample['at'];
+                        break;
+                    }
+                }
+
                 $run = $runs->active();
 
                 if ($run === null) {
                     // Anchor the new run to the first batch instead of losing
                     // the sub-second samples that were captured before it.
-                    $span = max(0, $lastUptime - $samples[0]['u']);
-                    $run = $runs->start($now - $span);
+                    // A collector that replays a stored log supplies absolute
+                    // times, so the run starts when the log started.
+                    if ($firstAbsolute !== null) {
+                        $run = $runs->start($firstAbsolute);
+                    } else {
+                        $span = max(0, $lastUptime - $samples[0]['u']);
+                        $run = $runs->start($now - $span);
+                    }
                 }
 
                 $anchor = max(0, $now - (int) $run['started_at_ms']);
+                $startedAt = (int) $run['started_at_ms'];
 
                 $rows = [];
                 $previousT = -1;
 
                 foreach ($samples as $sample) {
-                    $t = $anchor - ($lastUptime - $sample['u']);
+                    // Absolute time wins when the sender knows it; uptime is
+                    // only relative to a boot and cannot survive an upload lag.
+                    $t = $sample['at'] !== null
+                        ? $sample['at'] - $startedAt
+                        : $anchor - ($lastUptime - $sample['u']);
                     $t = max(0, (int) round($t));
 
                     // Keep rows strictly ordered even if the device clock jitters.

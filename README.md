@@ -17,8 +17,9 @@ in `FURNACE_ALLOWED_ORIGINS` (defaults to the dashboard above).
 
 ## What it does
 
-- Samples four K-type thermocouples every **0.1 s** (10 Hz) and uploads them
-  to the API in one-second batches.
+- Samples four K-type thermocouples every **0.1 s** (10 Hz). The Pico prints
+  each sample on USB serial; the PC collector stores them in a file and
+  uploads that file to the API in batches.
 - Stores every sample in SQLite through a small JSON API. No framework, no
   external database server.
 - Shows the four temperatures as colour-coded cards and as four live lines on
@@ -40,8 +41,13 @@ in `FURNACE_ALLOWED_ORIGINS` (defaults to the dashboard above).
 └──────────────▲───────────────┘ ────────────────────────▶ └──────────────▲───────────────┘
                │                                                          │ POST /api/ingest
         ┌──────┴──────┐                                            ┌──────┴───────────────┐
-        │ Operator    │                                            │ Pico W + 4x MAX31855 │
-        └─────────────┘                                            │ 10 samples/s         │
+        │ Operator    │                                            │ collector/ on a PC   │
+        └─────────────┘                                            │ file → HTTP batches  │
+                                                                   └──────▲───────────────┘
+                                                                          │ USB serial
+                                                                   ┌──────┴───────────────┐
+                                                                   │ Plain Pico + 4x      │
+                                                                   │ MAX31855, 10 Hz      │
                                                                    └──────────────────────┘
 ```
 
@@ -49,7 +55,8 @@ in `FURNACE_ALLOWED_ORIGINS` (defaults to the dashboard above).
 | ----------- | --------------------------------------------------------------- |
 | `backend/`  | PHP API only: JSON endpoints, SQLite schema, CLI tools, tests    |
 | `ui/`       | Static dashboard: HTML, design tokens, CSS, ES modules, config   |
-| `module/`   | Pico firmware (WiFi + USB), serial bridge, simulator             |
+| `module/`   | Pico firmware: serial + flash log at 10 Hz, no network, simulator |
+| `collector/`| PC console app: serial/file capture, checkpointed upload to API   |
 | `tests/`    | Node unit tests for the timer and formatting helpers             |
 | `artifacts/`| Dashboard screenshots                                           |
 
@@ -58,7 +65,8 @@ in `FURNACE_ALLOWED_ORIGINS` (defaults to the dashboard above).
 Requirements:
 
 - PHP **8.1 or newer** with `pdo_sqlite` (and `json`, which is built in).
-- Python 3.9+ for the static UI server and the simulator.
+- Python 3.9+ for the static UI server, the simulator and the collector
+  (`pyserial` is only needed for live serial capture).
 
 ```bash
 # 1. create the database
@@ -71,8 +79,23 @@ php -S 0.0.0.0:8080 -t backend backend/index.php
 python3 -m http.server 3000 --directory ui
 
 # 4. fake furnace data (third terminal)
-python3 module/simulator.py --url http://localhost:8080
+python3 module/simulator.py
 ```
+
+With real hardware, step 4 is replaced by the collector, which reads the Pico
+over USB serial and uploads from a file on the PC:
+
+```bash
+python -m pip install -r collector/requirements.txt
+python collector/collector.py
+```
+
+Both scripts take no arguments; their settings are constants at the top of the
+file. See [`collector/README.md`](collector/README.md).
+
+The simulator takes no arguments: its `API_URL` (default
+`http://127.0.0.1:8080`), `API_KEY` and intervals are constants at the top of
+`module/simulator.py`.
 
 The local UI automatically calls `http://localhost:8080` (see `ui/config.js`).
 No CORS environment variable is needed locally: the API already allows
@@ -90,8 +113,9 @@ The seeded run ends at the moment of seeding, so the timer starts near
 
 ## Hardware
 
-- Raspberry Pi Pico W (WiFi firmware) or any Pico (USB firmware + bridge).
+- Raspberry Pi Pico — a plain board is enough, no WiFi needed.
 - 4x MAX31855 breakout boards with K-type thermocouples.
+- A PC connected to the Pico by USB, running `collector/`.
 - Shared SPI bus, one chip-select pin per amplifier.
 
 Wiring, firmware upload and calibration are documented in

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Send simulated four-channel furnace data to the PHP API.
 
-Useful for testing the dashboard without a Pico:
+Useful for testing the dashboard without a Pico. Edit the settings below and
+run the file as-is:
 
-    python simulator.py --url http://127.0.0.1:8080
+    python simulator.py
 
 It samples every 0.1 s and uploads one batch per second, exactly like the
 firmware. Stop it with Ctrl+C.
 """
 
-import argparse
 import json
 import math
 import random
@@ -17,6 +17,12 @@ import sys
 import time
 import urllib.error
 import urllib.request
+
+# --- Settings (edit here, no command-line arguments) ----------------------
+API_URL = "http://127.0.0.1:8080"  # backend base URL, no trailing slash
+API_KEY = ""  # must match FURNACE_INGEST_KEY when the API requires a key
+SAMPLE_INTERVAL_S = 0.1  # seconds between simulated samples (10 Hz)
+POST_INTERVAL_S = 1.0  # seconds between uploads
 
 BASES = [780.0, 660.0, 940.0, 545.0]
 MAX_BUFFER = 600
@@ -47,15 +53,9 @@ def post_batch(url, api_key, samples):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Furnace API simulator")
-    parser.add_argument("--url", default="http://127.0.0.1:8080", help="backend base URL")
-    parser.add_argument("--key", default="", help="ingest API key, if configured")
-    parser.add_argument("--interval", type=float, default=0.1, help="seconds between samples")
-    parser.add_argument("--post-every", type=float, default=1.0, help="seconds between uploads")
-    args = parser.parse_args()
-
-    interval = max(0.02, args.interval)
-    print(f"Sending simulated samples to {args.url} every {interval:.2f} s. Ctrl+C to stop.")
+    interval = max(0.02, SAMPLE_INTERVAL_S)
+    post_every = max(interval, POST_INTERVAL_S)
+    print(f"Sending simulated samples to {API_URL} every {interval:.2f} s. Ctrl+C to stop.")
 
     started = time.monotonic()
     next_sample = started
@@ -95,8 +95,8 @@ def main():
             buffer.append({"u": int(elapsed * 1000), "t": temperatures, "f": faults})
             next_sample += interval
 
-            if now - last_post >= args.post_every or len(buffer) >= 100:
-                if post_batch(args.url, args.key, buffer):
+            if now - last_post >= post_every or len(buffer) >= 100:
+                if post_batch(API_URL, API_KEY, buffer):
                     summary = "  ".join(
                         "--" if value is None else f"{value:6.1f}" for value in temperatures
                     )

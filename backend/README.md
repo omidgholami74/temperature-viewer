@@ -79,13 +79,16 @@ Accepts 1–600 samples per request. Send `X-Api-Key` when
 ```json
 {
   "samples": [
-    { "u": 1200, "t": [781.25, 660.5, 940.0, 545.75], "f": [0, 0, 0, 1] }
+    { "u": 1200, "at": 1792523131000, "t": [781.25, 660.5, 940.0, 545.75], "f": [0, 0, 0, 1] }
   ]
 }
 ```
 
 - `u` — device uptime in milliseconds (only differences within a batch matter,
   so a Pico reboot cannot corrupt the timeline).
+- `at` — optional absolute Unix time in milliseconds. A collector that replays
+  a log stored on the PC sends it so old samples keep their real times; the
+  firmware does not have a clock and omits it.
 - `t` — four temperatures in °C, `null` for a faulted channel. Valid range is
   `-270..1800`.
 - `f` — four fault bit masks: `1` open thermocouple, `2` short to GND,
@@ -95,8 +98,12 @@ Accepts 1–600 samples per request. Send `X-Api-Key` when
 { "ok": true, "run_id": 3, "accepted": 10, "server_time_ms": 1792523131653 }
 ```
 
-The server anchors the batch on the newest sample and stores the others at
-their uptime offsets, so network latency does not distort the 0.1 s grid.
+Without `at`, the server anchors the batch on the newest sample's arrival and
+stores the others at their uptime offsets, so network latency does not distort
+the 0.1 s grid. That assumption only holds for live streaming: a backlog sent
+this way is compressed into the upload time. With `at`, each sample is stored
+at its own time and the first batch of a run sets `started_at_ms` to the first
+sample's `at`, so an uploaded log keeps its real history.
 Retries are at-least-once: a lost HTTP response can store a duplicate frame.
 
 ### `GET /api/live?since=<id>&run=<id>`

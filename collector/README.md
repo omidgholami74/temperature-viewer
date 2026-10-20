@@ -1,0 +1,123 @@
+# Collector — Pico samples to the API
+
+The Pico is a plain, non-networked board: it prints one JSON sample per line on
+USB serial and cannot call the API itself. This console program runs on the PC
+and does two things:
+
+1. writes those samples into a file on the computer, and
+2. uploads that file to the PHP API in batches.
+
+Because the accepted byte offset is stored in `data/checkpoint.json`, stopping
+the program or losing the network never loses samples and never re-sends data
+that the API already accepted.
+
+## Install and run
+
+```bash
+python -m pip install -r collector/requirements.txt   # pyserial, serial mode only
+python collector/collector.py
+```
+
+There are no command-line arguments — edit the constants at the top of
+`collector.py`.
+
+Output looks like this:
+
+```
+Reading /dev/ttyACM0 at 115200 baud into /home/you/collector/data/samples.jsonl
+Sent 100 samples (total 100) | temperatures:  781.2   660.0   940.5   545.7
+Sent 100 samples (total 200) | temperatures:  781.4   660.1   940.4   545.6
+```
+
+## Settings
+
+| Constant          | Default                     | Meaning                                     |
+| ----------------- | --------------------------- | ------------------------------------------- |
+| `SOURCE`          | `"serial"`                  | `"serial"` live capture, or `"file"`        |
+| `SERIAL_PORT`     | `""`                        | `COM5` / `/dev/ttyACM0`; empty auto-detects |
+| `BAUD_RATE`       | `115200`                    | Must match the Pico                         |
+| `SOURCE_FILE`     | `""`                        | Log to upload when `SOURCE = "file"`        |
+| `LOG_ENDED_AT`    | `""`                        | ISO 8601 end of that log; empty uses mtime  |
+| `SPOOL_FILE`      | `data/samples.jsonl`        | File on this computer that grows at 10 Hz   |
+| `CHECKPOINT_FILE` | `data/checkpoint.json`      | Accepted byte offset per file               |
+| `API_URL`         | `http://127.0.0.1:8080`     | Backend base URL, no trailing slash         |
+| `API_KEY`         | `""`                        | Must equal `FURNACE_INGEST_KEY` when set    |
+| `BATCH_SIZE`      | `100`                       | Samples per request                         |
+| `POLL_INTERVAL_S` | `1.0`                       | Idle wait between upload checks             |
+| `RETRY_DELAYS_S`  | `(1, 2, 5, 10, 30)`         | Backoff between failed uploads              |
+
+Relative paths are resolved against this folder, so the program works from any
+working directory.
+
+For production set:
+
+```python
+API_URL = "https://apitemp.futurefounderco.com"
+API_KEY = "the same value as FURNACE_INGEST_KEY"
+```
+
+## Serial mode
+
+Default. The program detects a Pico-style USB serial device, appends each JSON
+line to `data/samples.jsonl` and a background thread uploads from that file
+every second. If the cable is unplugged, it retries the port every 3 s; the Pico
+keeps logging to its own flash when `LOG_TO_FLASH` is enabled.
+
+## File mode
+
+When the PC is not connected to the Pico all the time, copy the log from the
+Pico's flash (Thonny: open `samples.jsonl` on the Pico and save it to the PC,
+or `mpremote cp :samples.jsonl samples.jsonl`), put it in this folder and run:
+
+```python
+SOURCE = "file"
+SOURCE_FILE = "samples.jsonl"
+LOG_ENDED_AT = "2026-10-20T14:05:00Z"  # when the log was written
+```
+
+The program uploads the file from its first unsent line and exits when
+everything is accepted. Running it again continues where the last run stopped;
+delete `data/checkpoint.json` to start the same file from the beginning.
+
+Upload a copied log into a **fresh or reset run**: the first upload of an empty
+database starts the run at the log's first sample, while a backlog sent into an
+already running timeline can only be clamped to its start.
+
+### Timestamps
+
+The firmware has no clock, so its lines carry only `u` (milliseconds since it
+booted). The collector turns that into an absolute time and sends it as `at`,
+which the API stores as-is:
+
+- **Serial mode** — the first line of each connection is mapped to the PC's
+  clock; the mapping is reused for the whole connection, so a burst delivered
+  after a stall is not squeezed together. A Pico reboot (uptime going
+  backwards) starts a new mapping.
+- **File mode** — the newest line is placed at `LOG_ENDED_AT`, or at the file's
+  modification time when that is empty. Copying a log updates its mtime, so
+  set `LOG_ENDED_AT` whenever you know when the Pico wrote it.
+
+Without that mapping the API can only anchor each upload to the moment it
+arrives, which compresses a long backlog into a few seconds.
+
+## Files it creates
+
+| Path                   | Purpose                                       |
+| ---------------------- | --------------------------------------------- |
+| `data/samples.jsonl`   | Live serial capture, one JSON sample per line |
+| `data/checkpoint.json` | `{"source": ..., "offset": ...}`              |
+
+Both are ignored by git. They are safe to keep: deleting the spool only loses
+samples that had not been uploaded yet.
+
+## Notes
+
+- Delivery is at-least-once. If the API stores a batch but the response is
+  lost, the same samples are sent again after a restart; timestamps inside each
+  sample keep the 10 Hz grid intact.
+- A line without a trailing newline is treated as still being written and is
+  left for the next cycle.
+- Lines that are not valid sample JSON (boot banners, truncated writes) are
+  skipped and logged.
+- If the server rejects a batch with HTTP 4xx, those samples are dropped so a
+  single bad line cannot block the whole queue.

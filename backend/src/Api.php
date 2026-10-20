@@ -262,7 +262,12 @@ final class Api
     /**
      * Trim, normalise and validate an ingest payload.
      *
-     * @return list<array{u: int, t: array{0: ?float, 1: ?float, 2: ?float, 3: ?float}, f: array{0: int, 1: int, 2: int, 3: int}}>
+     * ``u`` is the device uptime and is what the firmware logs. ``at`` is an
+     * optional absolute Unix time in milliseconds, added by a collector that
+     * replays a stored log: without it the server can only anchor a batch to
+     * the moment it arrived, which would compress a backlog in time.
+     *
+     * @return list<array{u: int, at: ?int, t: array{0: ?float, 1: ?float, 2: ?float, 3: ?float}, f: array{0: int, 1: int, 2: int, 3: int}}>
      */
     public static function validateSamples(mixed $raw, int $maxSamples): array
     {
@@ -285,6 +290,20 @@ final class Api
 
             if (!is_int($uptime) && !(is_float($uptime) && floor($uptime) === $uptime)) {
                 throw new ApiError(422, sprintf('samples[%d].u must be an integer uptime in milliseconds', $index));
+            }
+
+            $absolute = $sample['at'] ?? null;
+
+            if ($absolute !== null) {
+                if (!is_int($absolute) && !(is_float($absolute) && floor($absolute) === $absolute)) {
+                    throw new ApiError(422, sprintf('samples[%d].at must be an integer Unix time in milliseconds', $index));
+                }
+
+                $absolute = (int) $absolute;
+
+                if ($absolute <= 0) {
+                    throw new ApiError(422, sprintf('samples[%d].at must be positive', $index));
+                }
             }
 
             $temps = $sample['t'] ?? null;
@@ -332,6 +351,7 @@ final class Api
 
             $samples[] = [
                 'u' => (int) $uptime,
+                'at' => $absolute,
                 't' => $channels,
                 'f' => $flags,
             ];

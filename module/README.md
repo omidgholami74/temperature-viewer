@@ -1,12 +1,15 @@
 # Pico firmware — 4x MAX31855 at 10 Hz
 
-Firmware, a USB bridge and a simulator for the furnace monitor. All four
-thermocouples share one SPI bus and each MAX31855 has its own chip-select pin.
+Firmware for a **plain Raspberry Pi Pico** (no WiFi) with four MAX31855
+thermocouple amplifiers on one SPI bus, each with its own chip-select pin.
 
-The API is a separate PHP service (`backend/`). In production it runs at
-`https://apitemp.futurefounderco.com`; the dashboard at
-`https://temp.futurefounderco.com` is a different server and does not affect
-the firmware (the Pico sends no browser `Origin` header).
+The board has no network stack and MicroPython for the Pico ships no HTTP
+client, so the firmware uses **only built-in modules** (`machine`, `time`,
+`os`, `ujson`) and never uploads anything. Each sample is printed as one JSON
+line on USB serial and optionally appended to a log file on the Pico's flash.
+A PC then runs [`collector/collector.py`](../collector/README.md), which saves
+those lines in a file on the computer and POSTs them to the PHP API at
+`https://apitemp.futurefounderco.com`.
 
 ## Files
 
@@ -15,12 +18,12 @@ the firmware (the Pico sends no browser `Origin` header).
 | `max31855.py`      | Pico    | SPI driver, signed 14-bit read, fault decoding       |
 | `sampler.py`       | Pico    | Drift-free 100 ms sampling scheduler                 |
 | `hardware.py`      | Pico    | Shared SPI bus setup                                 |
-| `api_client.py`    | Pico W  | Batched HTTP upload with retry                       |
-| `main.py`          | Pico W  | WiFi firmware: sample, buffer, upload                |
-| `main_usb.py`      | Pico    | USB firmware: one JSON sample per serial line        |
-| `bridge.py`        | PC      | Reads the USB stream and posts it to the PHP API     |
-| `simulator.py`     | PC      | Sends fake furnace data to the API (no hardware)     |
+| `main.py`          | Pico    | Sample loop: JSON line to serial and to the log file |
 | `config.example.py`| —       | Copy to `config.py` and edit; `config.py` is ignored |
+| `simulator.py`     | PC      | Sends fake furnace data to the API (no hardware)     |
+
+No `network`, `urequests`, `requests` or API key is used on the Pico. The
+collector owns the HTTP side and the ingest key.
 
 ## Wiring
 
@@ -45,52 +48,51 @@ twisted, with the shield grounded at one end only.
 
 ## Firmware setup
 
-1. Flash MicroPython for **Pico W** (WiFi mode) or Pico (USB mode) with Thonny.
-2. Copy `config.example.py` to `config.py` and edit WiFi, `API_BASE`, pins and
-   `API_KEY`.
-3. Copy `config.py`, `hardware.py`, `max31855.py`, `sampler.py` and either
-   `main.py` (WiFi) or `main_usb.py` (USB) to the Pico.
-4. Run the file in Thonny. To start automatically, save it as `main.py`.
+1. Flash **MicroPython for the Raspberry Pi Pico** (not Pico W) with Thonny.
+2. Copy `config.example.py` to `config.py` and edit the pins and output
+   options.
+3. Copy `config.py`, `hardware.py`, `max31855.py`, `sampler.py` and `main.py`
+   to the Pico (Thonny: *Save as* → *Raspberry Pi Pico*).
+4. Run `main.py`. It can be saved as `main.py` on the board, which is the file
+   MicroPython runs at boot.
 
-The Pico W only joins **2.4 GHz** networks. `API_BASE` defaults to
-`https://apitemp.futurefounderco.com`; use the LAN address of a local backend
-(`http://192.168.1.50:8080`) when testing without internet access. Never use
-`localhost` on the Pico.
+The board prints a short banner, then one line per sample:
 
-HTTPS on the Pico W uses TLS and needs a few extra seconds for the handshake,
-but the uploads remain one small POST per second. If memory is tight, lower
-`MAX_BUFFERED_SAMPLES` and keep a single HTTP connection per batch.
-
-### USB mode
-
-If the Pico is not a Pico W, run `main_usb.py` on it and `bridge.py` on a PC
-that can reach the backend:
-
-```bash
-python -m pip install -r module/requirements.txt
-python module/bridge.py --url http://127.0.0.1:8080 --port COM5 --baud 115200
-# or, against production:
-# python module/bridge.py --url https://apitemp.futurefounderco.com --key change-me --port COM5
+```
+# furnace monitor: 4 channels every 100 ms
+# serial: one JSON sample per line, log file: samples.jsonl
+{"u": 0, "t": [781.25, 660.0, 940.5, null], "f": [0, 0, 0, 1]}
+{"u": 100, "t": [781.25, 660.0, 940.5, null], "f": [0, 0, 0, 1]}
 ```
 
-The bridge auto-detects common Pico serial ports when `--port` is omitted.
+### Flash log
+
+With `LOG_TO_FLASH = True` the same lines are appended to `samples.jsonl` on
+the Pico. When the file reaches `MAX_LOG_BYTES` (1 MB ≈ 25 minutes at 10 Hz) it
+is renamed to `samples.jsonl.old` and a fresh file starts, so the most recent
+data is always available even if the PC was off.
+
+Writing 600 B/s to flash does wear it slowly. If the PC is always connected,
+set `LOG_TO_FLASH = False` and keep `SERIAL_ECHO = True`.
+
+To upload a copied log, copy `samples.jsonl` from the Pico to the PC (Thonny,
+or `mpremote cp :samples.jsonl samples.jsonl`) and run the collector in
+`SOURCE = "file"` mode — see [`collector/README.md`](../collector/README.md).
 
 ## Configuration
 
-| Setting               | Default | Meaning                                   |
-| --------------------- | ------- | ----------------------------------------- |
-| `WIFI_SSID`           | —       | 2.4 GHz network name (Pico W)             |
-| `WIFI_PASSWORD`       | —       | Network password                          |
-| `API_BASE`            | —       | Backend base URL, no trailing slash       |
-| `API_KEY`             | `""`    | Must equal `FURNACE_INGEST_KEY` when set   |
-| `SPI_ID`              | `0`     | RP2040 SPI peripheral                     |
-| `SCK_PIN`             | `6`     | Shared clock                              |
-| `MISO_PIN`            | `4`     | Shared data input                         |
-| `CS_PINS`             | `(5,7,9,11)` | One chip select per furnace          |
-| `SPI_BAUD_RATE`       | `1_000_000` | 1 MHz is reliable on short wires      |
-| `SAMPLE_INTERVAL_MS`  | `100`   | 10 samples per second                     |
-| `POST_INTERVAL_MS`    | `1000`  | Upload one batch per second               |
-| `MAX_BUFFERED_SAMPLES`| `600`   | About 60 s of offline buffering           |
+| Setting               | Default          | Meaning                                   |
+| --------------------- | ---------------- | ----------------------------------------- |
+| `SPI_ID`              | `0`              | RP2040 SPI peripheral                     |
+| `SCK_PIN`             | `6`              | Shared clock                              |
+| `MISO_PIN`            | `4`              | Shared data input                         |
+| `CS_PINS`             | `(5,7,9,11)`     | One chip select per furnace               |
+| `SPI_BAUD_RATE`       | `1_000_000`      | 1 MHz is reliable on short wires          |
+| `SAMPLE_INTERVAL_MS`  | `100`            | 10 samples per second                     |
+| `SERIAL_ECHO`         | `True`           | Print one JSON line per sample on USB     |
+| `LOG_TO_FLASH`        | `True`           | Also keep a log file on the Pico          |
+| `LOG_FILE`            | `samples.jsonl`  | Log path on the Pico filesystem           |
+| `MAX_LOG_BYTES`       | `1_048_576`      | Rotate the log above this size            |
 
 ## Data protocol
 
@@ -100,8 +102,9 @@ Each sample is a JSON object:
 { "u": 12300, "t": [781.25, null, 940.0, 545.75], "f": [0, 1, 0, 0] }
 ```
 
-- `u` — milliseconds since the firmware started. Only differences within a
-  batch are used, so a reboot never produces wrong timestamps.
+- `u` — milliseconds since the firmware started. The Pico has no clock, so
+  this is all it can report; the collector adds an absolute `at` time before
+  uploading, which is what the API stores.
 - `t` — channel temperatures; `null` means the sensor reported a fault.
 - `f` — fault bit masks:
 
@@ -112,44 +115,59 @@ Each sample is a JSON object:
 | 4   | Short to VCC      |
 | 8   | SPI read error    |
 
-Batches are posted to `POST /api/ingest`, ten samples at a time by default.
-Failed uploads stay in a RAM buffer (last 600 samples) and are retried on the
-next cycle; a lost response can therefore store a duplicate frame
-(at-least-once delivery).
+The collector batches these lines, stamps each one with an absolute time, and
+posts them to `POST /api/ingest` (100 samples per request by default). Failed
+uploads stay in the file on the PC and are retried, so the Pico never has to
+buffer or retry network requests.
 
 ### Timing notes
 
 `Sampler` advances its next slot from the previous slot, not from `sleep()`, so
-read jitter does not accumulate. An HTTP request blocks the single-core Pico
-for its duration; on a LAN a one-second batch typically costs 50–150 ms, which
-fits inside the 200 ms catch-up window. If uploads regularly take longer, some
-sampling slots are skipped (the gap is visible in the chart) — raise
-`POST_INTERVAL_MS`, shorten the network path or accept a lower effective rate.
+read jitter does not accumulate. On a plain Pico the loop only does four SPI
+reads, one JSON dump, one serial write and (optionally) one flash append per
+100 ms, which leaves ample headroom. A long serial stall (for example a USB
+host that stops reading) shows up as skipped slots in the chart.
+
+## Collector
+
+```bash
+python -m pip install -r collector/requirements.txt
+python collector/collector.py
+```
+
+Settings such as the serial port and `API_URL` are constants at the top of
+[`collector/collector.py`](../collector/collector.py); there are no
+command-line arguments. See [`collector/README.md`](../collector/README.md)
+for file mode, checkpoints and retry behaviour.
 
 ## Simulator
 
+For dashboard work without hardware, the PC simulator posts fake data straight
+to the API:
+
 ```bash
-python3 module/simulator.py --url http://127.0.0.1:8080
-python3 module/simulator.py --url http://127.0.0.1:8080 --key change-me --post-every 2
+python3 module/simulator.py
 ```
 
-Use the local backend for tests; pointing the simulator at production writes
-demo data into the real firing history.
+It takes no arguments either; edit `API_URL`, `API_KEY`, `SAMPLE_INTERVAL_S`
+and `POST_INTERVAL_S` at the top of the file.
 
 It generates four furnace curves at 10 Hz, posts one batch per second and
 prints each accepted batch. A short open-thermocouple event is injected on
-channel 4 every five minutes so the fault styling can be checked.
+channel 4 every five minutes so the fault styling can be checked. Point it at
+the local backend for tests; pointing it at production writes demo data into
+the real firing history.
 
 ## Troubleshooting
 
-| Symptom                        | Check                                                     |
-| ------------------------------ | --------------------------------------------------------- |
+| Symptom                          | Check                                                   |
+| -------------------------------- | ------------------------------------------------------- |
 | `Read error` (bit 8) on a channel | CS pin, MISO continuity, sensor VIN, common ground     |
-| All channels read the same value | Two sensors share a CS pin                             |
-| `API 401`                      | `API_KEY` does not match `FURNACE_INGEST_KEY`             |
-| `API unreachable`              | `API_BASE` uses the PC's LAN IP, firewall allows port 8080 |
-| WiFi timeout                   | 2.4 GHz network, correct password, signal strength        |
-| Values drift from a reference  | Cold-junction temperature, probe type, probe immersion    |
+| All channels read the same value  | Two sensors share a CS pin                              |
+| No lines on serial                | Pico not running `main.py`, wrong COM port, baud 115200 |
+| `OSError` when opening the log    | `LOG_FILE` path, free space on the Pico                 |
+| Collector keeps skipping lines    | Another program is holding the serial port              |
+| Values drift from a reference     | Cold-junction temperature, probe type, probe immersion  |
 
 ## Safety
 

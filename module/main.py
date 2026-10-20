@@ -1,92 +1,112 @@
-"""Furnace monitor firmware for Raspberry Pi Pico W + 4x MAX31855.
+"""Furnace monitor firmware for a plain Raspberry Pi Pico + 4x MAX31855.
 
-Reads all four thermocouples every 0.1 s and uploads batches to the PHP API.
-Samples are buffered in RAM while the network is down, so a short WiFi drop
-does not lose data.
+This Pico has no WiFi and MicroPython for the board ships no HTTP client, so
+the firmware never talks to the server and imports no networking module. Each
+sample is printed as one JSON line on USB serial and, optionally, appended to a
+log file on the Pico's own flash.
 
-Copy config.example.py to config.py, edit it, then upload this folder to the
-Pico (Thonny: Save as -> Raspberry Pi Pico) and run main.py.
+A PC runs ``collector/collector.py``. It writes the serial lines into a file on
+the computer and uploads that file to the PHP API in batches.
+
+Copy config.example.py to config.py, edit it, upload this folder to the Pico
+(Thonny: save each file to the board) and run main.py.
 """
 
+import os
 import time
 
-import network
+try:
+    import ujson as json
+except ImportError:  # pragma: no cover - CPython fallback
+    import json
 
 try:
     import config
 except ImportError:
     raise SystemExit("config.py is missing. Copy config.example.py to config.py and edit it.")
 
-from api_client import ApiClient
 from hardware import build_spi
 from max31855 import MAX31855Array
 from sampler import Sampler
 
 
-def connect_wifi():
-    """Join the configured network, blocking for at most 30 seconds."""
-    wlan = network.WLAN(network.STA_IF)
-    wlan.active(True)
+def rotate_if_full(path, max_bytes):
+    """Keep the newest data: move a full log aside and start a fresh file."""
+    try:
+        size = os.stat(path)[6]
+    except OSError:
+        return
 
-    if not wlan.isconnected():
-        print("Connecting to WiFi:", config.WIFI_SSID)
-        wlan.connect(config.WIFI_SSID, config.WIFI_PASSWORD)
-        deadline = time.ticks_add(time.ticks_ms(), 30_000)
+    if size < max_bytes:
+        return
 
-        while not wlan.isconnected():
-            if time.ticks_diff(deadline, time.ticks_ms()) <= 0:
-                raise OSError("WiFi connection timed out")
+    try:
+        os.remove(path + ".old")
+    except OSError:
+        pass
 
-            time.sleep_ms(250)
+    try:
+        os.rename(path, path + ".old")
+        print("# log rotated ->", path + ".old")
+    except OSError as error:
+        print("# rotation failed:", error)
 
-    print("WiFi connected:", wlan.ifconfig()[0])
-    return wlan
+
+def open_log():
+    """Open the log for appending and report how much is already in it."""
+    rotate_if_full(config.LOG_FILE, config.MAX_LOG_BYTES)
+    handle = open(config.LOG_FILE, "a")
+
+    try:
+        size = os.stat(config.LOG_FILE)[6]
+    except OSError:
+        size = 0
+
+    return handle, size
 
 
 def main():
-    wlan = connect_wifi()
     sensors = MAX31855Array(build_spi(), config.CS_PINS)
     sampler = Sampler(sensors, config.SAMPLE_INTERVAL_MS)
-    client = ApiClient(config.API_BASE, config.API_KEY)
 
-    buffer = []
-    last_post = time.ticks_ms()
-    last_wifi_check = last_post
+    log, log_bytes = open_log() if config.LOG_TO_FLASH else (None, 0)
 
-    print("Sampling 4 channels every {} ms".format(config.SAMPLE_INTERVAL_MS))
+    print("# furnace monitor: 4 channels every {} ms".format(config.SAMPLE_INTERVAL_MS))
+    print("# serial: one JSON sample per line, log file:", config.LOG_FILE if log else "off")
 
-    while True:
-        sampler.wait()
-        sample = sampler.sample()
-        buffer.append(sample)
+    try:
+        while True:
+            sampler.wait()
+            sample = sampler.sample()
+            line = json.dumps(sample)
 
-        now = time.ticks_ms()
+            if config.SERIAL_ECHO:
+                print(line)
 
-        if time.ticks_diff(now, last_post) >= config.POST_INTERVAL_MS or len(buffer) >= 100:
-            if client.post_samples(buffer):
-                print("sent", len(buffer), "samples | temperatures:", sample["t"])
-                buffer = []
-            else:
-                print("upload failed, buffering", len(buffer), "samples")
-
-                if len(buffer) > config.MAX_BUFFERED_SAMPLES:
-                    buffer = buffer[-config.MAX_BUFFERED_SAMPLES:]
-
-            last_post = now
-
-        if time.ticks_diff(now, last_wifi_check) >= 5_000:
-            last_wifi_check = now
-
-            if not wlan.isconnected():
-                print("WiFi lost, reconnecting")
-
+            if log is not None:
                 try:
-                    wlan = connect_wifi()
+                    log.write(line + "\n")
+                    log.flush()
+                    log_bytes += len(line) + 1
                 except OSError as error:
-                    print("Reconnect failed:", error)
+                    print("# log write failed:", error)
+                    log = None
+
+                if log is not None and log_bytes >= config.MAX_LOG_BYTES:
+                    try:
+                        log.close()
+                    except OSError:
+                        pass
+
+                    log, log_bytes = open_log()
+    except KeyboardInterrupt:
+        print("Stopped by user")
+    finally:
+        if log is not None:
+            try:
+                log.close()
+            except OSError:
+                pass
 
 
-try:
-    main()
-except KeyboardInterrupt:
-    print("Stopped by user")
+main()

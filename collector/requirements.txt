@@ -1,0 +1,4 @@
+# Needed only by collector/collector.py in serial mode (SOURCE = "serial").
+# File mode uses the standard library alone. The firmware runs on MicroPython
+# and needs no packages.
+pyserial>=3.5,<4.0

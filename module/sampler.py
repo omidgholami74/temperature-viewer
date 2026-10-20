@@ -1,4 +1,4 @@
-"""Drift-free sampling loop shared by the WiFi and USB firmware."""
+"""Drift-free sampling loop used by the Pico firmware."""
 
 import time
 
@@ -7,8 +7,8 @@ class Sampler:
     """Reads all channels on a fixed cadence.
 
     The next slot is calculated from the previous slot rather than from
-    ``sleep``, so the sample interval stays at 100 ms even when an HTTP
-    request or a serial write takes a few milliseconds.
+    ``sleep``, so the sample interval stays at 100 ms even when a serial write
+    or a flash append takes a few milliseconds.
     """
 
     def __init__(self, sensors, interval_ms=100):

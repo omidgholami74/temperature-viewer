@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Live four-channel furnace temperature monitoring with a 0.1 second run timer.">
+  <title>Furnace Monitor</title>
+  <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <div class="app-shell">
+    <header class="app-bar">
+      <div class="brand">
+        <span class="brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M3 18V9M8.5 18V4M14 18v-7M19.5 18V7"></path>
+          </svg>
+        </span>
+        <div class="brand__text">
+          <p class="eyebrow">MAX31855 · 4 channels</p>
+          <h1>Furnace Monitor</h1>
+        </div>
+      </div>
+
+      <div class="app-bar__actions">
+        <div class="status" data-role="status" data-state="waiting">
+          <span class="status__dot" aria-hidden="true"></span>
+          <div class="status__text">
+            <span class="status__label" role="status" data-role="status-label">Connecting</span>
+            <span class="status__meta" data-role="status-meta">API not reached yet</span>
+          </div>
+        </div>
+
+        <button class="btn btn--outline" type="button" data-role="new-run">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14"></path>
+          </svg>
+          New run
+        </button>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="furnace-grid" aria-label="Furnace temperatures">
+        <article class="furnace-card" data-channel="0">
+          <header class="furnace-card__head">
+            <span class="furnace-card__name"><span class="furnace-card__dot" aria-hidden="true"></span>Furnace 1</span>
+            <span class="chip" data-role="trend">No data</span>
+          </header>
+          <p class="furnace-card__value"><span data-role="value">--.-</span><span class="furnace-card__unit">°C</span></p>
+          <footer class="furnace-card__foot">
+            <span class="furnace-card__delta" data-role="delta">10 s change —</span>
+            <span class="furnace-card__fault" data-role="fault" hidden></span>
+          </footer>
+        </article>
+
+        <article class="furnace-card" data-channel="1">
+          <header class="furnace-card__head">
+            <span class="furnace-card__name"><span class="furnace-card__dot" aria-hidden="true"></span>Furnace 2</span>
+            <span class="chip" data-role="trend">No data</span>
+          </header>
+          <p class="furnace-card__value"><span data-role="value">--.-</span><span class="furnace-card__unit">°C</span></p>
+          <footer class="furnace-card__foot">
+            <span class="furnace-card__delta" data-role="delta">10 s change —</span>
+            <span class="furnace-card__fault" data-role="fault" hidden></span>
+          </footer>
+        </article>
+
+        <article class="furnace-card" data-channel="2">
+          <header class="furnace-card__head">
+            <span class="furnace-card__name"><span class="furnace-card__dot" aria-hidden="true"></span>Furnace 3</span>
+            <span class="chip" data-role="trend">No data</span>
+          </header>
+          <p class="furnace-card__value"><span data-role="value">--.-</span><span class="furnace-card__unit">°C</span></p>
+          <footer class="furnace-card__foot">
+            <span class="furnace-card__delta" data-role="delta">10 s change —</span>
+            <span class="furnace-card__fault" data-role="fault" hidden></span>
+          </footer>
+        </article>
+
+        <article class="furnace-card" data-channel="3">
+          <header class="furnace-card__head">
+            <span class="furnace-card__name"><span class="furnace-card__dot" aria-hidden="true"></span>Furnace 4</span>
+            <span class="chip" data-role="trend">No data</span>
+          </header>
+          <p class="furnace-card__value"><span data-role="value">--.-</span><span class="furnace-card__unit">°C</span></p>
+          <footer class="furnace-card__foot">
+            <span class="furnace-card__delta" data-role="delta">10 s change —</span>
+            <span class="furnace-card__fault" data-role="fault" hidden></span>
+          </footer>
+        </article>
+      </section>
+
+      <section class="timer-card panel" aria-labelledby="timer-title">
+        <header class="timer-card__head">
+          <div class="section-title">
+            <p class="eyebrow">Run timer</p>
+            <h2 id="timer-title">Elapsed time</h2>
+          </div>
+          <div class="timer-card__meta">
+            <span class="chip chip--live" data-role="run-state">Waiting</span>
+            <span class="timer-card__started" data-role="started">No run started</span>
+          </div>
+        </header>
+
+        <div class="timer-display">
+          <div class="counter" role="timer" aria-label="Elapsed run time">
+            <span class="counter__digits" data-digit="hours">00</span>
+            <span class="counter__sep" aria-hidden="true">:</span>
+            <span class="counter__digits" data-digit="minutes">00</span>
+            <span class="counter__sep" aria-hidden="true">:</span>
+            <span class="counter__digits" data-digit="seconds">00</span>
+            <span class="counter__sep" aria-hidden="true">:</span>
+            <span class="counter__digits"><span class="counter__ghost" aria-hidden="true">0</span><span data-digit="tenths">0</span></span>
+
+            <span class="counter__label">hours</span>
+            <span aria-hidden="true"></span>
+            <span class="counter__label">minutes</span>
+            <span aria-hidden="true"></span>
+            <span class="counter__label">seconds</span>
+            <span aria-hidden="true"></span>
+            <span class="counter__label">0.1 second</span>
+          </div>
+        </div>
+
+        <p class="counter__human"><span class="counter__human-label">Equivalent</span> <span data-role="human">—</span></p>
+
+        <div class="timer-card__stats">
+          <span class="stat"><span class="stat__label">Samples recorded</span><b class="stat__value" data-role="samples">0</b></span>
+          <span class="stat"><span class="stat__label">Sample rate</span><b class="stat__value" data-role="rate">—</b></span>
+          <span class="stat"><span class="stat__label">Last sample</span><b class="stat__value" data-role="age">—</b></span>
+        </div>
+      </section>
+
+      <section class="chart-card panel" aria-labelledby="chart-title">
+        <header class="chart-card__head">
+          <div class="section-title">
+            <p class="eyebrow">History</p>
+            <h2 id="chart-title">Temperature trend</h2>
+          </div>
+          <div class="segmented-wrap">
+            <span class="control-label" id="window-label">Window</span>
+            <div class="segmented" role="group" aria-labelledby="window-label" data-role="windows">
+              <button type="button" data-window="60" aria-pressed="false">1 min</button>
+              <button type="button" data-window="600" aria-pressed="true">10 min</button>
+              <button type="button" data-window="3600" aria-pressed="false">1 h</button>
+              <button type="button" data-window="21600" aria-pressed="false">6 h</button>
+              <button type="button" data-window="86400" aria-pressed="false">24 h</button>
+              <button type="button" data-window="0" aria-pressed="false">All</button>
+            </div>
+          </div>
+        </header>
+
+        <div class="legend" data-role="legend" aria-label="Toggle series">
+          <button class="legend__item" type="button" data-legend="0" aria-pressed="true">
+            <span class="legend__dot" aria-hidden="true"></span>
+            <span class="legend__name">Furnace 1</span>
+            <span class="legend__value" data-role="legend-value-0">—</span>
+          </button>
+          <button class="legend__item" type="button" data-legend="1" aria-pressed="true">
+            <span class="legend__dot" aria-hidden="true"></span>
+            <span class="legend__name">Furnace 2</span>
+            <span class="legend__value" data-role="legend-value-1">—</span>
+          </button>
+          <button class="legend__item" type="button" data-legend="2" aria-pressed="true">
+            <span class="legend__dot" aria-hidden="true"></span>
+            <span class="legend__name">Furnace 3</span>
+            <span class="legend__value" data-role="legend-value-2">—</span>
+          </button>
+          <button class="legend__item" type="button" data-legend="3" aria-pressed="true">
+            <span class="legend__dot" aria-hidden="true"></span>
+            <span class="legend__name">Furnace 4</span>
+            <span class="legend__value" data-role="legend-value-3">—</span>
+          </button>
+        </div>
+
+        <div class="chart-frame">
+          <canvas id="chart" role="img" aria-label="Line chart of the four furnace temperatures over time"></canvas>
+          <div class="chart-empty" data-role="empty">
+            <span class="chart-empty__pulse" aria-hidden="true"></span>
+            Waiting for the first sample…
+          </div>
+        </div>
+
+        <p class="chart-note">
+          Each channel is sampled every 0.1 s. Longer windows are averaged server-side into
+          fixed time buckets, so the page stays fast as the run grows.
+        </p>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <span>PHP API · SQLite storage · 0.1 s sampling</span>
+      <span>Prototype monitor, not a safety-rated furnace controller.</span>
+    </footer>
+  </div>
+
+  <div class="toast" data-role="toast" role="status" aria-live="polite"></div>
+
+  <script src="/assets/vendor/chart.umd.min.js"></script>
+  <script type="module" src="/assets/js/main.js"></script>
+</body>
+</html>

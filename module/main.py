@@ -1,93 +1,92 @@
-from machine import Pin, SPI
+"""Furnace monitor firmware for Raspberry Pi Pico W + 4x MAX31855.
+
+Reads all four thermocouples every 0.1 s and uploads batches to the PHP API.
+Samples are buffered in RAM while the network is down, so a short WiFi drop
+does not lose data.
+
+Copy config.example.py to config.py, edit it, then upload this folder to the
+Pico (Thonny: Save as -> Raspberry Pi Pico) and run main.py.
+"""
+
 import time
-import struct
 
-# =====================================
-# Raspberry Pi Pico + MAX31855
-# Furnace 1
-# =====================================
+import network
 
-SCK_PIN = 6
-MISO_PIN = 4
-CS_PIN = 5
+try:
+    import config
+except ImportError:
+    raise SystemExit("config.py is missing. Copy config.example.py to config.py and edit it.")
 
-# SPI configuration
-spi = SPI(
-    0,
-    baudrate=1000000,
-    polarity=0,
-    phase=0,
-    bits=8,
-    firstbit=SPI.MSB,
-    sck=Pin(SCK_PIN),
-    mosi=None,
-    miso=Pin(MISO_PIN)
-)
-
-cs = Pin(CS_PIN, Pin.OUT, value=1)
+from api_client import ApiClient
+from hardware import build_spi
+from max31855 import MAX31855Array
+from sampler import Sampler
 
 
-def read_max31855():
-    """
-    Read temperature and fault status from MAX31855.
-    Returns (temperature_c, fault_message).
-    """
+def connect_wifi():
+    """Join the configured network, blocking for at most 30 seconds."""
+    wlan = network.WLAN(network.STA_IF)
+    wlan.active(True)
 
-    cs.value(0)
-    time.sleep_us(2)
+    if not wlan.isconnected():
+        print("Connecting to WiFi:", config.WIFI_SSID)
+        wlan.connect(config.WIFI_SSID, config.WIFI_PASSWORD)
+        deadline = time.ticks_add(time.ticks_ms(), 30_000)
 
-    data = spi.read(4)
+        while not wlan.isconnected():
+            if time.ticks_diff(deadline, time.ticks_ms()) <= 0:
+                raise OSError("WiFi connection timed out")
 
-    cs.value(1)
+            time.sleep_ms(250)
 
-    # Convert 4 bytes to a 32-bit integer
-    raw = struct.unpack(">I", data)[0]
-
-    # Check thermocouple fault bits
-    fault = raw & 0x7
-
-    if fault:
-        messages = []
-
-        if fault & 0x01:
-            messages.append("Open thermocouple")
-
-        if fault & 0x02:
-            messages.append("Short to GND")
-
-        if fault & 0x04:
-            messages.append("Short to VCC")
-
-        return None, ", ".join(messages)
-
-    # Extract signed 14-bit thermocouple temperature
-    temp_raw = (raw >> 18) & 0x3FFF
-
-    if temp_raw & 0x2000:
-        temp_raw -= 0x4000
-
-    temperature = temp_raw * 0.25
-
-    return temperature, None
+    print("WiFi connected:", wlan.ifconfig()[0])
+    return wlan
 
 
-print("Furnace 1 - MAX31855")
-print("Starting temperature readings...")
+def main():
+    wlan = connect_wifi()
+    sensors = MAX31855Array(build_spi(), config.CS_PINS)
+    sampler = Sampler(sensors, config.SAMPLE_INTERVAL_MS)
+    client = ApiClient(config.API_BASE, config.API_KEY)
 
-while True:
-    try:
-        temperature, error = read_max31855()
+    buffer = []
+    last_post = time.ticks_ms()
+    last_wifi_check = last_post
 
-        if error:
-            print("ERROR:", error)
+    print("Sampling 4 channels every {} ms".format(config.SAMPLE_INTERVAL_MS))
 
-        elif temperature is not None:
-            # Send temperature as CSV
-            print("{:.2f}".format(temperature))
+    while True:
+        sampler.wait()
+        sample = sampler.sample()
+        buffer.append(sample)
 
-        time.sleep(1)
+        now = time.ticks_ms()
 
-    except Exception as e:
-        cs.value(1)
-        print("READ_ERROR:", str(e))
-        time.sleep_ms(200)
+        if time.ticks_diff(now, last_post) >= config.POST_INTERVAL_MS or len(buffer) >= 100:
+            if client.post_samples(buffer):
+                print("sent", len(buffer), "samples | temperatures:", sample["t"])
+                buffer = []
+            else:
+                print("upload failed, buffering", len(buffer), "samples")
+
+                if len(buffer) > config.MAX_BUFFERED_SAMPLES:
+                    buffer = buffer[-config.MAX_BUFFERED_SAMPLES:]
+
+            last_post = now
+
+        if time.ticks_diff(now, last_wifi_check) >= 5_000:
+            last_wifi_check = now
+
+            if not wlan.isconnected():
+                print("WiFi lost, reconnecting")
+
+                try:
+                    wlan = connect_wifi()
+                except OSError as error:
+                    print("Reconnect failed:", error)
+
+
+try:
+    main()
+except KeyboardInterrupt:
+    print("Stopped by user")

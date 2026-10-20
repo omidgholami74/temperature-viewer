@@ -1,0 +1,19 @@
+# Runtime data (never commit the SQLite database)
+backend/var/*.sqlite
+backend/var/*.sqlite-wal
+backend/var/*.sqlite-shm
+
+# Pico credentials
+module/config.py
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Logs and local artifacts
+logs/
+*.log
+
+# Operating system
+.DS_Store
+Thumbs.db

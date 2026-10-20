@@ -13,6 +13,7 @@ PHP_BIN="${PHP_BIN:-php}"
 PORT="${PORT:-18080}"
 BASE="http://127.0.0.1:${PORT}"
 CORS_ORIGIN="http://127.0.0.1:3000"
+PROD_ORIGIN="https://temp.futurefounderco.com"
 TMP_DIR="$(mktemp -d)"
 LOG="${TMP_DIR}/server.log"
 SERVER_PID=""
@@ -67,10 +68,19 @@ request() {
   curl "${args[@]}"
 }
 
+DEFAULT_ORIGINS="$(FURNACE_ALLOWED_ORIGINS='' "${PHP_BIN}" -r '
+  $config = require $argv[1];
+  echo $config["allowed_origins"];
+' "${ROOT}/backend/config.php")"
+case ",${DEFAULT_ORIGINS}," in
+  *",${PROD_ORIGIN},"*) ;;
+  *) fail "shipped defaults must allow the production dashboard origin" ;;
+esac
+
 echo "Starting PHP server on ${BASE} with a temporary database"
 FURNACE_DB="${TMP_DIR}/test.sqlite" \
 FURNACE_INGEST_KEY="" \
-FURNACE_ALLOWED_ORIGINS="${CORS_ORIGIN}" \
+FURNACE_ALLOWED_ORIGINS="${CORS_ORIGIN},${PROD_ORIGIN}" \
 "${PHP_BIN}" -S "127.0.0.1:${PORT}" -t "${ROOT}/backend" "${ROOT}/backend/index.php" >"${LOG}" 2>&1 &
 SERVER_PID=$!
 
@@ -133,10 +143,12 @@ status="$(request POST /api/ingest '{"samples":[{"u":1,"t":[1,2,3,9999],"f":[0,0
 assert_eq "${status}" "422" "out of range temperature is rejected"
 
 # --- CORS ----------------------------------------------------------------
-status="$(request GET /api/health "" "${CORS_ORIGIN}")"
-assert_eq "${status}" "200" "allowed-origin read"
-grep -qi "^Access-Control-Allow-Origin: ${CORS_ORIGIN}" "${TMP_DIR}/headers" \
-  || fail "allowed origin should be echoed in Access-Control-Allow-Origin"
+for origin in "${CORS_ORIGIN}" "${PROD_ORIGIN}"; do
+  status="$(request GET /api/health "" "${origin}")"
+  assert_eq "${status}" "200" "allowed-origin read from ${origin}"
+  grep -qi "^Access-Control-Allow-Origin: ${origin}" "${TMP_DIR}/headers" \
+    || fail "${origin} should be echoed in Access-Control-Allow-Origin"
+done
 
 status="$(request GET /api/health)"
 assert_eq "${status}" "200" "read without Origin"
@@ -145,12 +157,12 @@ if grep -qi '^Access-Control-Allow-Origin:' "${TMP_DIR}/headers"; then
 fi
 
 status="$(curl -sS -m 5 -o /dev/null -D "${TMP_DIR}/preflight" -w "%{http_code}" -X OPTIONS \
-  -H "Origin: ${CORS_ORIGIN}" \
+  -H "Origin: ${PROD_ORIGIN}" \
   -H "Access-Control-Request-Method: POST" \
   -H "Access-Control-Request-Headers: content-type,x-api-key" \
   "${BASE}/api/ingest")"
 assert_eq "${status}" "204" "CORS preflight"
-grep -qi "^Access-Control-Allow-Origin: ${CORS_ORIGIN}" "${TMP_DIR}/preflight" \
+grep -qi "^Access-Control-Allow-Origin: ${PROD_ORIGIN}" "${TMP_DIR}/preflight" \
   || fail "preflight is missing Access-Control-Allow-Origin"
 grep -qi '^Access-Control-Allow-Headers: .*X-Api-Key' "${TMP_DIR}/preflight" \
   || fail "preflight is missing the X-Api-Key header"
@@ -165,9 +177,9 @@ assert_eq "${status}" "403" "preflight from an unknown origin is rejected"
 status="$(request POST /api/runs/reset '{}' "http://evil.example")"
 assert_eq "${status}" "403" "reset from an unknown origin is rejected"
 
-status="$(request POST /api/runs/reset '{}' "${CORS_ORIGIN}")"
-assert_eq "${status}" "200" "reset from the UI origin is accepted"
-grep -qi "^Access-Control-Allow-Origin: ${CORS_ORIGIN}" "${TMP_DIR}/headers" \
+status="$(request POST /api/runs/reset '{}' "${PROD_ORIGIN}")"
+assert_eq "${status}" "200" "reset from the production UI origin is accepted"
+grep -qi "^Access-Control-Allow-Origin: ${PROD_ORIGIN}" "${TMP_DIR}/headers" \
   || fail "reset response is missing CORS headers"
 reset="$(cat "${TMP_DIR}/body")"
 NEW_RUN_ID="$(echo "${reset}" | json_get run.id)"

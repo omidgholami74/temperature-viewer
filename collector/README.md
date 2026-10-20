@@ -73,6 +73,9 @@ API_URL = "https://apitemp.futurefounderco.com"
 API_KEY = "the same value as FURNACE_INGEST_KEY"
 ```
 
+The `://` is part of the value. A typo such as `https//host` or `https:/host`
+is reported at startup instead of crashing on the first upload.
+
 ## Serial mode
 
 Default. The program detects a Pico-style USB serial device, appends each JSON
@@ -139,5 +142,7 @@ samples that had not been uploaded yet.
 - A payload the server refuses outright (`400`, `413`, `422`) is dropped so a
   single bad line cannot block the queue. Other statuses (`401`, `403`, `404`,
   `405`) keep the data and retry, because they mean the URL or key is wrong.
-- `API_URL` must be `https://` in production. With `http://` the server
-  redirects to HTTPS, and a redirected POST is no longer the ingest request.
+- `API_URL` should be `https://` in production. If the host serves a
+  certificate for a different domain, the collector reports
+  `TLS certificate problem ...` and keeps the data; install SSL for the domain
+  (AutoSSL / Let's Encrypt) rather than disabling verification.

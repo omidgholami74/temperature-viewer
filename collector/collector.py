@@ -20,6 +20,7 @@ Stop it with Ctrl+C.
 import datetime
 import json
 import os
+import ssl
 import threading
 import time
 import urllib.error
@@ -206,12 +207,16 @@ def post_batch(samples):
     if API_KEY:
         headers["X-Api-Key"] = API_KEY
 
-    request = urllib.request.Request(
-        API_URL.rstrip("/") + "/api/ingest",
-        data=json.dumps({"samples": samples}).encode("utf-8"),
-        headers=headers,
-        method="POST",
-    )
+    try:
+        request = urllib.request.Request(
+            API_URL.strip().rstrip("/") + "/api/ingest",
+            data=json.dumps({"samples": samples}).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+    except ValueError as error:
+        print(f"Invalid API_URL {API_URL!r}: {error}", flush=True)
+        return False
 
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
@@ -224,6 +229,19 @@ def post_batch(samples):
         # the key is wrong, so the data is kept and retried instead of lost.
         return "rejected" if error.code in (400, 413, 422) else False
     except (urllib.error.URLError, TimeoutError, OSError) as error:
+        reason = getattr(error, "reason", error)
+
+        if isinstance(reason, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in str(error):
+            host = API_URL.split("//", 1)[-1].split("/", 1)[0]
+            print(f"TLS certificate problem for {host}: {reason}", flush=True)
+            print(
+                "The server must present a certificate that covers this hostname. "
+                "Install SSL for the domain in the hosting panel (AutoSSL/Let's Encrypt); "
+                "until then API_URL can use http:// as a temporary workaround.",
+                flush=True,
+            )
+            return False
+
         print(f"API unreachable: {error}", flush=True)
         return False
 
@@ -359,6 +377,21 @@ def capture_serial(spool_path):
             port = pick_port() or port
 
 
+def api_url_is_valid():
+    """Reject typos such as 'https//host' before anything else starts."""
+    url = API_URL.strip()
+
+    if "://" not in url:
+        return False
+
+    scheme, rest = url.split("://", 1)
+
+    if scheme not in ("http", "https"):
+        return False
+
+    return bool(rest.split("/", 1)[0])
+
+
 def warn_about_api_url():
     """Plain http to a real host is almost always a redirected mistake."""
     if not API_URL.startswith("http://"):
@@ -378,6 +411,14 @@ def warn_about_api_url():
 
 
 def main():
+    if not api_url_is_valid():
+        print(f"API_URL is not a valid URL: {API_URL!r}", flush=True)
+        print(
+            'It needs the scheme separator, for example "https://apitemp.futurefounderco.com".',
+            flush=True,
+        )
+        return 2
+
     warn_about_api_url()
 
     if SOURCE == "serial":

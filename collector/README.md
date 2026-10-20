@@ -136,5 +136,8 @@ samples that had not been uploaded yet.
   left for the next cycle.
 - Lines that are not valid sample JSON (boot banners, truncated writes) are
   skipped and logged.
-- If the server rejects a batch with HTTP 4xx, those samples are dropped so a
-  single bad line cannot block the whole queue.
+- A payload the server refuses outright (`400`, `413`, `422`) is dropped so a
+  single bad line cannot block the queue. Other statuses (`401`, `403`, `404`,
+  `405`) keep the data and retry, because they mean the URL or key is wrong.
+- `API_URL` must be `https://` in production. With `http://` the server
+  redirects to HTTPS, and a redirected POST is no longer the ingest request.

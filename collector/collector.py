@@ -220,8 +220,9 @@ def post_batch(samples):
         body = error.read(200).decode("utf-8", "ignore")
         print(f"API {error.code}: {body}", flush=True)
 
-        # A rejected payload does not become valid by retrying it.
-        return "rejected" if 400 <= error.code < 500 else False
+        # Only a refused payload is dropped. 401/403/404/405 mean the URL or
+        # the key is wrong, so the data is kept and retried instead of lost.
+        return "rejected" if error.code in (400, 413, 422) else False
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         print(f"API unreachable: {error}", flush=True)
         return False
@@ -350,12 +351,35 @@ def capture_serial(spool_path):
                         # Unbuffered: the uploader sees the line immediately.
                         spool.write(json.dumps(sample).encode("utf-8") + b"\n")
         except (serial.SerialException, OSError) as error:
-            print(f"Serial error: {error}. Reconnecting in 3 s.", flush=True)
+            print(
+                f"Serial error on {port}: {error}. Reconnecting in 3 s (check SERIAL_PORT).",
+                flush=True,
+            )
             time.sleep(3)
             port = pick_port() or port
 
 
+def warn_about_api_url():
+    """Plain http to a real host is almost always a redirected mistake."""
+    if not API_URL.startswith("http://"):
+        return
+
+    host = API_URL.split("//", 1)[1].split("/", 1)[0]
+    host = host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+    if host in ("localhost", "127.0.0.1", "::1"):
+        return
+
+    print(
+        "Warning: API_URL uses http://; a production server needs https:// "
+        "or the upload is redirected and rejected.",
+        flush=True,
+    )
+
+
 def main():
+    warn_about_api_url()
+
     if SOURCE == "serial":
         spool_path = resolve(SPOOL_FILE)
         os.makedirs(os.path.dirname(spool_path), exist_ok=True)

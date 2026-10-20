@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Furnace Monitor</title><link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body><div class="shell">
+<header class="top"><div class="brand"><div class="logo">FM</div><div><label>INDUSTRIAL MONITORING</label><h1>Furnace Monitor</h1></div></div>
+<div class="connection"><i id="dot"></i><div><b id="status">Waiting for Pico</b><small id="port">Checking serial port…</small></div></div></header>
+<main>
+<section class="heading"><div><label>LIVE PROCESS</label><h2>Temperature overview</h2></div><div class="updated">LAST UPDATE <b id="updated">—</b></div></section>
+<section class="temps">
+<article class="temp"><div class="row"><span>FURNACE 01</span><em>LIVE</em></div><div class="reading"><strong id="temp0">—</strong><small>°C</small></div><div class="track"><span id="bar0"></span></div><div class="bottom"><span>Temperature</span><b id="state0">Waiting</b></div></article><article class="temp"><div class="row"><span>FURNACE 02</span><em>LIVE</em></div><div class="reading"><strong id="temp1">—</strong><small>°C</small></div><div class="track"><span id="bar1"></span></div><div class="bottom"><span>Temperature</span><b id="state1">Waiting</b></div></article><article class="temp"><div class="row"><span>FURNACE 03</span><em>LIVE</em></div><div class="reading"><strong id="temp2">—</strong><small>°C</small></div><div class="track"><span id="bar2"></span></div><div class="bottom"><span>Temperature</span><b id="state2">Waiting</b></div></article><article class="temp"><div class="row"><span>FURNACE 04</span><em>LIVE</em></div><div class="reading"><strong id="temp3">—</strong><small>°C</small></div><div class="track"><span id="bar3"></span></div><div class="bottom"><span>Temperature</span><b id="state3">Waiting</b></div></article>
+</section>
+<section class="heading timers"><div><label>RUNTIME STATISTICS</label><h2>Time &amp; counters</h2></div><div class="clock"><span>ELAPSED TIME</span><strong id="clock">00:00:00</strong></div></section>
+<section class="counters">
+<article class="counter"><label>SECONDS</label><strong id="seconds">0</strong><small>Current minute</small></article><article class="counter"><label>MINUTES</label><strong id="minutes">0</strong><small>Current hour</small></article><article class="counter"><label>HOURS</label><strong id="hours">0</strong><small>Current day</small></article><article class="counter"><label>DAYS</label><strong id="days">0</strong><small>Elapsed days</small></article><article class="counter"><label>TOTAL SECONDS</label><strong id="elapsed">0</strong><small>Since Pico started</small></article><article class="counter"><label>TOTAL MINUTES</label><strong id="totalMinutes">0</strong><small>Since Pico started</small></article><article class="counter"><label>TOTAL HOURS</label><strong id="totalHours">0</strong><small>Since Pico started</small></article><article class="counter"><label>SAMPLE COUNTER</label><strong id="samples">0</strong><small>Received frames</small></article>
+</section><section class="chart"><div class="charthead"><div><label>HISTORY</label><h2>Live temperature trends</h2></div><span>°C · latest 5 minutes</span></div><div class="canvas"><canvas id="chart"></canvas></div></section>
+<footer><span>FURNACE MONITOR · LOCAL DASHBOARD</span><span>Prototype interface — not a safety controller</span></footer>
+</main></div><script src="/static/app.js"></script></body></html>

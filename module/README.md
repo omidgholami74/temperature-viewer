@@ -57,19 +57,26 @@ twisted, with the shield grounded at one end only.
 4. Run `main.py`. It can be saved as `main.py` on the board, which is the file
    MicroPython runs at boot.
 
-The board prints a short banner, then one line per sample:
+The board prints a short banner, then the header and one line per sample
+(`SERIAL_FORMAT = "csv"`, the default):
 
 ```
 # furnace monitor: 4 channels every 100 ms
-# serial: one JSON sample per line, log file: samples.jsonl
-{"u": 0, "t": [781.25, 660.0, 940.5, null], "f": [0, 0, 0, 1]}
-{"u": 100, "t": [781.25, 660.0, 940.5, null], "f": [0, 0, 0, 1]}
+# serial format: csv | log file: samples.jsonl
+ms,furnace1,furnace2,furnace3,furnace4
+100,781.25,660.00,940.50,-1000.00
+200,781.25,660.00,940.50,-1000.00
 ```
+
+`-1000.00` is a faulted channel. Point Serial Studio at the port (Quick Plot)
+or open [`serial-web/index.html`](../serial-web/README.md) to read it in the
+browser. With `SERIAL_FORMAT = "json"` the same lines look like
+`{"u": 100, "t": [...], "f": [...]}`, which is what `collector.py` reads.
 
 ### Flash log
 
-With `LOG_TO_FLASH = True` the same lines are appended to `samples.jsonl` on
-the Pico. When the file reaches `MAX_LOG_BYTES` (1 MB ≈ 25 minutes at 10 Hz) it
+With `LOG_TO_FLASH = True` the samples are appended to `samples.jsonl` on
+the Pico as JSON, whatever `SERIAL_FORMAT` is. When the file reaches `MAX_LOG_BYTES` (1 MB ≈ 25 minutes at 10 Hz) it
 is renamed to `samples.jsonl.old` and a fresh file starts, so the most recent
 data is always available even if the PC was off.
 
@@ -90,7 +97,8 @@ or `mpremote cp :samples.jsonl samples.jsonl`) and run the collector in
 | `CS_PINS`             | `(5,7,9,11)`     | One chip select per furnace               |
 | `SPI_BAUD_RATE`       | `1_000_000`      | 1 MHz is reliable on short wires          |
 | `SAMPLE_INTERVAL_MS`  | `100`            | 10 samples per second                     |
-| `SERIAL_ECHO`         | `True`           | Print one JSON line per sample on USB     |
+| `SERIAL_FORMAT`       | `"csv"`          | `csv` for Serial Studio/serial-web, `json` for the collector |
+| `SERIAL_ECHO`         | `True`           | Print one line per sample on USB          |
 | `LOG_TO_FLASH`        | `True`           | Also keep a log file on the Pico          |
 | `LOG_FILE`            | `samples.jsonl`  | Log path on the Pico filesystem           |
 | `MAX_LOG_BYTES`       | `1_048_576`      | Rotate the log above this size            |

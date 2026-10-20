@@ -57,6 +57,7 @@ in `FURNACE_ALLOWED_ORIGINS` (defaults to the dashboard above).
 | `ui/`       | Static dashboard: HTML, design tokens, CSS, ES modules, config   |
 | `module/`   | Pico firmware: serial + flash log at 10 Hz, no network, simulator |
 | `collector/`| PC console app: serial/file capture, checkpointed upload to API   |
+| `serial-web/`| Browser dashboard reading the COM port directly (Web Serial)     |
 | `tests/`    | Node unit tests for the timer and formatting helpers             |
 | `artifacts/`| Dashboard screenshots                                           |
 
@@ -81,6 +82,9 @@ python3 -m http.server 3000 --directory ui
 # 4. fake furnace data (third terminal)
 python3 module/simulator.py
 ```
+
+Without any server at all, [`serial-web/`](serial-web/README.md) shows the four
+temperatures in the same dashboard straight from the COM port.
 
 With real hardware, step 4 is replaced by the collector, which reads the Pico
 over USB serial and uploads from a file on the PC:

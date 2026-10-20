@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Furnace Monitor">
+  <rect width="64" height="64" rx="15" fill="#071018"/>
+  <g fill="none" stroke-width="6" stroke-linecap="round">
+    <path d="M17 45V31" stroke="#38e0a5"/>
+    <path d="M27 45V21" stroke="#49bdf0"/>
+    <path d="M37 45V27" stroke="#f3b45a"/>
+    <path d="M47 45V16" stroke="#b491ff"/>
+  </g>
+</svg>

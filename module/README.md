@@ -19,6 +19,7 @@ those lines in a file on the computer and POSTs them to the PHP API at
 | `sampler.py`       | Pico    | Drift-free 100 ms sampling scheduler                 |
 | `hardware.py`      | Pico    | Shared SPI bus setup                                 |
 | `main.py`          | Pico    | Sample loop: JSON line to serial and to the log file |
+| `check.py`         | Pico    | One-shot wiring check: raw frames and fault names    |
 | `config.example.py`| —       | Copy to `config.py` and edit; `config.py` is ignored |
 | `simulator.py`     | PC      | Sends fake furnace data to the API (no hardware)     |
 
@@ -158,11 +159,34 @@ channel 4 every five minutes so the fault styling can be checked. Point it at
 the local backend for tests; pointing it at production writes demo data into
 the real firing history.
 
+## Hardware check
+
+When samples show `null` temperatures, run `check.py` on the board. It prints
+the files on the Pico and three raw frames per channel:
+
+```
+channel 1 raw=0x00000001 probe=--      internal=24.00 fault=1 (open thermocouple)
+channel 2 raw=0x00000000 probe=--      internal=--    fault=8 (SPI read error)
+```
+
+Reading the frames:
+
+- `internal` is the MAX31855's own die temperature. A plausible value (for
+example 24 °C) proves SPI and the CS pin work.
+- `probe` is only shown when the fault bits are zero; `main.py` stores `null`
+instead of a value the chip itself flagged.
+- `fault=1` open thermocouple — the probe is not connected, loose in the screw
+terminal, or the lead is broken. Refit the probe and check with a multimeter.
+- `fault=2` / `fault=4` — T+ or T− shorted to GND or VCC.
+- `fault=8` (raw `0x00000000` or `0xFFFFFFFF`) — no chip answers on that CS
+pin: wrong CS GPIO, missing 3.3 V, missing ground, or no board fitted yet.
+
 ## Troubleshooting
 
 | Symptom                          | Check                                                   |
 | -------------------------------- | ------------------------------------------------------- |
 | `Read error` (bit 8) on a channel | CS pin, MISO continuity, sensor VIN, common ground     |
+| `Open thermocouple` (bit 1)       | Probe seated in T+/T−, unbroken lead, correct channel  |
 | All channels read the same value  | Two sensors share a CS pin                              |
 | No lines on serial                | Pico not running `main.py`, wrong COM port, baud 115200 |
 | `OSError` when opening the log    | `LOG_FILE` path, free space on the Pico                 |

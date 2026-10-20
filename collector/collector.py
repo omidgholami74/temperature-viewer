@@ -39,8 +39,13 @@ SOURCE_FILE = ""  # e.g. "samples.jsonl" copied from the Pico into collector/
 LOG_ENDED_AT = ""
 
 # both modes
-SPOOL_FILE = "data/samples.jsonl"  # where serial samples are stored
-CHECKPOINT_FILE = "data/checkpoint.json"  # how far the API has accepted
+# Folder where this program writes on the computer. A relative value sits next
+# to collector.py; use an absolute path to store the data elsewhere, e.g.
+#   DATA_DIR = "D:/furnace-data"
+#   DATA_DIR = "/var/lib/furnace"
+DATA_DIR = "data"
+SPOOL_FILE = os.path.join(DATA_DIR, "samples.jsonl")  # serial capture
+CHECKPOINT_FILE = os.path.join(DATA_DIR, "checkpoint.json")  # accepted offset
 
 API_URL = "http://127.0.0.1:8080"  # backend base URL, no trailing slash
 API_KEY = ""  # must match FURNACE_INGEST_KEY when the API requires a key

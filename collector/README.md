@@ -38,8 +38,9 @@ Sent 100 samples (total 200) | temperatures:  781.4   660.1   940.4   545.6
 | `BAUD_RATE`       | `115200`                    | Must match the Pico                         |
 | `SOURCE_FILE`     | `""`                        | Log to upload when `SOURCE = "file"`        |
 | `LOG_ENDED_AT`    | `""`                        | ISO 8601 end of that log; empty uses mtime  |
-| `SPOOL_FILE`      | `data/samples.jsonl`        | File on this computer that grows at 10 Hz   |
-| `CHECKPOINT_FILE` | `data/checkpoint.json`      | Accepted byte offset per file               |
+| `DATA_DIR`        | `data`                      | Folder written on this computer             |
+| `SPOOL_FILE`      | `<DATA_DIR>/samples.jsonl`  | File that grows at 10 Hz in serial mode     |
+| `CHECKPOINT_FILE` | `<DATA_DIR>/checkpoint.json`| Accepted byte offset per file               |
 | `API_URL`         | `http://127.0.0.1:8080`     | Backend base URL, no trailing slash         |
 | `API_KEY`         | `""`                        | Must equal `FURNACE_INGEST_KEY` when set    |
 | `BATCH_SIZE`      | `100`                       | Samples per request                         |
@@ -47,7 +48,23 @@ Sent 100 samples (total 200) | temperatures:  781.4   660.1   940.4   545.6
 | `RETRY_DELAYS_S`  | `(1, 2, 5, 10, 30)`         | Backoff between failed uploads              |
 
 Relative paths are resolved against this folder, so the program works from any
-working directory.
+working directory; absolute paths are used as they are.
+
+### Choosing where the data is stored
+
+`DATA_DIR` decides where samples and the checkpoint are written:
+
+```python
+DATA_DIR = "data"                       # collector/data (default)
+DATA_DIR = "D:/furnace-data"            # Windows, any drive
+DATA_DIR = "C:/Users/omid/furnace"      # Windows, user folder
+DATA_DIR = "/var/lib/furnace"           # Linux/macOS
+DATA_DIR = "/Volumes/USB/furnace"       # removable disk
+```
+
+Use forward slashes or a raw string (`r"D:\furnace-data"`) on Windows. The
+folder is created automatically, and both `samples.jsonl` and `checkpoint.json`
+follow it, so moving the data folder keeps the upload position consistent.
 
 For production set:
 
@@ -59,7 +76,7 @@ API_KEY = "the same value as FURNACE_INGEST_KEY"
 ## Serial mode
 
 Default. The program detects a Pico-style USB serial device, appends each JSON
-line to `data/samples.jsonl` and a background thread uploads from that file
+line to `<DATA_DIR>/samples.jsonl` and a background thread uploads from it
 every second. If the cable is unplugged, it retries the port every 3 s; the Pico
 keeps logging to its own flash when `LOG_TO_FLASH` is enabled.
 
@@ -102,10 +119,10 @@ arrives, which compresses a long backlog into a few seconds.
 
 ## Files it creates
 
-| Path                   | Purpose                                       |
-| ---------------------- | --------------------------------------------- |
-| `data/samples.jsonl`   | Live serial capture, one JSON sample per line |
-| `data/checkpoint.json` | `{"source": ..., "offset": ...}`              |
+| Path (inside `DATA_DIR`) | Purpose                                       |
+| ------------------------ | --------------------------------------------- |
+| `samples.jsonl`          | Live serial capture, one JSON sample per line |
+| `checkpoint.json`        | `{"source": ..., "offset": ...}`              |
 
 Both are ignored by git. They are safe to keep: deleting the spool only loses
 samples that had not been uploaded yet.

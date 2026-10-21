@@ -1,4 +1,4 @@
-import { API_LABEL, api } from './api.js';
+import { API_LABEL, api, probeApi } from './api.js';
 import { TemperatureChart } from './chart-panel.js';
 import { LiveFeed } from './feed.js';
 import {
@@ -69,6 +69,7 @@ const state = {
   lastPayload: null,
   lastPayloadAt: 0,
   failures: 0,
+  reason: null,
   windowSeconds: DEFAULT_WINDOW,
 };
 
@@ -85,11 +86,36 @@ const feed = new LiveFeed({
     updateStatus();
     console.warn('[live]', error.message);
 
+    // One probe per outage: it costs a request and only changes the hint.
+    if (state.failures === 1 || state.failures % 15 === 0) {
+      diagnose();
+    }
+
     if (state.failures === 5) {
-      toast('Connection to the PHP API lost. Retrying…', 'error');
+      toast(`No answer from ${API_LABEL}. Retrying…`, 'error');
     }
   },
 });
+
+let diagnosing = false;
+
+/** Ask the browser why the API did not answer, then repaint the status line. */
+async function diagnose() {
+  if (diagnosing) {
+    return;
+  }
+
+  diagnosing = true;
+
+  try {
+    state.reason = await probeApi();
+  } catch {
+    state.reason = 'unreachable';
+  } finally {
+    diagnosing = false;
+    updateStatus();
+  }
+}
 
 function setText(node, value) {
   if (node && node.textContent !== value) {
@@ -189,6 +215,23 @@ function renderRun(run) {
   setText(el.rate, rate ? `${rate.toFixed(1)} /s` : '—');
 }
 
+function failureText() {
+  // The page scheme is part of the message: over https an http API is blocked
+  // before the request leaves the tab, and that is invisible from the URL alone.
+  const scheme = window.location.protocol.replace(':', '');
+
+  switch (state.reason) {
+    case 'mixed-content':
+      return `http API blocked on an https page`;
+    case 'cors':
+      return `${API_LABEL} blocked by CORS`;
+    case 'timeout':
+      return `${API_LABEL} timed out · ${scheme} page`;
+    default:
+      return `${API_LABEL} unreachable · ${scheme} page`;
+  }
+}
+
 function updateStatus() {
   const payload = state.lastPayload;
 
@@ -196,9 +239,9 @@ function updateStatus() {
     const failed = state.failures > 0;
     el.status.dataset.state = failed ? 'offline' : 'waiting';
     setText(el.statusLabel, failed ? 'Backend offline' : 'Connecting');
-    // Name the origin the browser tried: a wrong scheme, a missing CORS header
-    // and a dead host all surface as the same failed fetch.
-    setText(el.statusMeta, failed ? `${API_LABEL} unreachable` : 'API not reached yet');
+    // Name the origin the browser tried and, when the probe worked it out, why
+    // it failed: wrong scheme, missing CORS header or no answer at all.
+    setText(el.statusMeta, failed ? failureText() : 'API not reached yet');
     setText(el.age, '—');
     return;
   }
@@ -229,6 +272,7 @@ function updateEmptyState() {
 
 function applyPayload(payload) {
   state.failures = 0;
+  state.reason = null;
   state.lastPayload = payload;
   state.lastPayloadAt = performance.now();
 

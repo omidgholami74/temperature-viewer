@@ -202,8 +202,10 @@
 
   <div class="toast" data-role="toast" role="status" aria-live="polite"></div>
 
-  <script src="config.js"></script>
+  <!-- ?v= busts stale copies of the API origin on already-open phones and tabs;
+       bump it whenever config.js or main.js changes meaning. -->
+  <script src="config.js?v=2"></script>
   <script src="assets/vendor/chart.umd.min.js"></script>
-  <script type="module" src="assets/js/main.js"></script>
+  <script type="module" src="assets/js/main.js?v=2"></script>
 </body>
 </html>

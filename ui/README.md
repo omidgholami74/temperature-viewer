@@ -172,18 +172,26 @@ Notes:
   if you override `FURNACE_ALLOWED_ORIGINS`.
 - If you add a `connect-src` policy, list every scheme/host the browser may
   call, or the fetch is blocked before it leaves the page.
-- Bump or disable the `config.js` cache when you change the API origin.
+- Bump the `?v=` query on `config.js` and `assets/js/main.js` in `index.html`
+  whenever you change the API origin. Hosts serve these files without
+  `Cache-Control`, so a phone can keep an old origin for a while and report the
+  API as unreachable while the desktop works.
+- On a failure the status line prints the API origin, the reason the browser
+  gave (unreachable, CORS, mixed content, timeout) and the page scheme. Ask the
+  operator to photograph it: it separates a certificate problem from a CORS or
+  network one without a console.
 - `chart.umd.min.js` is vendored; no CDN or external font request is made.
 
 ## Tests
 
 ```bash
-node --test tests/format.test.mjs
+node --test tests/format.test.mjs tests/api-probe.test.mjs
 ```
 
 The tests cover the eight-digit counter, unbounded hours, the human-readable
-equivalent, axis labels across short and multi-day runs, and delta/temperature
-formatting.
+equivalent, axis labels across short and multi-day runs, delta/temperature
+formatting, and how `probeApi()` classifies a failed request (mixed content,
+CORS, timeout, no answer).
 
 ## Browser support
 

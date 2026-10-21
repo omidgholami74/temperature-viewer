@@ -12,6 +12,42 @@ const endpoint = (path) => `${API_BASE}${path}`;
 /** Human-readable API origin, e.g. for the offline banner. */
 export const API_LABEL = API_BASE.replace(/^https?:\/\//, '') || window.location.host;
 
+/**
+ * Explain a failed request as far as the browser allows.
+ *
+ * A browser reports a dead host, a certificate error, a mixed-content block and
+ * a missing CORS header with the same opaque "Failed to fetch". One cheap
+ * `no-cors` request separates them: it returns an opaque response as soon as
+ * the server answers, even when CORS hides the body, and it throws only when
+ * the request never completed. That distinction is what the operator needs on
+ * a phone, where there is no console at hand.
+ *
+ * @returns {Promise<'mixed-content'|'cors'|'timeout'|'unreachable'>}
+ */
+export async function probeApi(timeoutMs = 4000) {
+  if (window.location.protocol === 'https:' && API_BASE.startsWith('http://')) {
+    return 'mixed-content';
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    await fetch(endpoint('/api/health'), {
+      mode: 'no-cors',
+      cache: 'no-store',
+      credentials: 'omit',
+      signal: controller.signal,
+    });
+
+    return 'cors';
+  } catch (error) {
+    return error?.name === 'AbortError' ? 'timeout' : 'unreachable';
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export class ApiError extends Error {
   constructor(message, status = 0) {
     super(message);

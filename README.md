@@ -199,6 +199,9 @@ PHP_BIN=php bash backend/tests/smoke.sh
 
 # timer, axis and number formatting
 node --test tests/format.test.mjs
+
+# API failure diagnostics used by the offline banner
+node --test tests/api-probe.test.mjs
 ```
 
 ## Troubleshooting
@@ -236,10 +239,21 @@ openssl s_client -connect apitemp.futurefounderco.com:443 \
   valid certificate too.
 - **The dashboard was opened over HTTPS and the API is HTTP** — the browser
   blocks the request as mixed content. Reload over the same scheme as the API.
-- **The status line names the origin that failed** (for example
-  `apitemp.futurefounderco.com unreachable`), which is the quickest way to see
-  whether a scheme or host is wrong. The browser console shows the precise
-  reason: CORS, mixed content or a certificate error.
+- **The status line names the origin and the reason** the browser gave up, so a
+  phone with no console can report the problem:
+
+  | Status line | Meaning |
+  | ----------- | ------- |
+  | `apitemp.futurefounderco.com unreachable · https page` | The dashboard is on HTTPS and the API cannot be reached over HTTPS — normally a missing or wrong certificate on `apitemp`. Install one, or open the dashboard over `http://`. |
+  | `apitemp.futurefounderco.com unreachable · http page` | No answer on plain HTTP either: DNS, the host being down, or a network that blocks port 80. |
+  | `apitemp.futurefounderco.com blocked by CORS` | The API answered but that page origin is not in `FURNACE_ALLOWED_ORIGINS`. Check the scheme: `http://` and `https://` are different origins. |
+  | `http API blocked on an https page` | Mixed content. The page is HTTPS but `config.js` returned an `http://` API origin, usually a stale cached `config.js`. |
+  | `apitemp.futurefounderco.com timed out · …` | The host accepted the connection and never answered; watch for a proxy, firewall or a saturated phone connection. |
+
+  The browser console shows the same detail for a desktop. Phones often keep an
+  old `config.js` and auto-upgrade `temp.futurefounderco.com` to HTTPS, which is
+  why the page scheme is printed in the status line: it is the fastest way to
+  tell a certificate problem from a CORS or network problem.
 
 A collector that logs `Sent … samples` only proves the PC reached the API; it
 says nothing about CORS or certificates, which only affect the browser.

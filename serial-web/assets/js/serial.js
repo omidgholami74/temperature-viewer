@@ -24,6 +24,16 @@ const CHANNELS = [
   { name: 'Furnace 4', fallback: '#b491ff' },
 ];
 
+// The port number (COM5) is never written in code: the browser shows a picker
+// and the operator chooses the device once. Filters only narrow that list so
+// the Raspberry Pi Pico appears alone. Set to [] if your board is not listed.
+// Raspberry Pi USB vendor id is 0x2e8a (Pico, Pico W, Pico 2).
+const PORT_FILTERS = [{ usbVendorId: 0x2e8a }];
+const BAUD_RATE = 115200; // must match the firmware
+// Reuse a port the browser already allowed, so a reload connects without the
+// picker. Set to false to always choose the port by hand.
+const AUTO_CONNECT = true;
+
 const WINDOWS = [60, 600, 3600, 21600, 86400, 0];
 const WINDOW_STORAGE_KEY = 'furnace.serial.window';
 const DEFAULT_WINDOW = 600;
@@ -321,21 +331,27 @@ function applyFrame(frame) {
 
 /* --- port handling ----------------------------------------------------- */
 
-async function connect() {
-  if (!('serial' in navigator)) {
-    notify('Web Serial is not available in this browser. Use Chrome or Edge.', 'error');
-    return;
-  }
+function matchesFilter(candidate) {
+  if (!PORT_FILTERS.length) return true;
 
+  const info = candidate.getInfo ? candidate.getInfo() : {};
+
+  return PORT_FILTERS.some(
+    (filter) =>
+      (filter.usbVendorId === undefined || filter.usbVendorId === info.usbVendorId) &&
+      (filter.usbProductId === undefined || filter.usbProductId === info.usbProductId),
+  );
+}
+
+async function openPort(candidate) {
   try {
-    port = await navigator.serial.requestPort();
-    await port.open({ baudRate: 115200 });
+    await candidate.open({ baudRate: BAUD_RATE });
   } catch (error) {
     notify(`Could not open the port: ${error.message}`, 'error');
-    port = null;
-    return;
+    return false;
   }
 
+  port = candidate;
   running = true;
   state.connected = true;
   state.session = null;
@@ -350,8 +366,46 @@ async function connect() {
 
   el.portLabel.textContent = 'Disconnect';
   notify('Serial port connected');
-
   readLoop();
+
+  return true;
+}
+
+async function connect() {
+  if (!('serial' in navigator)) {
+    notify('Web Serial is not available in this browser. Use Chrome or Edge.', 'error');
+    return;
+  }
+
+  let candidate;
+
+  try {
+    candidate = await navigator.serial.requestPort({ filters: PORT_FILTERS });
+  } catch (error) {
+    // Cancelling the picker is not an error worth a toast.
+    if (error.name !== 'NotFoundError') {
+      notify(`Could not open the port: ${error.message}`, 'error');
+    }
+    return;
+  }
+
+  await openPort(candidate);
+}
+
+/** Reopen a port the operator already granted, so a reload needs no click. */
+async function autoConnect() {
+  if (!AUTO_CONNECT || !('serial' in navigator)) return;
+
+  try {
+    const granted = await navigator.serial.getPorts();
+    const candidate = granted.find(matchesFilter);
+
+    if (candidate && (await openPort(candidate))) {
+      notify('Reconnected to the saved port');
+    }
+  } catch {
+    // No permission yet, or the API refused: the button still works.
+  }
 }
 
 async function disconnect() {
@@ -566,3 +620,11 @@ function bootstrap() {
 window.furnaceSerial = { parseLine, applyFrame, state };
 
 bootstrap();
+autoConnect();
+
+navigator.serial?.addEventListener('disconnect', (event) => {
+  if (port && event.target === port) {
+    notify('Serial device unplugged', 'error');
+    disconnect();
+  }
+});

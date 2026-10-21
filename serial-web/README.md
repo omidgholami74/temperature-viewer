@@ -47,6 +47,28 @@ The flash log on the Pico stays JSON, so `collector/` can upload it later.
 The picker is a browser security requirement: a page may not open a port by
 name without the user choosing it once. Press the button again to disconnect.
 
+### Where is the port set?
+
+`COM5` never appears in the code. The browser does not let a page name a port,
+so the operator picks it in the dialog; Chrome remembers the permission for
+that site afterwards. Only two settings live in
+[`assets/js/serial.js`](assets/js/serial.js):
+
+```js
+const PORT_FILTERS = [{ usbVendorId: 0x2e8a }]; // Raspberry Pi boards only
+const BAUD_RATE = 115200;                       // must match the firmware
+const AUTO_CONNECT = true;                      // reopen the allowed port
+```
+
+`PORT_FILTERS` narrows the picker to Raspberry Pi USB devices; clear it
+(`const PORT_FILTERS = [];`) if your board does not show up. To check what the
+browser sees, open the console on the page and run
+`await navigator.serial.getPorts()`.
+
+With `AUTO_CONNECT = true`, a page reload reopens the port the operator already
+allowed, without the picker. Set it to `false` to choose the port by hand every
+time. Unplugging the cable is detected and the page returns to “Ready”.
+
 ## Serial Studio
 
 Point Serial Studio at the same port, **Quick Plot**, 115200 baud. The first

@@ -13,15 +13,29 @@ This folder is deployed on its **own web server**, separate from the PHP API:
 
 ## Screens
 
-1. Run timer: eight digit positions `HH:MM:SS:T`, with days/hours/minutes
-   spelled out below and sample count, rate and last-sample age underneath.
-   "New run" starts a fresh timer after a confirmation.
-2. Four furnace cards, under the timer: name, colour, live temperature,
-   10-second change and a heating / cooling / holding state. A faulted channel
-   shows `--.-` and the decoded fault reason.
-3. Chart: four linear series on one canvas, a custom legend that doubles as a
+1. Branded app bar: the foundation logo, **Razi Applied Science Foundation**,
+   the connection status and a **Settings** button (a gear on a phone).
+2. Recorded-time timer: eight digit positions `HH:MM:SS:T`, with
+   days/hours/minutes spelled out below, plus sample count, working rate, idle
+   time and last-sample age. It pauses when samples stop; **Start new run**
+   lives in Settings → Appearance.
+3. Four furnace cards, under the timer: name, colour, live temperature,
+   10-second change, a heating / cooling / holding state, and a border in the
+   same colour as that furnace's chart line. A faulted channel shows `--.-`
+   and the decoded fault reason.
+4. Chart: four linear series on one canvas, a custom legend that doubles as a
    series toggle, window presets (1 min, 10 min, 1 h, 6 h, 24 h, all) and an
    empty state while waiting for the first sample.
+
+![Settings and range analysis](../artifacts/settings-analysis.png)
+5. Settings dialog with four tabs:
+   - **Appearance** — dark / light / system theme and *Start new run*;
+   - **Analysis** — range presets or custom date-time pickers, coldest / hottest
+     / average highlights, and min/max/avg/points per furnace;
+   - **Export** — CSV download of the selected range, with auto/raw/1 s/1 min
+     resolution;
+   - **App** — install the dashboard as a PWA (or the Safari instructions when
+     the browser has no install prompt).
 
 The three blocks fill exactly one screen: the page itself never scrolls. The
 chart is the flex row that absorbs the remaining height, so a phone in portrait
@@ -57,20 +71,26 @@ you deploy the UI elsewhere.
 ## Files
 
 ```
-index.html                  markup, timer, four static furnace cards, chart
+index.html                  markup, timer, furnace cards, chart, settings dialog
+manifest.webmanifest        PWA name, colours, 192/512/maskable icons
+sw.js                       offline shell cache (never caches the API)
 config.js                   API origin for the current deployment
-assets/css/tokens.css       design tokens, reset, base typography
-assets/css/app.css          layout and components
-assets/js/main.js           state, DOM updates, event wiring, rAF timer
+assets/css/tokens.css       design tokens, dark + light palettes, reset
+assets/css/app.css          layout, cards, chart, dialog and responsive rules
+assets/js/theme-boot.js     applies the saved theme before the first paint
+assets/js/main.js           state, DOM updates, events, timer, settings, export
 assets/js/feed.js           chained /api/live polling with backoff
-assets/js/api.js            fetch wrapper, API base URL and timeouts
-assets/js/chart-panel.js    Chart.js setup, buffers, window and visibility
+assets/js/api.js            fetch wrapper, bounds/summary/export, timeouts
+assets/js/chart-panel.js    Chart.js setup, buffers, window, theme refresh
 assets/js/format.js         duration, axis, temperature and delta formatting
 assets/vendor/chart.umd.min.js  Chart.js 4.5.1 (MIT, see CHARTJS-LICENSE.md)
+assets/img/logo-razi.svg    foundation mark used in the header
+assets/img/icon-*.png       PWA and apple-touch icons
 assets/img/favicon.svg      favicon
 ```
 
 All asset paths are relative, so the site can also be hosted under a sub-path.
+The manifest uses `start_url: "./"` and `scope: "./"` for the same reason.
 
 ## Data flow
 
@@ -85,8 +105,15 @@ All asset paths are relative, so the site can also be hosted under a sub-path.
   minutes. Requests are cancelled logically with a token so stale answers are
   ignored.
 - The counter is repainted with `requestAnimationFrame`, but only digits that
-  changed are touched. It is interpolated from the server's `elapsed_ms`, so it
-  stays smooth between polls and never depends on the browser's midnight.
+  changed are touched. It follows the server's `active_ms` (time covered by
+  samples) with a 0.7 s local projection so tenths stay smooth between polls.
+  It never moves backwards, and it freezes when no new sample arrives; the
+  server keeps the authoritative value, so a reload is exact. By contrast,
+  `elapsed_ms` is the wall-clock run span and is only used for the *Idle* stat.
+- The settings dialog fetches `/api/bounds` once, then `/api/summary` for the
+  selected range. Export reuses that range and downloads `/api/export` as a
+  blob, so the API error message (for example a 413 for an oversized range)
+  can be shown in the dialog.
 - The chart window is anchored to the newest recorded sample, so a stopped Pico
   still shows its last data instead of an empty chart.
 - Every API call is cross-origin, uses `credentials: 'omit'` and relies on the
@@ -98,10 +125,20 @@ All asset paths are relative, so the site can also be hosted under a sub-path.
 
 - surfaces (`--bg-0` … `--surface-3`), lines, three text levels;
 - semantic colours (`--accent`, `--warn`, `--danger`, `--info`);
-- channel identity `--ch-1` … `--ch-4` reused by cards, legend and chart;
+- channel identity `--ch-1` … `--ch-4` reused by cards, legend, card borders
+  and chart;
+- composite surfaces (`--page-bg`, `--panel-bg`, `--timer-bg`,
+  `--tooltip-bg`) that the light palette replaces as a whole;
 - spacing scale (4 px base), radii, elevation, motion tokens;
 - type scale with a fluid counter size `clamp(30px, min(11vw, 7.5vh), 96px)`
   that is capped by viewport height as well as width.
+
+`:root[data-theme="light"]` overrides the palette, including darker channel
+colours for contrast on white. The preference is stored as `furnace.theme`
+(`dark`, `light` or `system`); `theme-boot.js` resolves it synchronously in
+`<head>` so a light-mode phone never flashes a dark page. Switching theme calls
+`TemperatureChart.setTheme()`, which re-reads the tokens and recolours the
+datasets, grid and tooltip.
 
 Components only use these tokens. The layout is one viewport tall
 (`100dvh`, `overflow: hidden`) with three rows: timer, furnace grid, chart.
@@ -163,7 +200,17 @@ server {
         add_header Cache-Control "public, max-age=300";
     }
 
-    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://apitemp.futurefounderco.com https://apitemp.futurefounderco.com; base-uri 'none'; form-action 'none'" always;
+    # The worker and manifest are entry points: never cache them stale.
+    location = /sw.js {
+        add_header Cache-Control "no-cache";
+    }
+
+    location = /manifest.webmanifest {
+        default_type application/manifest+json;
+        add_header Cache-Control "public, max-age=3600";
+    }
+
+    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'; manifest-src 'self'; connect-src 'self' http://apitemp.futurefounderco.com https://apitemp.futurefounderco.com; base-uri 'none'; form-action 'none'" always;
 }
 ```
 
@@ -184,6 +231,15 @@ Notes:
   whenever you change the API origin. Hosts serve these files without
   `Cache-Control`, so a phone can keep an old origin for a while and report the
   API as unreachable while the desktop works.
+- Serve `manifest.webmanifest` as `application/manifest+json` and `sw.js` with
+  `Cache-Control: no-cache`; both must be reachable from the site root so the
+  worker's scope covers the whole dashboard. PWA installation and service
+  workers require HTTPS (or `localhost` for development).
+- Add `worker-src 'self'` (and `manifest-src 'self'` if the policy names
+  `default-src`) to the CSP above, otherwise the service worker is blocked.
+- **Bump `CACHE_VERSION` in `sw.js` on every shell change.** The worker serves
+  cached HTML first for navigation, so an installed phone keeps the previous
+  build until the cache name changes.
 - On a failure the status line prints the API origin, the reason the browser
   gave (unreachable, CORS, mixed content, timeout) and the page scheme. Ask the
   operator to photograph it: it separates a certificate problem from a CORS or
@@ -197,11 +253,28 @@ node --test tests/format.test.mjs tests/api-probe.test.mjs
 ```
 
 The tests cover the eight-digit counter, unbounded hours, the human-readable
-equivalent, axis labels across short and multi-day runs, delta/temperature
-formatting, and how `probeApi()` classifies a failed request (mixed content,
-CORS, timeout, no answer).
+equivalent, short durations used by the stat row, range timestamps, axis labels
+across short and multi-day runs, delta/temperature/count formatting, and how
+`probeApi()` classifies a failed request (mixed content, CORS, timeout, no
+answer).
+
+## PWA and offline behaviour
+
+- `manifest.webmanifest` declares `standalone`, `start_url: "./"` and three
+  icons (192, 512 and a 512 maskable). The 180 px PNG is linked as
+  `apple-touch-icon` for iOS.
+- `sw.js` precaches the shell (HTML, CSS, ES modules, Chart.js, logo and icons)
+  and deletes old caches on activate. Navigations are network-first with the
+  cached shell as fallback; static assets are stale-while-revalidate.
+- Requests under `/api/` (and every cross-origin request) bypass the cache, so
+  the dashboard never shows a stale temperature as if it were live. Offline it
+  renders the last shell and the normal *Backend offline* banner.
+- Settings → **App** uses `beforeinstallprompt` to show an install button. When
+  the browser has no prompt (iOS Safari, Firefox) it shows the Add to Home
+  Screen instructions instead.
 
 ## Browser support
 
 Current Chrome, Edge, Firefox and Safari. The design uses CSS `color-mix()` and
-ES modules; Internet Explorer is not supported.
+ES modules; Internet Explorer is not supported. Web Serial and PWA installation
+need Chrome or Edge; the dashboard itself runs everywhere.

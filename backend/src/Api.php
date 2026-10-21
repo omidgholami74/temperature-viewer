@@ -128,7 +128,21 @@ final class Api
 
         header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
         header('Access-Control-Allow-Headers: Content-Type, X-Api-Key');
+        // The dashboard reads the generated export filename from the response.
+        header('Access-Control-Expose-Headers: Content-Disposition');
         header('Access-Control-Max-Age: 600');
+    }
+
+    /**
+     * Start a CSV download. The caller writes rows with fputcsv() and exits.
+     */
+    public static function beginCsv(string $filename): void
+    {
+        http_response_code(200);
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: no-store');
+        header('X-Content-Type-Options: nosniff');
     }
 
     /**
@@ -243,7 +257,9 @@ final class Api
             return $default;
         }
 
-        if (!is_string($value) || !preg_match('/^-?\d{1,12}$/', $value)) {
+        // Epoch milliseconds need 13 digits; 16 leaves room for microseconds
+        // or a future-proof range without accepting arbitrary text.
+        if (!is_string($value) || !preg_match('/^-?\d{1,16}$/', $value)) {
             throw new ApiError(422, sprintf('Query parameter "%s" must be an integer', $name));
         }
 

@@ -22,6 +22,14 @@ matching certificate cannot be reached at all.
 
 ![Furnace dashboard](artifacts/dashboard-desktop.png)
 
+The dashboard is branded for the **Razi Applied Science Foundation** and ships
+with a light and a dark theme, range analysis, CSV export and an installable
+PWA manifest.
+
+![Settings and range analysis](artifacts/settings-analysis.png)
+
+![Light theme](artifacts/dashboard-light.png)
+
 ## What it does
 
 - Samples four K-type thermocouples every **0.1 s** (10 Hz). The Pico prints
@@ -29,24 +37,33 @@ matching certificate cannot be reached at all.
   uploads that file to the API in batches.
 - Stores every sample in SQLite through a small JSON API. No framework, no
   external database server.
-- Puts the **eight-digit run timer** `HH:MM:SS:T` at the top of the screen
-  (tenths of a second on the right) plus a human-readable equivalent below it
-  ("1 day, 2 hours, 0 minutes, 18.7 seconds").
+- Puts the **eight-digit recorded-time timer** `HH:MM:SS:T` at the top of the
+  screen (tenths of a second on the right) plus a human-readable equivalent
+  below it.
+- The timer follows **time covered by samples**, not the wall clock. It pauses
+  while the furnace sends nothing, never jumps forward when data resumes, and
+  keeps counting past 24 and 99 hours. A separate *Idle* stat shows the time
+  the run was open without data.
 - Shows the four temperatures as colour-coded cards under the timer and as four
-  live lines on the chart beneath them.
+  live lines on the chart beneath them. Each card is outlined in its chart
+  colour.
+- A **Settings** button opens a dialog with theme switching, per-furnace range
+  analysis (coldest, hottest, average, min/max per furnace), CSV export with
+  presets or custom date pickers, and the app-install action.
 - Fits one screen at every size: the page never scrolls, the chart absorbs the
   height that is left over and the cards reflow from four columns to two.
-- The timer is derived from the run start time, so it **never resets at 24
-  hours** and keeps counting past 99 hours.
 - Long windows are averaged inside SQLite into fixed time buckets, so the chart
   stays responsive even after days of 10 Hz data.
+- The dashboard is an installable **PWA**: add it to a phone home screen and it
+  opens full screen, with the shell still available offline.
 
 ## Architecture
 
 ```
 ┌──────────────────────────────┐       HTTPS + CORS        ┌──────────────────────────────┐
 │ temp.futurefounderco.com     │  GET /api/live, /history  │ apitemp.futurefounderco.com  │
-│ static dashboard (ui/)       │  POST /api/runs/reset     │ PHP API + SQLite (backend/)  │
+│ static dashboard (ui/)       │  GET /api/summary, /export │ PHP API + SQLite (backend/)  │
+│ + service worker + manifest  │  POST /api/runs/reset     │                              │
 └──────────────▲───────────────┘ ────────────────────────▶ └──────────────▲───────────────┘
                │                                                          │ POST /api/ingest
         ┌──────┴──────┐                                            ┌──────┴───────────────┐
@@ -68,7 +85,7 @@ matching certificate cannot be reached at all.
 | `collector/`| PC console app: serial/file capture, checkpointed upload to API   |
 | `serial-web/`| Browser dashboard reading the COM port directly (Web Serial)     |
 | `tests/`    | Node unit tests for the timer and formatting helpers             |
-| `artifacts/`| Dashboard screenshots                                           |
+| `artifacts/`| Dashboard, settings and serial screenshots                      |
 
 ## Quick start (no hardware)
 
@@ -142,10 +159,18 @@ Wiring, firmware upload and calibration are documented in
 - The tenths group renders a dim leading zero plus the live digit, so the
   display always has eight digit positions, exactly like `00:00:00:00`.
 - Hours are not masked: the field grows from `99` to `100` and beyond.
-- The value comes from `runs.started_at_ms` in the database, not from a browser
-  counter. Refreshing the page, rebooting the Pico, or crossing midnight does
-  not reset it.
-- "New run" closes the current run and starts a new one at the click time.
+- The value is `runs.active_ms`, the sum of the gaps between stored samples
+  (each gap capped at `FURNACE_MAX_SAMPLE_GAP_MS`, 3 s by default). It is not a
+  wall-clock counter: a Pico that stops sending freezes the timer instead of
+  inventing time, and the timer resumes from the same value when samples come
+  back.
+- Refreshing the page, rebooting the Pico, or crossing midnight does not reset
+  it. A reload shows the exact time the server recorded.
+- The chip says **Recording** while samples arrive and **Paused** after 2.5 s
+  without data. The *Idle* stat is the run's wall-clock span minus the recorded
+  time, so the operator can see how much of the firing was actually measured.
+- **Start new run** lives in Settings → Appearance. It closes the current run
+  and starts a new one at the click time.
 - Below the digits, the same duration is spelled out with days, hours, minutes
   and seconds.
 
@@ -160,6 +185,9 @@ The most important ones:
 | `FURNACE_DB`            | `backend/var/furnace.sqlite`  | SQLite file                      |
 | `FURNACE_INGEST_KEY`    | empty                         | Shared key the Pico must send    |
 | `FURNACE_ALLOWED_ORIGINS` | dashboard + localhost origins | Browser origins allowed by CORS |
+| `FURNACE_MAX_SAMPLE_GAP_MS` | `3000`                    | Longest silence still counted by the timer |
+| `FURNACE_EXPORT_MAX_ROWS` | `100000`                    | Largest CSV the API will build   |
+| `FURNACE_ANALYSIS_ROLLUP_HOURS` | `6`                  | Range above which the 1 s rollup is read |
 
 The UI reads its API origin from `ui/config.js`. The scheme follows the page,
 so the same file works for an http and an https dashboard:
@@ -171,6 +199,42 @@ window.FURNACE_CONFIG = {
 };
 ```
 
+## Analysis and export
+
+Settings → **Analysis** offers 1 h, 6 h, 24 h, 7 d, 30 d, *All* and *Custom*
+with two native date-time pickers. For the chosen range the server returns, per
+furnace:
+
+- minimum, maximum and average temperature;
+- the number of points;
+- the coldest and hottest furnace, and the average across all channels.
+
+Settings → **Export** downloads the **same range** as a UTF-8 CSV (with a BOM,
+so Excel opens it correctly). Columns are:
+
+```
+run_id, run_label, recorded_at_utc, epoch_ms, elapsed_s,
+  samples, ch1_c, ch2_c, ch3_c, ch4_c, faults
+```
+
+The resolution can be *Auto* (raw up to 6 h, 1 s averages up to 36 h, 1 minute
+averages beyond), or forced to raw / 1 s / 1 minute. Buckets are aligned to the
+start of the selected range and include a `samples` count. Oversized requests
+return `413` with a hint instead of a truncated file.
+
+## Install on a phone (PWA)
+
+The dashboard has a web app manifest, maskable PNG icons and a service worker,
+so Chrome/Edge on Android and desktop offer **Install app**. On iPhone/iPad open
+the page in Safari → Share → *Add to Home Screen*. Settings → **App** shows the
+install button when the browser supports the prompt and the Safari steps
+otherwise.
+
+The worker caches the dashboard shell for offline opening and never caches API
+responses: offline, the last screen renders with a *Backend offline* banner.
+Bump `CACHE_VERSION` in `ui/sw.js` whenever the shell changes, or installed
+phones keep the old HTML.
+
 ## Production deployment
 
 1. **API** — point `apitemp.futurefounderco.com` at `backend/` with PHP-FPM and
@@ -178,6 +242,10 @@ window.FURNACE_CONFIG = {
    The front controller answers only `/api/*`; `/` returns a small JSON banner.
 2. **UI** — point `temp.futurefounderco.com` at `ui/` as a plain static site.
    Do not proxy API calls; the browser calls `apitemp` directly and needs CORS.
+   Serve `manifest.webmanifest` as `application/manifest+json` and `sw.js`
+   with `Cache-Control: no-cache`, from the site root (the worker scope is the
+   folder that contains it), and keep the site on HTTPS: browsers only install
+   PWAs and register service workers on HTTPS or `localhost`.
 3. **CORS** — keep the dashboard origins in `FURNACE_ALLOWED_ORIGINS` on the API
    host. The built-in default lists both `http://temp.futurefounderco.com` and
    `https://temp.futurefounderco.com`; if you override the variable on the

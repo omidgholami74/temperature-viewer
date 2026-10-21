@@ -1,4 +1,5 @@
 import { TemperatureChart } from './chart-panel.js';
+import { TemperatureDropFilter } from './drop-filter.js';
 import {
   formatAge,
   formatCount,
@@ -6,6 +7,7 @@ import {
   formatDelta,
   formatDigits,
   formatHuman,
+  formatShortDuration,
   formatTemp,
 } from './format.js';
 
@@ -36,10 +38,14 @@ const AUTO_CONNECT = true;
 
 const WINDOWS = [60, 600, 3600, 21600, 86400, 0];
 const WINDOW_STORAGE_KEY = 'furnace.serial.window';
+const NOISE_STORAGE_KEY = 'furnace.serial.noise-filter';
 const DEFAULT_WINDOW = 600;
 const FAULT_SENTINEL = -1000;
 const STALE_MS = 2500;
 const LOST_MS = 15000;
+// Longest silence between frames that still counts as working time. The port
+// can stall for seconds; those seconds must not appear on the timer.
+const MAX_FRAME_GAP_MS = 3000;
 const FAULT_BITS = [
   [1, 'Open thermocouple'],
   [2, 'Short to GND'],
@@ -74,6 +80,7 @@ const el = {
   human: $('[data-role="human"]'),
   samples: $('[data-role="samples"]'),
   rate: $('[data-role="rate"]'),
+  idle: $('[data-role="idle"]'),
   age: $('[data-role="age"]'),
   legendButtons: $$('[data-legend]'),
   legendValues: [0, 1, 2, 3].map((index) => $(`[data-role="legend-value-${index}"]`)),
@@ -81,6 +88,12 @@ const el = {
   empty: $('[data-role="empty"]'),
   canvas: $('#chart'),
   toast: $('[data-role="toast"]'),
+  settingsButton: $('[data-role="settings"]'),
+  settingsDialog: $('[data-role="settings-dialog"]'),
+  settingsClose: $('[data-role="settings-close"]'),
+  noiseEnabled: $('[data-role="noise-enabled"]'),
+  noiseThreshold: $('[data-role="noise-threshold"]'),
+  noiseStatus: $('[data-role="noise-status"]'),
 };
 
 const state = {
@@ -96,6 +109,8 @@ let port = null;
 let reader = null;
 let running = false;
 let toastTimer = null;
+const noiseFilter = new TemperatureDropFilter();
+const NOISE_SETTINGS = { enabled: true, threshold: 60 };
 
 /* --- formatting helpers (same wording as the API dashboard) ------------- */
 
@@ -134,12 +149,16 @@ function trendFor(delta) {
 }
 
 function elapsedMs() {
+  return state.session?.activeMs ?? 0;
+}
+
+/** Wall-clock span of the session, used only to show idle time. */
+function wallMs() {
   if (!state.session) return 0;
 
-  // A stopped session freezes its counter instead of following the wall clock.
   const reference = state.session.stoppedAt ?? performance.now();
 
-  return reference - state.session.startedAt;
+  return Math.max(0, reference - state.session.startedAt);
 }
 
 /* --- rendering --------------------------------------------------------- */
@@ -207,6 +226,7 @@ function renderSession() {
   const elapsed = elapsedMs();
   const rate = session && elapsed > 5000 ? (state.samples / elapsed) * 1000 : null;
   setText(el.rate, rate ? `${rate.toFixed(1)} /s` : '—');
+  setText(el.idle, session ? formatShortDuration(Math.max(0, wallMs() - elapsed)) : '—');
 }
 
 function updateStatus() {
@@ -294,10 +314,13 @@ function startSession(uptime) {
     startedAtEpoch: Date.now(),
     baseUptime: uptime,
     lastUptime: uptime,
+    activeMs: 0,
     stoppedAt: undefined,
   };
   state.samples = 0;
   state.latest = null;
+  noiseFilter.configure(NOISE_SETTINGS);
+  noiseFilter.reset();
   chart?.clear();
   renderCards(null);
   updateLegend(null);
@@ -309,15 +332,26 @@ function applyFrame(frame) {
     startSession(frame.u);
   }
 
+  const previousUptime = state.session.lastUptime;
+  const gap = frame.u - previousUptime;
+
+  // Only real intervals between frames are working time. A long silence is
+  // capped, so the counter pauses instead of catching up in one jump.
+  if (gap > 0 && gap <= MAX_FRAME_GAP_MS) {
+    state.session.activeMs += gap;
+  }
+
   const tMs = frame.u - state.session.baseUptime;
   state.session.lastUptime = frame.u;
 
-  chart?.appendSamples([{ t_ms: tMs, temps: frame.temps }]);
+  const filteredTemps = noiseFilter.process(frame.temps);
+  chart?.appendSamples([{ t_ms: tMs, temps: filteredTemps }]);
 
   state.samples += 1;
   state.latest = {
     t_ms: tMs,
-    temps: frame.temps,
+    rawTemps: frame.temps,
+    temps: filteredTemps,
     faults: frame.faults,
     received_at: performance.now(),
   };
@@ -558,7 +592,57 @@ function startCounter() {
   requestAnimationFrame(frame);
 }
 
+function loadNoiseSettings() {
+  let saved = null;
+  try {
+    saved = JSON.parse(localStorage.getItem(NOISE_STORAGE_KEY) ?? 'null');
+  } catch {
+    saved = null;
+  }
+  const enabled = saved?.enabled !== false;
+  const threshold = [20, 40, 60, 80].includes(Number(saved?.threshold)) ? Number(saved.threshold) : 60;
+  NOISE_SETTINGS.enabled = enabled;
+  NOISE_SETTINGS.threshold = threshold;
+  noiseFilter.configure({ enabled, threshold });
+  el.noiseEnabled.checked = enabled;
+  el.noiseThreshold.value = String(threshold);
+  setText(el.noiseStatus, noiseStatusText(enabled, threshold));
+}
+
+function noiseStatusText(enabled, threshold) {
+  return `${enabled ? 'Enabled' : 'Disabled'} · ${enabled ? `ignores isolated drops of ${threshold}% or more` : 'all readings shown'}; raw frames and timer are unchanged.`;
+}
+
+function saveNoiseSettings() {
+  const enabled = el.noiseEnabled.checked;
+  const threshold = Number(el.noiseThreshold.value);
+  NOISE_SETTINGS.enabled = enabled;
+  NOISE_SETTINGS.threshold = threshold;
+  noiseFilter.configure({ enabled, threshold });
+
+  try {
+    localStorage.setItem(NOISE_STORAGE_KEY, JSON.stringify({ enabled, threshold }));
+  } catch {
+    // Apply for the current session if browser storage is unavailable.
+  }
+  // The next frame uses the new setting. Previously displayed history remains
+  // unchanged, and configuration never alters session time or raw frame count.
+  // Retain the currently displayed value as the baseline so changing settings
+  // during a pending spike cannot suddenly reveal that spike in the card.
+  noiseFilter.reset(state.latest?.temps ?? []);
+  setText(el.noiseStatus, noiseStatusText(enabled, threshold));
+  notify(`Noise filter ${enabled ? 'enabled' : 'disabled'}`);
+}
+
 function bindEvents() {
+  el.settingsButton?.addEventListener('click', () => el.settingsDialog.showModal());
+  el.settingsClose?.addEventListener('click', () => el.settingsDialog.close());
+  el.settingsDialog?.addEventListener('click', (event) => {
+    if (event.target === el.settingsDialog) el.settingsDialog.close();
+  });
+  el.noiseEnabled?.addEventListener('change', saveNoiseSettings);
+  el.noiseThreshold?.addEventListener('change', saveNoiseSettings);
+
   el.portButton?.addEventListener('click', () => {
     if (running) disconnect();
     else connect();
@@ -579,6 +663,7 @@ function bindEvents() {
 }
 
 function bootstrap() {
+  loadNoiseSettings();
   try {
     chart = new TemperatureChart(el.canvas, CHANNELS);
   } catch (error) {

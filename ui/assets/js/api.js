@@ -136,4 +136,84 @@ export const api = {
       timeout: 8000,
     });
   },
+
+  /** Absolute first/last recorded sample, used by the range pickers. */
+  bounds() {
+    return request(endpoint('/api/bounds'));
+  },
+
+  /**
+   * Min/max/average per furnace for an absolute range. Omitting the range
+   * analyses everything the server has stored.
+   */
+  summary({ fromMs = null, toMs = null } = {}) {
+    const params = new URLSearchParams();
+
+    if (fromMs !== null) {
+      params.set('from_ms', String(Math.round(fromMs)));
+    }
+
+    if (toMs !== null) {
+      params.set('to_ms', String(Math.round(toMs)));
+    }
+
+    const query = params.toString();
+    return request(endpoint(`/api/summary${query ? `?${query}` : ''}`), { timeout: 20000 });
+  },
+
+  /**
+   * Download a CSV for the range. Returns the blob and the filename the API
+   * chose, so the browser save dialog gets a meaningful name.
+   */
+  async exportData({ fromMs, toMs, resolution = 'auto' }) {
+    const params = new URLSearchParams({
+      from_ms: String(Math.round(fromMs)),
+      to_ms: String(Math.round(toMs)),
+      resolution,
+    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 90000);
+
+    try {
+      const response = await fetch(endpoint(`/api/export?${params}`), {
+        headers: { Accept: 'text/csv' },
+        cache: 'no-store',
+        credentials: 'omit',
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        let message = `Export failed (${response.status})`;
+
+        try {
+          const payload = await response.json();
+          message = payload?.error ?? message;
+        } catch {
+          // Not JSON: keep the status message.
+        }
+
+        throw new ApiError(message, response.status);
+      }
+
+      const disposition = response.headers.get('Content-Disposition') ?? '';
+      const match = /filename="?([^";]+)"?/i.exec(disposition);
+
+      return {
+        blob: await response.blob(),
+        filename: match?.[1] ?? 'furnace-export.csv',
+      };
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+
+      if (error?.name === 'AbortError') {
+        throw new ApiError('The export took too long; try a shorter range');
+      }
+
+      throw new ApiError('Backend unreachable');
+    } finally {
+      clearTimeout(timer);
+    }
+  },
 };

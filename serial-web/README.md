@@ -1,6 +1,7 @@
 # Serial web monitor
 
-The same dashboard as [`ui/`](../ui) — identical timer, cards, chart and design
+The same dashboard as [`ui/`](../ui) — Razi Applied Science Foundation branding,
+colour-matched card borders, recorded-time timer, cards, chart and design
 tokens, with the timer at the top and everything on one screen that never
 scrolls — fed directly from the USB serial port with the browser's Web Serial
 API. No backend, no collector, no database.
@@ -88,11 +89,33 @@ mapped in a Project File.
    fault). A Pico reboot (uptime going backwards) starts a new session.
 3. Frames are appended to the same `TemperatureChart` class used by `ui/`,
    using uptime differences, so the 0.1 s grid stays exact.
-4. Cards, legend, timer, window buttons and toasts run the same formatting
+4. The timer adds the gap between consecutive frames (capped at 3 s), so it
+   shows **recorded** time: unplugging the Pico or a silent port freezes it
+   instead of counting wall-clock time. The *Idle* stat shows how much of the
+   session had no frames.
+5. Cards, legend, timer, window buttons and toasts run the same formatting
    helpers (`format.js`) as the API dashboard.
 
+### Recorded-time timer
+
+The counter is not derived from `performance.now()` and does not keep running
+while the port is quiet. `state.session.activeMs` only grows by the uptime
+delta between two frames, and only when that delta is at most
+`MAX_FRAME_GAP_MS` (3000 ms). Disconnecting stops the counter; reconnecting
+opens a new session because the Pico's uptime restarts. This is the same rule
+the API applies in `runs.active_ms`, so both dashboards behave identically.
+
 Styles, `format.js` and `chart-panel.js` are copied from `ui/`, so the pages
-look identical. Change them in `ui/` first, then copy the files over.
+look identical. Change them in `ui/` first, then copy the files over:
+
+```bash
+cp ui/assets/css/tokens.css ui/assets/css/app.css serial-web/assets/css/
+cp ui/assets/js/format.js ui/assets/js/chart-panel.js serial-web/assets/js/
+cp ui/assets/img/logo-razi.svg ui/assets/img/favicon.svg serial-web/assets/img/
+```
+
+The copied `tokens.css` also contains the light palette, but this page never
+sets `data-theme`, so it is always the dark dashboard.
 
 For a quick check without hardware, open the browser console and run
 `furnaceSerial.applyFrame(furnaceSerial.parseLine('100,700,650,940,545'))`;
@@ -107,6 +130,7 @@ the cards and chart update exactly as they would from the port.
 | `assets/js/chart-panel.js`      | Chart, copied from `ui/`                   |
 | `assets/js/format.js`           | Number/timer formatting, copied from `ui/` |
 | `assets/css/`                   | Design tokens and layout, copied from `ui/`|
+| `assets/img/logo-razi.svg`      | Foundation mark, copied from `ui/`          |
 | `assets/vendor/chart.umd.min.js`| Chart.js 4, copied from `ui/`              |
 
 Nothing is written to disk; closing the tab ends the session. For a permanent

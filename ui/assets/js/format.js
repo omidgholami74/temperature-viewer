@@ -152,6 +152,54 @@ export function formatCount(value) {
   return Number.isFinite(numeric) ? countFormatter.format(numeric) : '0';
 }
 
+/** Compact duration for stats and range summaries: "3 h 12 m", "9.4 s". */
+export function formatShortDuration(milliseconds) {
+  const numeric = Number(milliseconds);
+
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return '0 s';
+  }
+
+  if (numeric < 10000) {
+    return `${(numeric / 1000).toFixed(1)} s`;
+  }
+
+  const totalSeconds = Math.round(numeric / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+
+  if (minutes < 60) {
+    return `${minutes} m ${pad2(totalSeconds % 60)} s`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+
+  if (hours < 48) {
+    return `${hours} h ${pad2(minutes % 60)} m`;
+  }
+
+  return `${Math.floor(hours / 24)} d ${pad2(hours % 24)} h`;
+}
+
+const stampFormatter = new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
+/** Full date and time for an export range, including the year. */
+export function formatStamp(milliseconds) {
+  const numeric = Number(milliseconds);
+
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return '—';
+  }
+
+  return stampFormatter.format(new Date(numeric));
+}
+
 export function formatDateTime(milliseconds) {
   const numeric = Number(milliseconds);
 

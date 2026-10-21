@@ -1,14 +1,23 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
-  <meta name="description" content="Live four-channel furnace temperature monitoring with a 0.1 second run timer.">
-  <title>Furnace Monitor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="Live four-channel furnace temperature monitoring with recorded-time counter, analysis and CSV export.">
+  <title>Furnace Monitor · Razi Applied Science Foundation</title>
+  <meta name="theme-color" content="#04080d" data-role="theme-color">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Razi Furnace">
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="assets/css/tokens.css">
-  <link rel="stylesheet" href="assets/css/app.css">
+  <link rel="apple-touch-icon" href="assets/img/icon-180.png">
+  <link rel="stylesheet" href="assets/css/tokens.css?v=4">
+  <link rel="stylesheet" href="assets/css/app.css?v=4">
+  <!-- Resolve the saved theme before the first paint, so a light-mode phone
+       never flashes the dark dashboard. -->
+  <script src="assets/js/theme-boot.js?v=4"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -16,14 +25,10 @@
   <div class="app-shell">
     <header class="app-bar">
       <div class="brand">
-        <span class="brand__mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-            <path d="M3 18V9M8.5 18V4M14 18v-7M19.5 18V7"></path>
-          </svg>
-        </span>
+        <img class="brand__logo" src="assets/img/logo-razi.svg" alt="" width="44" height="44">
         <div class="brand__text">
           <p class="eyebrow">MAX31855 · 4 channels</p>
-          <h1>Furnace Monitor</h1>
+          <h1>Razi Applied Science Foundation</h1>
         </div>
       </div>
 
@@ -36,11 +41,12 @@
           </div>
         </div>
 
-        <button class="btn btn--outline" type="button" data-role="new-run">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-            <path d="M12 5v14M5 12h14"></path>
+        <button class="btn btn--outline btn--settings" type="button" data-role="settings" aria-haspopup="dialog">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3.1"></circle>
+            <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.05A1.7 1.7 0 0 0 8.94 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.05A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.05A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.14.4.5.72.95.9H21a2 2 0 1 1 0 4h-.05a1.7 1.7 0 0 0-1.55 1.1Z"></path>
           </svg>
-          New run
+          <span class="btn__label">Settings</span>
         </button>
       </div>
     </header>
@@ -49,7 +55,7 @@
       <section class="timer-card panel" aria-labelledby="timer-title">
         <header class="timer-card__head">
           <div class="section-title">
-            <p class="eyebrow">Run timer</p>
+            <p class="eyebrow">Recorded time</p>
             <h2 id="timer-title">Elapsed time</h2>
           </div>
           <div class="timer-card__meta">
@@ -79,10 +85,12 @@
         </div>
 
         <p class="counter__human"><span class="counter__human-label">Equivalent</span> <span data-role="human">—</span></p>
+        <p class="timer-card__hint">Counts only time covered by samples. It pauses when the furnace sends nothing.</p>
 
         <div class="timer-card__stats">
-          <span class="stat"><span class="stat__label">Samples recorded</span><b class="stat__value" data-role="samples">0</b></span>
-          <span class="stat"><span class="stat__label">Sample rate</span><b class="stat__value" data-role="rate">—</b></span>
+          <span class="stat"><span class="stat__label">Samples</span><b class="stat__value" data-role="samples">0</b></span>
+          <span class="stat"><span class="stat__label"><span class="stat__full">Working rate</span><span class="stat__short">Rate</span></span><b class="stat__value" data-role="rate">—</b></span>
+          <span class="stat"><span class="stat__label"><span class="stat__full">Idle (no data)</span><span class="stat__short">Idle</span></span><b class="stat__value" data-role="idle">—</b></span>
           <span class="stat"><span class="stat__label">Last sample</span><b class="stat__value" data-role="age">—</b></span>
         </div>
       </section>
@@ -200,12 +208,206 @@
     </footer>
   </div>
 
+  <dialog class="dialog" data-role="settings-dialog" aria-labelledby="settings-title">
+    <div class="dialog__inner">
+      <header class="dialog__head">
+        <div class="section-title">
+          <p class="eyebrow">Razi Applied Science Foundation</p>
+          <h2 id="settings-title">Settings</h2>
+        </div>
+        <button class="icon-btn" type="button" data-role="settings-close" aria-label="Close settings">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M6 6l12 12M18 6 6 18"></path>
+          </svg>
+        </button>
+      </header>
+
+      <div class="tabs" role="tablist" aria-label="Settings sections">
+        <button class="tab" id="tab-btn-appearance" type="button" role="tab" aria-selected="true" aria-controls="tab-appearance" data-tab="appearance">Appearance</button>
+        <button class="tab" id="tab-btn-analysis" type="button" role="tab" aria-selected="false" aria-controls="tab-analysis" data-tab="analysis">Analysis</button>
+        <button class="tab" id="tab-btn-data" type="button" role="tab" aria-selected="false" aria-controls="tab-data" data-tab="data">Export</button>
+        <button class="tab" id="tab-btn-app" type="button" role="tab" aria-selected="false" aria-controls="tab-app" data-tab="app">App</button>
+      </div>
+
+      <div class="dialog__body">
+        <section class="tab-panel" id="tab-appearance" role="tabpanel" aria-labelledby="tab-btn-appearance" data-panel="appearance">
+          <div class="field">
+            <span class="field__label" id="theme-label">Theme</span>
+            <div class="segmented segmented--themes" role="group" aria-labelledby="theme-label" data-role="themes">
+              <button type="button" data-theme-choice="dark" aria-pressed="true">Dark</button>
+              <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
+              <button type="button" data-theme-choice="system" aria-pressed="false">System</button>
+            </div>
+            <p class="field__hint">Saved on this device only. System follows the phone setting automatically.</p>
+          </div>
+
+          <div class="settings-row settings-row--noise">
+            <div class="settings-row__text">
+              <p class="settings-row__title">Noise filter</p>
+              <p class="settings-row__hint">Ignore a one-sample temperature drop above this threshold. A second low sample confirms the drop is real and displays it.</p>
+            </div>
+            <div class="noise-controls">
+              <label class="noise-toggle"><input type="checkbox" data-role="noise-enabled" checked><span>Enabled</span></label>
+              <label class="noise-threshold"><span class="field__label">Drop threshold</span><select class="select" data-role="noise-threshold"><option value="20">20%</option><option value="40">40%</option><option value="60" selected>60%</option><option value="80">80%</option></select></label>
+            </div>
+            <p class="settings-row__hint" data-role="noise-status" aria-live="polite">Enabled · ignores isolated drops of 60% or more. Stored readings and timer remain unchanged.</p>
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-row__text">
+              <p class="settings-row__title">Recording</p>
+              <p class="settings-row__hint">Close the current run and start a new timer. Recorded data stays available to analyse or export.</p>
+            </div>
+            <button class="btn btn--danger" type="button" data-role="new-run">Start new run</button>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="tab-analysis" role="tabpanel" aria-labelledby="tab-btn-analysis" data-panel="analysis" hidden>
+          <div class="range-block">
+            <span class="field__label">Time range</span>
+            <div class="range-presets" role="group" aria-label="Time range" data-role="range-presets">
+              <button type="button" data-range="3600">1 h</button>
+              <button type="button" data-range="21600">6 h</button>
+              <button type="button" data-range="86400" aria-pressed="true">24 h</button>
+              <button type="button" data-range="604800">7 d</button>
+              <button type="button" data-range="2592000">30 d</button>
+              <button type="button" data-range="0">All</button>
+              <button type="button" data-range="custom" aria-pressed="false">Custom</button>
+            </div>
+
+            <div class="range-custom" data-role="range-custom" hidden>
+              <label class="field field--inline">
+                <span class="field__label">From</span>
+                <input type="datetime-local" step="60" data-role="range-from">
+              </label>
+              <label class="field field--inline">
+                <span class="field__label">To</span>
+                <input type="datetime-local" step="60" data-role="range-to">
+              </label>
+              <button class="btn btn--compact" type="button" data-role="range-apply">Apply</button>
+            </div>
+
+            <p class="range-note" data-role="range-note">Open the analysis to load the latest 24 hours.</p>
+          </div>
+
+          <div class="analysis-highlights">
+            <article class="highlight">
+              <span class="highlight__label">Coldest</span>
+              <b class="highlight__value" data-role="analysis-cold">—</b>
+              <span class="highlight__meta" data-role="analysis-cold-meta">per furnace</span>
+            </article>
+            <article class="highlight">
+              <span class="highlight__label">Hottest</span>
+              <b class="highlight__value" data-role="analysis-hot">—</b>
+              <span class="highlight__meta" data-role="analysis-hot-meta">per furnace</span>
+            </article>
+            <article class="highlight">
+              <span class="highlight__label">Average</span>
+              <b class="highlight__value" data-role="analysis-avg">—</b>
+              <span class="highlight__meta">all channels</span>
+            </article>
+          </div>
+
+          <div class="analysis-table" data-role="analysis-table" aria-live="polite">
+            <div class="analysis-table__head" aria-hidden="true">
+              <span>Furnace</span><span>Min</span><span>Max</span><span>Avg</span><span>Points</span>
+            </div>
+            <div class="analysis-row" data-channel-row="0">
+              <span class="analysis-row__name"><span class="furnace-card__dot" aria-hidden="true"></span>Furnace 1</span>
+              <span data-role="row-min-0">—</span>
+              <span data-role="row-max-0">—</span>
+              <span data-role="row-avg-0">—</span>
+              <span data-role="row-points-0">—</span>
+            </div>
+            <div class="analysis-row" data-channel-row="1">
+              <span class="analysis-row__name"><span class="furnace-card__dot" aria-hidden="true"></span>Furnace 2</span>
+              <span data-role="row-min-1">—</span>
+              <span data-role="row-max-1">—</span>
+              <span data-role="row-avg-1">—</span>
+              <span data-role="row-points-1">—</span>
+            </div>
+            <div class="analysis-row" data-channel-row="2">
+              <span class="analysis-row__name"><span class="furnace-card__dot" aria-hidden="true"></span>Furnace 3</span>
+              <span data-role="row-min-2">—</span>
+              <span data-role="row-max-2">—</span>
+              <span data-role="row-avg-2">—</span>
+              <span data-role="row-points-2">—</span>
+            </div>
+            <div class="analysis-row" data-channel-row="3">
+              <span class="analysis-row__name"><span class="furnace-card__dot" aria-hidden="true"></span>Furnace 4</span>
+              <span data-role="row-min-3">—</span>
+              <span data-role="row-max-3">—</span>
+              <span data-role="row-avg-3">—</span>
+              <span data-role="row-points-3">—</span>
+            </div>
+          </div>
+
+          <p class="settings-status" data-role="analysis-status">Nothing loaded yet.</p>
+        </section>
+
+        <section class="tab-panel" id="tab-data" role="tabpanel" aria-labelledby="tab-btn-data" data-panel="data" hidden>
+          <p class="settings-row__title">Download recorded data</p>
+          <p class="settings-row__hint">
+            A CSV file with one row per sample — time, furnace temperatures and faults.
+            Long ranges are averaged into fixed buckets so the file opens fast in Excel.
+          </p>
+
+          <div class="export-range">
+            <span class="field__label">Range</span>
+            <p class="export-range__value" data-role="export-range">No range selected.</p>
+          </div>
+
+          <label class="field field--inline">
+            <span class="field__label">Resolution</span>
+            <select class="select" data-role="export-resolution">
+              <option value="auto" selected>Auto — best for the range</option>
+              <option value="raw">Raw — every sample</option>
+              <option value="1s">1 second averages</option>
+              <option value="1min">1 minute averages</option>
+            </select>
+          </label>
+
+          <p class="range-note" data-role="export-note">
+            Auto keeps raw samples up to 6 hours, 1 second averages up to 36 hours and 1 minute averages beyond that.
+          </p>
+
+          <div class="settings-actions">
+            <button class="btn btn--primary" type="button" data-role="export">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path>
+              </svg>
+              <span>Download CSV</span>
+            </button>
+          </div>
+          <p class="settings-status" data-role="data-status">Pick a range on the Analysis tab. The same range is used here.</p>
+        </section>
+
+        <section class="tab-panel" id="tab-app" role="tabpanel" aria-labelledby="tab-btn-app" data-panel="app" hidden>
+          <p class="settings-row__title">Install on this phone</p>
+          <p class="settings-row__hint">
+            Add the dashboard to the home screen to open it full screen, without the browser
+            bar. The last screen still opens when the network is down; live data needs the API.
+          </p>
+
+          <div class="settings-actions">
+            <button class="btn btn--primary" type="button" data-role="install" hidden>Install app</button>
+          </div>
+
+          <p class="settings-status" data-role="install-hint">
+            On iPhone or iPad: open this page in Safari, tap Share, then “Add to Home Screen”.
+            On Android or desktop Chrome: use the browser menu → “Install app”.
+          </p>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
   <div class="toast" data-role="toast" role="status" aria-live="polite"></div>
 
   <!-- ?v= busts stale copies of the API origin on already-open phones and tabs;
        bump it whenever config.js or main.js changes meaning. -->
-  <script src="config.js?v=2"></script>
+  <script src="config.js?v=4"></script>
   <script src="assets/vendor/chart.umd.min.js"></script>
-  <script type="module" src="assets/js/main.js?v=2"></script>
+  <script type="module" src="assets/js/main.js?v=4"></script>
 </body>
 </html>

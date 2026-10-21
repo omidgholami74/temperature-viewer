@@ -15,6 +15,19 @@
   --surface-3: #142231;
   --surface-glass: rgba(11, 19, 29, 0.72);
 
+  /* Composite surfaces, swapped as a whole by the light theme. */
+  --page-bg:
+    radial-gradient(1100px 620px at 14% -12%, rgba(56, 224, 165, 0.09), transparent 62%),
+    radial-gradient(900px 520px at 96% -4%, rgba(73, 189, 240, 0.07), transparent 58%),
+    linear-gradient(180deg, #070d15 0%, #05090f 45%, #04080d 100%);
+  --grid-line: rgba(255, 255, 255, 0.016);
+  --panel-bg: linear-gradient(165deg, rgba(17, 29, 42, 0.92), rgba(8, 14, 21, 0.96));
+  --timer-bg:
+    radial-gradient(120% 130% at 50% 0%, rgba(56, 224, 165, 0.08), transparent 62%),
+    linear-gradient(180deg, rgba(3, 8, 12, 0.72), rgba(6, 12, 18, 0.5));
+  --tooltip-bg: rgba(7, 13, 21, 0.96);
+  --tooltip-text: #e9f2fb;
+
   /* Lines */
   --line: rgba(143, 172, 202, 0.13);
   --line-strong: rgba(143, 172, 202, 0.24);
@@ -77,6 +90,62 @@
 }
 
 /* =========================================================================
+   Light theme
+   Chart, card and legend colours are darker here: the same mint that glows on
+   a night screen has too little contrast on white.
+   ========================================================================= */
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-0: #eef3f9;
+  --bg-1: #f6f9fd;
+  --surface-1: #ffffff;
+  --surface-2: #ffffff;
+  --surface-3: #edf3fa;
+  --surface-glass: rgba(255, 255, 255, 0.82);
+
+  --page-bg:
+    radial-gradient(1000px 560px at 8% -14%, rgba(15, 159, 112, 0.1), transparent 60%),
+    radial-gradient(880px 520px at 98% -6%, rgba(18, 128, 196, 0.09), transparent 58%),
+    linear-gradient(180deg, #f7fafd 0%, #eef3f9 55%, #e9eff7 100%);
+  --grid-line: rgba(22, 45, 70, 0.045);
+  --panel-bg: linear-gradient(165deg, #ffffff, #f4f8fd);
+  --timer-bg:
+    radial-gradient(120% 130% at 50% 0%, rgba(15, 159, 112, 0.09), transparent 62%),
+    linear-gradient(180deg, #fbfdff, #eef4fa);
+  --tooltip-bg: rgba(255, 255, 255, 0.98);
+  --tooltip-text: #122033;
+
+  --line: rgba(22, 45, 70, 0.13);
+  --line-strong: rgba(22, 45, 70, 0.22);
+  --line-faint: rgba(22, 45, 70, 0.07);
+
+  --text-1: #122033;
+  --text-2: #405468;
+  --text-3: #6b8095;
+
+  --accent: #0f9f70;
+  --accent-dim: rgba(15, 159, 112, 0.13);
+  --info: #127cc0;
+  --warn: #b06d0b;
+  --danger: #d62d44;
+
+  --ch-1: #0e9c6e;
+  --ch-2: #147fc2;
+  --ch-3: #b06d0b;
+  --ch-4: #7a4fd0;
+
+  --shadow-panel: inset 0 1px 0 #ffffff, 0 22px 44px -32px rgba(22, 45, 70, 0.38);
+  --glow-accent: 0 0 0 1px rgba(15, 159, 112, 0.25), 0 0 24px -8px rgba(15, 159, 112, 0.35);
+}
+
+:root[data-theme="light"] ::selection {
+  background: rgba(15, 159, 112, 0.2);
+  color: #082019;
+}
+
+/* =========================================================================
    Reset
    ========================================================================= */
 
@@ -94,10 +163,7 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
-  background:
-    radial-gradient(1100px 620px at 14% -12%, rgba(56, 224, 165, 0.09), transparent 62%),
-    radial-gradient(900px 520px at 96% -4%, rgba(73, 189, 240, 0.07), transparent 58%),
-    linear-gradient(180deg, #070d15 0%, #05090f 45%, #04080d 100%);
+  background: var(--page-bg);
   background-attachment: fixed;
   color: var(--text-1);
   font-family: var(--font-sans);
@@ -115,8 +181,8 @@ body::before {
   z-index: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.016) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.016) 1px, transparent 1px);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 72px 72px;
   mask-image: radial-gradient(ellipse at 50% 0%, #000 0%, transparent 78%);
 }

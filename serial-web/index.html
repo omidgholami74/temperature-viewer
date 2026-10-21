@@ -16,14 +16,10 @@
   <div class="app-shell">
     <header class="app-bar">
       <div class="brand">
-        <span class="brand__mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-            <path d="M3 18V9M8.5 18V4M14 18v-7M19.5 18V7"></path>
-          </svg>
-        </span>
+        <img class="brand__logo" src="assets/img/logo-razi.svg" alt="" width="44" height="44">
         <div class="brand__text">
           <p class="eyebrow">MAX31855 · USB serial</p>
-          <h1>Furnace Monitor</h1>
+          <h1>Razi Applied Science Foundation</h1>
         </div>
       </div>
 
@@ -36,6 +32,9 @@
           </div>
         </div>
 
+        <button class="btn btn--outline btn--settings" type="button" data-role="settings" aria-haspopup="dialog">
+          <span aria-hidden="true">⚙</span><span class="btn__label">Settings</span>
+        </button>
         <button class="btn btn--outline" type="button" data-role="port">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
             <path d="M9 3v5m6-5v5M6 8h12v5a6 6 0 0 1-12 0V8Zm6 11v3"></path>
@@ -49,7 +48,7 @@
       <section class="timer-card panel" aria-labelledby="timer-title">
         <header class="timer-card__head">
           <div class="section-title">
-            <p class="eyebrow">Session timer</p>
+            <p class="eyebrow">Recorded time</p>
             <h2 id="timer-title">Elapsed time</h2>
           </div>
           <div class="timer-card__meta">
@@ -79,10 +78,12 @@
         </div>
 
         <p class="counter__human"><span class="counter__human-label">Equivalent</span> <span data-role="human">—</span></p>
+        <p class="timer-card__hint">Counts only time covered by serial frames. It pauses when the port goes quiet.</p>
 
         <div class="timer-card__stats">
-          <span class="stat"><span class="stat__label">Samples read</span><b class="stat__value" data-role="samples">0</b></span>
-          <span class="stat"><span class="stat__label">Sample rate</span><b class="stat__value" data-role="rate">—</b></span>
+          <span class="stat"><span class="stat__label">Samples</span><b class="stat__value" data-role="samples">0</b></span>
+          <span class="stat"><span class="stat__label"><span class="stat__full">Working rate</span><span class="stat__short">Rate</span></span><b class="stat__value" data-role="rate">—</b></span>
+          <span class="stat"><span class="stat__label"><span class="stat__full">Idle (no data)</span><span class="stat__short">Idle</span></span><b class="stat__value" data-role="idle">—</b></span>
           <span class="stat"><span class="stat__label">Last sample</span><b class="stat__value" data-role="age">—</b></span>
         </div>
       </section>
@@ -189,7 +190,7 @@
 
         <p class="chart-note">
           Values arrive straight from the USB serial port, ten per second. Nothing is stored:
-          the chart keeps the current browser session only.
+          the chart and the timer keep the current browser session only.
         </p>
       </section>
     </main>
@@ -199,6 +200,28 @@
       <span>Prototype monitor, not a safety-rated furnace controller.</span>
     </footer>
   </div>
+
+  <dialog class="dialog" data-role="settings-dialog" aria-labelledby="settings-title">
+    <div class="dialog__inner">
+      <header class="dialog__head">
+        <div class="section-title"><p class="eyebrow">Razi Applied Science Foundation</p><h2 id="settings-title">Settings</h2></div>
+        <button class="icon-btn" type="button" data-role="settings-close" aria-label="Close settings">×</button>
+      </header>
+      <div class="dialog__body">
+        <section class="tab-panel">
+          <div class="field">
+            <span class="field__label" id="noise-label">Temperature drop filter</span>
+            <p class="field__hint">Ignore an isolated one-frame drop above this threshold. If the next sample remains low, the drop is treated as real and displayed.</p>
+          </div>
+          <div class="noise-controls">
+            <label class="noise-toggle"><input type="checkbox" data-role="noise-enabled" checked><span>Enabled</span></label>
+            <label class="noise-threshold"><span class="field__label">Drop threshold</span><select class="select" data-role="noise-threshold"><option value="20">20%</option><option value="40">40%</option><option value="60" selected>60%</option><option value="80">80%</option></select></label>
+          </div>
+          <p class="settings-status" data-role="noise-status" aria-live="polite">Enabled · ignores isolated drops of 60% or more. Raw frames and timer remain unchanged.</p>
+        </section>
+      </div>
+    </div>
+  </dialog>
 
   <div class="toast" data-role="toast" role="status" aria-live="polite"></div>
 

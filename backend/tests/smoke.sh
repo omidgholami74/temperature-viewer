@@ -140,6 +140,69 @@ assert_eq "$(echo "${history}" | json_get source)" "raw" "history source"
 POINTS="$("${PHP_BIN}" -r '$d = json_decode(stream_get_contents(STDIN), true); echo count($d["points"]);' <<<"${history}")"
 [[ "${POINTS}" -ge 8 && "${POINTS}" -le 10 ]] || fail "history point count (got ${POINTS})"
 
+# --- data-driven timer ---------------------------------------------------
+# Ten samples 100 ms apart are 900 ms of recorded work, not one second of
+# wall-clock time.
+request GET /api/live > /dev/null
+live="$(cat "${TMP_DIR}/body")"
+assert_eq "$(echo "${live}" | json_get run.active_ms)" "900" "active time is derived from sample spacing"
+
+# A silence longer than the configured cap (3 s) must not be counted.
+sleep 4
+late_payload="$("${PHP_BIN}" -r 'echo json_encode(["samples" => [["u" => 5900, "t" => [705, 715, 725, 735], "f" => [0, 0, 0, 0]]]]);')"
+status="$(request POST /api/ingest "${late_payload}")"
+assert_eq "${status}" "200" "late sample accepted"
+request GET /api/live > /dev/null
+assert_eq "$(cat "${TMP_DIR}/body" | json_get run.active_ms)" "3900" "a 4 s silence is capped, not counted"
+
+# --- bounds --------------------------------------------------------------
+status="$(request GET "/api/bounds")"
+assert_eq "${status}" "200" "bounds status"
+bounds="$(cat "${TMP_DIR}/body")"
+assert_eq "$(echo "${bounds}" | json_get runs)" "1" "bounds run count"
+BOUNDS_LAST="$(echo "${bounds}" | json_get last_ms)"
+[[ "${BOUNDS_LAST}" -gt 0 ]] || fail "bounds last timestamp should be positive"
+
+# --- analysis ------------------------------------------------------------
+status="$(request GET "/api/summary")"
+assert_eq "${status}" "200" "summary status"
+summary="$(cat "${TMP_DIR}/body")"
+assert_eq "$(echo "${summary}" | json_get samples)" "11" "summary sample count"
+assert_eq "$(echo "${summary}" | json_get runs)" "1" "summary run count"
+assert_eq "$(echo "${summary}" | json_get channels.0.min)" "700" "coldest start temperature"
+assert_eq "$(echo "${summary}" | json_get channels.0.max)" "705" "warmest start temperature"
+assert_eq "$(echo "${summary}" | json_get coldest.channel)" "0" "coldest furnace"
+assert_eq "$(echo "${summary}" | json_get hottest.channel)" "3" "hottest furnace"
+assert_eq "$(echo "${summary}" | json_get hottest.value)" "735" "hottest value"
+
+status="$(request GET "/api/summary?from_ms=1&to_ms=2")"
+assert_eq "$(echo "$(cat "${TMP_DIR}/body")" | json_get samples)" "0" "summary outside the data is empty"
+
+status="$(request GET "/api/summary?from_ms=10&to_ms=1")"
+assert_eq "${status}" "422" "reversed range is rejected"
+
+status="$(request GET "/api/summary?from_ms=abc")"
+assert_eq "${status}" "422" "non-numeric range is rejected"
+
+# --- CSV export ----------------------------------------------------------
+status="$(request GET "/api/export?resolution=raw")"
+assert_eq "${status}" "200" "raw export status"
+grep -qi '^Content-Type: text/csv' "${TMP_DIR}/headers" || fail "export is not served as CSV"
+grep -qi '^Content-Disposition: attachment; filename="furnace-' "${TMP_DIR}/headers" \
+  || fail "export filename is missing"
+head -c 3 "${TMP_DIR}/body" | grep -q $'\xEF\xBB\xBF' || fail "export lacks a UTF-8 BOM for Excel"
+grep -q 'ch1_c,ch2_c,ch3_c,ch4_c' "${TMP_DIR}/body" || fail "export header is missing channels"
+EXPORT_ROWS="$(grep -c '^1,' "${TMP_DIR}/body" || true)"
+assert_eq "${EXPORT_ROWS}" "11" "raw export row count"
+
+status="$(request GET "/api/export?resolution=1s")"
+assert_eq "${status}" "200" "1 s export status"
+SECOND_ROWS="$(grep -c '^1,' "${TMP_DIR}/body" || true)"
+[[ "${SECOND_ROWS}" -lt "11" ]] || fail "1 s export should aggregate rows (got ${SECOND_ROWS})"
+
+status="$(request GET "/api/export?resolution=hourly")"
+assert_eq "${status}" "422" "unknown resolution is rejected"
+
 # --- validation ----------------------------------------------------------
 status="$(request POST /api/ingest '{"samples":[]}')"
 assert_eq "${status}" "422" "empty batch is rejected"

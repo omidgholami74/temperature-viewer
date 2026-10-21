@@ -36,6 +36,9 @@ php -S 0.0.0.0:8080 -t . index.php
 | `FURNACE_INGEST_KEY`               | empty (open)                                                          | Value the device must send as `X-Api-Key`      |
 | `FURNACE_RAW_RETENTION_HOURS`      | `48`                                                                  | Raw 10 Hz rows kept before pruning             |
 | `FURNACE_AGGREGATE_RETENTION_DAYS` | `180`                                                                 | One-second rollup rows kept                    |
+| `FURNACE_MAX_SAMPLE_GAP_MS`        | `3000`                                                                | Longest silence added to the run's `active_ms` |
+| `FURNACE_ANALYSIS_ROLLUP_HOURS`    | `6`                                                                   | Range above which analysis reads the 1 s rollup |
+| `FURNACE_EXPORT_MAX_ROWS`          | `100000`                                                              | Largest CSV the export may produce             |
 
 Configuration lives in `config.php` and only reads environment variables, so
 the same files work locally and on the production host. On the API server,
@@ -125,6 +128,7 @@ Used by the dashboard every 250 ms.
     "started_at_ms": 1792429503836,
     "ended_at_ms": null,
     "elapsed_ms": 93627817,
+    "active_ms": 93590000,
     "running": true,
     "sample_count": 93600
   },
@@ -138,6 +142,12 @@ Used by the dashboard every 250 ms.
 
 `samples` contains only frames newer than `since` (up to 600). `resync: true`
 tells the client to reload history instead of appending.
+
+`elapsed_ms` is the wall-clock age of the run. `active_ms` is the time the
+furnace actually produced data: ingest adds the gap between consecutive
+samples, capped at `FURNACE_MAX_SAMPLE_GAP_MS`, so a silent Pico pauses the
+upstream timer instead of inflating it. The dashboard counter uses
+`active_ms`; `elapsed_ms` drives the *Idle* stat.
 
 ### `GET /api/history?window=<seconds>&max_points=<n>&run=<id>`
 
@@ -162,6 +172,68 @@ run.
   still shows its last data instead of an empty chart.
 - `max_points` is capped at 2000 and defaults to 1200.
 
+### `GET /api/bounds`
+
+Cheap absolute bounds of stored data, used by the date pickers:
+
+```json
+{ "first_ms": 1792429503836, "last_ms": 1792523131653, "runs": 2 }
+```
+
+Only runs that contain samples are counted. An empty database returns zeros.
+
+### `GET /api/summary?from_ms=<ms>&to_ms=<ms>`
+
+Per-channel analysis over an absolute range. Both parameters are optional;
+without them the whole database is summarised. Ranges longer than
+`FURNACE_ANALYSIS_ROLLUP_HOURS` read the 1 s rollup, with a raw fallback before
+maintenance has run.
+
+```json
+{
+  "from_ms": 1792429503836,
+  "to_ms": 1792523131653,
+  "bounds": { "first_ms": 1792429503836, "last_ms": 1792523131653, "runs": 2 },
+  "resolution": "raw",
+  "samples": 19220,
+  "runs": 2,
+  "channels": [
+    { "channel": 0, "samples": 19220, "min": 760.6, "max": 807.0, "avg": 787.5 },
+    { "channel": 1, "samples": 19220, "min": 701.0, "max": 739.0, "avg": 723.5 },
+    { "channel": 2, "samples": 19100, "min": 905.2, "max": 941.5, "avg": 929.2 },
+    { "channel": 3, "samples": 19220, "min": 624.0, "max": 653.1, "avg": 637.4 }
+  ],
+  "coldest": { "channel": 3, "value": 624.0 },
+  "hottest": { "channel": 2, "value": 941.5 },
+  "average": 769.1
+}
+```
+
+The range is inclusive of both timestamps and is applied across every run that
+overlaps it, using absolute time (`runs.started_at_ms + readings.t_ms`).
+`channel` is 0-based and matches the UI cards.
+
+### `GET /api/export?from_ms=<ms>&to_ms=<ms>&resolution=auto|raw|1s|1min`
+
+Streams a UTF-8 CSV (BOM included for Excel). `auto` keeps raw rows up to 6 h,
+1 s averages up to 36 h and 1 minute averages beyond; the other values force a
+resolution. Buckets are aligned to the start of the selected range.
+
+```
+run_id,run_label,recorded_at_utc,epoch_ms,elapsed_s,samples,ch1_c,ch2_c,ch3_c,ch4_c,faults
+```
+
+- `recorded_at_utc` is ISO 8601 UTC with milliseconds; `epoch_ms` is the same
+  instant for tools that prefer integers.
+- `elapsed_s` is seconds from that run's start, not from the selected range.
+- `samples` is 1 for raw rows and the bucket count for averaged rows.
+- `faults` is `f1;f2;f3;f4` on raw rows and empty on averaged rows, because a
+  rollup cannot represent a fault.
+
+If the file would exceed `FURNACE_EXPORT_MAX_ROWS`, the endpoint answers `413`
+with `{error, details: {rows, max_rows, hint}}` before writing a byte; it never
+truncates silently.
+
 ### `POST /api/runs/reset`
 
 Starts a new run and freezes the previous one. Optional body:
@@ -175,7 +247,8 @@ The database path is never exposed.
 ## Storage model
 
 ```
-runs        one row per firing; started_at_ms drives the dashboard timer
+runs        one row per firing; started_at_ms is the wall-clock start,
+            active_ms is the time covered by samples (the dashboard timer)
 readings    one row per 0.1 s frame: run_id, t_ms, received_at_ms, ch1..ch4, faults
 readings_1s per-second averages written by the maintenance job (long retention)
 meta        schema version and rollup checkpoint
@@ -294,5 +367,6 @@ PHP_BIN=php bash tests/smoke.sh
 
 The script creates a temporary database and starts two `php -S` servers
 (unkeyed and keyed). It checks ingestion, incremental live data, history,
-validation errors, CORS headers and preflights, origin-checked reset, the
-API-only root, maintenance and API-key enforcement.
+the data-driven `active_ms` (including the gap cap), bounds, range analysis,
+raw and averaged CSV exports, validation errors, CORS headers and preflights,
+origin-checked reset, the API-only root, maintenance and API-key enforcement.

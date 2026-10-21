@@ -51,6 +51,9 @@ final class Database
     /**
      * Apply the idempotent schema. Called on every connection, which costs
      * well under a millisecond thanks to "IF NOT EXISTS".
+     *
+     * Older databases predate the data-driven timer, so the run table gains
+     * its active_ms column here and the existing runs are backfilled once.
      */
     public static function migrate(PDO $pdo): void
     {
@@ -61,6 +64,41 @@ final class Database
         }
 
         $pdo->exec($schema);
+
+        $columns = $pdo->query('PRAGMA table_info(runs)')->fetchAll();
+        $names = array_column($columns, 'name');
+
+        if (!in_array('active_ms', $names, true)) {
+            $pdo->exec('ALTER TABLE runs ADD COLUMN active_ms INTEGER NOT NULL DEFAULT 0');
+            self::backfillActiveMs($pdo);
+        }
+
+        if ((int) (self::meta($pdo, 'schema_version') ?? 0) < 2) {
+            self::setMeta($pdo, 'schema_version', '2');
+        }
+    }
+
+    /**
+     * Estimate a run's recorded time from its existing samples.
+     *
+     * Only gaps between consecutive samples count, capped just like ingest:
+     * a long shutdown between two samples is not working time.
+     */
+    private static function backfillActiveMs(PDO $pdo, int $maxGapMs = 3000): void
+    {
+        $statement = $pdo->prepare(
+            'UPDATE runs SET active_ms = (
+                SELECT COALESCE(SUM(CASE WHEN d > 0 AND d <= ? THEN d ELSE 0 END), 0)
+                FROM (
+                    SELECT t_ms - LAG(t_ms, 1, t_ms) OVER (ORDER BY t_ms) AS d
+                    FROM readings WHERE run_id = runs.id
+                )
+             )',
+        );
+        // The gap is compared with a computed column, which has no affinity:
+        // binding it as text would make every integer gap compare as smaller.
+        $statement->bindValue(1, $maxGapMs, PDO::PARAM_INT);
+        $statement->execute();
     }
 
     /**

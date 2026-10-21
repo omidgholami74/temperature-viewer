@@ -31,6 +31,9 @@ try {
                 'GET /api/health',
                 'GET /api/live?since=<id>&run=<id>',
                 'GET /api/history?window=<seconds>&max_points=<n>',
+                'GET /api/bounds',
+                'GET /api/summary?from_ms=<ms>&to_ms=<ms>',
+                'GET /api/export?from_ms=<ms>&to_ms=<ms>&resolution=auto|raw|1s|1min',
                 'POST /api/ingest',
                 'POST /api/runs/reset',
             ],
@@ -190,6 +193,198 @@ function handleApi(string $method, string $route, array $config): never
                 'points' => $points,
             ]);
 
+        case 'GET /bounds':
+            Api::json($readings->bounds());
+
+        case 'GET /summary':
+            $bounds = $readings->bounds();
+            [$fromMs, $toMs] = resolveRange($bounds);
+
+            if ($fromMs <= 0) {
+                Api::json([
+                    'from_ms' => 0,
+                    'to_ms' => 0,
+                    'bounds' => $bounds,
+                    'resolution' => 'raw',
+                    'samples' => 0,
+                    'runs' => 0,
+                    'channels' => [],
+                    'coldest' => null,
+                    'hottest' => null,
+                    'average' => null,
+                ]);
+            }
+
+            $useRollup = ($toMs - $fromMs) > (int) $config['analysis_rollup_hours'] * 3600 * 1000;
+            $stats = $readings->stats($fromMs, $toMs, $useRollup);
+
+            // The rollup only exists after bin/maintenance.php has run; fall
+            // back to raw rows so analysis works on a fresh install too.
+            if ($useRollup && $stats['samples'] === 0) {
+                $useRollup = false;
+                $stats = $readings->stats($fromMs, $toMs, false);
+            }
+
+            $channels = [];
+            $coldest = null;
+            $hottest = null;
+            $sum = 0.0;
+            $weight = 0;
+
+            foreach ($stats['channels'] as $index => $channel) {
+                $channels[] = [
+                    'channel' => $index,
+                    'samples' => $channel['samples'],
+                    'min' => $channel['min'],
+                    'max' => $channel['max'],
+                    'avg' => $channel['avg'],
+                ];
+
+                if ($channel['samples'] === 0 || $channel['min'] === null || $channel['max'] === null) {
+                    continue;
+                }
+
+                if ($coldest === null || $channel['min'] < $coldest['value']) {
+                    $coldest = ['channel' => $index, 'value' => $channel['min']];
+                }
+
+                if ($hottest === null || $channel['max'] > $hottest['value']) {
+                    $hottest = ['channel' => $index, 'value' => $channel['max']];
+                }
+
+                $sum += (float) $channel['avg'] * $channel['samples'];
+                $weight += $channel['samples'];
+            }
+
+            Api::json([
+                'from_ms' => $fromMs,
+                'to_ms' => $toMs,
+                'bounds' => $bounds,
+                'resolution' => $useRollup ? '1s' : 'raw',
+                'samples' => $stats['samples'],
+                'runs' => $stats['runs'],
+                'channels' => $channels,
+                'coldest' => $coldest,
+                'hottest' => $hottest,
+                'average' => $weight > 0 ? round($sum / $weight, 2) : null,
+            ]);
+
+        case 'GET /export':
+            $bounds = $readings->bounds();
+            [$fromMs, $toMs] = resolveRange($bounds);
+            $requested = strtolower(trim((string) ($_GET['resolution'] ?? 'auto')));
+
+            if (!in_array($requested, ['auto', 'raw', '1s', '1min'], true)) {
+                throw new ApiError(422, 'resolution must be auto, raw, 1s or 1min');
+            }
+
+            if ($fromMs <= 0) {
+                throw new ApiError(404, 'No samples stored yet');
+            }
+
+            $rangeMs = $toMs - $fromMs;
+            $rollupHours = (int) $config['analysis_rollup_hours'];
+
+            if ($requested === 'auto') {
+                $resolution = $rangeMs <= $rollupHours * 3600 * 1000
+                    ? 'raw'
+                    : ($rangeMs <= 36 * 3600 * 1000 ? '1s' : '1min');
+            } else {
+                $resolution = $requested;
+            }
+
+            $bucketMs = match ($resolution) {
+                'raw' => 0,
+                '1s' => 1000,
+                default => 60000,
+            };
+            $useRollup = $resolution !== 'raw' && $rangeMs > $rollupHours * 3600 * 1000;
+            $maxRows = (int) $config['export_max_rows'];
+            $rows = $readings->countRange($fromMs, $toMs, $useRollup, $bucketMs);
+
+            if ($rows > $maxRows) {
+                throw new ApiError(413, 'This range is too large to export in one file', [
+                    'resolution' => $resolution,
+                    'rows' => $rows,
+                    'max_rows' => $maxRows,
+                    'hint' => 'Narrow the date range or choose 1 min resolution',
+                ]);
+            }
+
+            $samples = $readings->streamRange($fromMs, $toMs, $useRollup, $bucketMs);
+            $samples->rewind();
+
+            // An empty rollup (maintenance has not run) must not produce an
+            // empty file while raw rows exist.
+            if (!$samples->valid() && $useRollup) {
+                $useRollup = false;
+                $rows = $readings->countRange($fromMs, $toMs, false, $bucketMs);
+
+                if ($rows > $maxRows) {
+                    throw new ApiError(413, 'This range is too large to export in one file', [
+                        'resolution' => $resolution,
+                        'rows' => $rows,
+                        'max_rows' => $maxRows,
+                        'hint' => 'Narrow the date range or choose 1 min resolution',
+                    ]);
+                }
+
+                $samples = $readings->streamRange($fromMs, $toMs, false, $bucketMs);
+                $samples->rewind();
+            }
+
+            $filename = sprintf(
+                'furnace-%s_to_%s.csv',
+                gmdate('Ymd-Hi', intdiv($fromMs, 1000)),
+                gmdate('Ymd-Hi', intdiv($toMs, 1000)),
+            );
+            Api::beginCsv($filename);
+
+            $out = fopen('php://output', 'w');
+
+            if ($out === false) {
+                throw new ApiError(500, 'Could not open the response stream');
+            }
+
+            fwrite($out, "\xEF\xBB\xBF");
+            fwrite($out, sprintf(
+                "# Razi Applied Science Foundation — furnace export\n# Range: %s .. %s UTC\n# Resolution: %s\n",
+                gmdate('Y-m-d H:i:s', intdiv($fromMs, 1000)),
+                gmdate('Y-m-d H:i:s', intdiv($toMs, 1000)),
+                $resolution,
+            ));
+            fputcsv($out, [
+                'run_id', 'run_label', 'recorded_at_utc', 'epoch_ms', 'elapsed_s',
+                'samples', 'ch1_c', 'ch2_c', 'ch3_c', 'ch4_c', 'faults',
+            ]);
+
+            // The generator was primed with rewind()/valid() above; continue
+            // from its current row instead of iterating it a second time.
+            while ($samples->valid()) {
+                $row = $samples->current();
+                $samples->next();
+                $abs = (int) $row['abs_ms'];
+                $channels = $row['channels'];
+                $faults = trim((string) $row['faults']);
+
+                fputcsv($out, [
+                    $row['run_id'],
+                    csvSafe((string) ($row['run_label'] ?? '')),
+                    gmdate('Y-m-d\TH:i:s', intdiv($abs, 1000)) . sprintf('.%03dZ', $abs % 1000),
+                    $abs,
+                    round(($abs - (int) $row['started_at_ms']) / 1000, 1),
+                    $row['samples'],
+                    $channels[0] === null ? '' : round($channels[0], 2),
+                    $channels[1] === null ? '' : round($channels[1], 2),
+                    $channels[2] === null ? '' : round($channels[2], 2),
+                    $channels[3] === null ? '' : round($channels[3], 2),
+                    $faults === '' ? '' : str_replace(',', ';', $faults),
+                ]);
+            }
+
+            fclose($out);
+            exit;
+
         case 'POST /ingest':
             Api::requireIngestKey($config);
 
@@ -198,8 +393,9 @@ function handleApi(string $method, string $route, array $config): never
                 $body['samples'] ?? null,
                 (int) $config['max_batch_samples'],
             );
+            $maxGapMs = (int) $config['max_sample_gap_ms'];
 
-            $result = Database::transaction($pdo, static function (PDO $pdo) use ($runs, $readings, $samples, $now): array {
+            $result = Database::transaction($pdo, static function (PDO $pdo) use ($runs, $readings, $samples, $now, $maxGapMs): array {
                 $lastUptime = $samples[array_key_last($samples)]['u'];
                 $firstAbsolute = null;
 
@@ -253,8 +449,29 @@ function handleApi(string $method, string $route, array $config): never
                     ];
                 }
 
+                // Working time is the sum of the gaps between stored samples.
+                // A silence longer than maxGapMs is not counted, so the timer
+                // pauses when the furnace is off instead of following the clock.
+                $previousT = $readings->lastT((int) $run['id']);
+                $activeMs = 0;
+
+                foreach ($rows as $row) {
+                    if ($previousT !== null && $row['t_ms'] > $previousT) {
+                        $activeMs += min($row['t_ms'] - $previousT, $maxGapMs);
+                    }
+
+                    $previousT = $row['t_ms'];
+                }
+
                 $accepted = $readings->insertBatch((int) $run['id'], $rows, $now);
-                $runs->addSamples((int) $run['id'], $accepted);
+
+                // A retried batch is mostly duplicates; skipping the increment
+                // keeps the timer from counting the same interval twice.
+                if ($accepted !== count($rows)) {
+                    $activeMs = 0;
+                }
+
+                $runs->addSamples((int) $run['id'], $accepted, $activeMs);
 
                 return ['run_id' => (int) $run['id'], 'accepted' => $accepted];
             });
@@ -293,12 +510,15 @@ function handleApi(string $method, string $route, array $config): never
             Api::json([
                 'name' => 'furnace-monitor-api',
                 'endpoints' => [
-                    'GET /api/health',
-                    'GET /api/live?since=<id>&run=<id>',
-                    'GET /api/history?window=<seconds>&max_points=<n>',
-                    'POST /api/ingest',
-                    'POST /api/runs/reset',
-                ],
+                'GET /api/health',
+                'GET /api/live?since=<id>&run=<id>',
+                'GET /api/history?window=<seconds>&max_points=<n>',
+                'GET /api/bounds',
+                'GET /api/summary?from_ms=<ms>&to_ms=<ms>',
+                'GET /api/export?from_ms=<ms>&to_ms=<ms>&resolution=auto|raw|1s|1min',
+                'POST /api/ingest',
+                'POST /api/runs/reset',
+            ],
             ]);
 
         default:
@@ -309,6 +529,36 @@ function handleApi(string $method, string $route, array $config): never
 function nowMs(): int
 {
     return (int) floor(microtime(true) * 1000);
+}
+
+/**
+ * Turn optional from_ms/to_ms query parameters into a concrete range.
+ * Defaults cover every stored sample, so "All" never needs the browser to
+ * guess the oldest timestamp.
+ *
+ * @param array{first_ms: int, last_ms: int, runs: int} $bounds
+ * @return array{0: int, 1: int}
+ */
+function resolveRange(array $bounds): array
+{
+    $fromMs = Api::intParam('from_ms', null, 0);
+    $toMs = Api::intParam('to_ms', null, 0);
+    $fromMs ??= (int) $bounds['first_ms'];
+    $toMs ??= (int) $bounds['last_ms'];
+
+    if ($fromMs > 0 && $toMs > 0 && $toMs < $fromMs) {
+        throw new ApiError(422, 'to_ms must be greater than or equal to from_ms');
+    }
+
+    return [$fromMs, $toMs];
+}
+
+/**
+ * Keep a spreadsheet from treating a run label as a formula.
+ */
+function csvSafe(string $value): string
+{
+    return $value !== '' && str_contains('=+-@', $value[0]) ? "'" . $value : $value;
 }
 
 /** Truncate a UTF-8 string without splitting a character. */

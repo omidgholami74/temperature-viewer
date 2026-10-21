@@ -29,6 +29,8 @@ export class TemperatureChart {
     const textSecondary = color('--text-2', '#a4b7ca');
     const grid = color('--line', 'rgba(143,172,202,.13)');
     const border = color('--line-strong', 'rgba(143,172,202,.24)');
+    const tooltipBg = color('--tooltip-bg', 'rgba(7, 13, 21, 0.96)');
+    const tooltipText = color('--tooltip-text', '#e9f2fb');
 
     this.Chart.defaults.font.family = color('--font-sans', 'system-ui, sans-serif');
     this.Chart.defaults.font.size = 11;
@@ -65,7 +67,7 @@ export class TemperatureChart {
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: 'rgba(7, 13, 21, 0.96)',
+            backgroundColor: tooltipBg,
             borderColor: border,
             borderWidth: 1,
             cornerRadius: 8,
@@ -75,7 +77,7 @@ export class TemperatureChart {
             boxHeight: 8,
             usePointStyle: true,
             titleColor: textSecondary,
-            bodyColor: '#e9f2fb',
+            bodyColor: tooltipText,
             titleFont: { size: 11, weight: '600' },
             bodyFont: { size: 11 },
             callbacks: {
@@ -129,6 +131,49 @@ export class TemperatureChart {
 
   get pointCount() {
     return this.buffers[0]?.length ?? 0;
+  }
+
+  /**
+   * Re-read the CSS custom properties after the operator switches theme.
+   * Chart.js bakes colours into its resolved options, so they are assigned
+   * again here instead of being resolved from CSS on every paint.
+   */
+  setTheme() {
+    const rootStyle = getComputedStyle(document.documentElement);
+    const color = (name, fallback) => rootStyle.getPropertyValue(name).trim() || fallback;
+
+    this.colors = this.channels.map((channel, index) => color(`--ch-${index + 1}`, channel.fallback));
+
+    const textMuted = color('--text-3', '#6e839a');
+    const textSecondary = color('--text-2', '#a4b7ca');
+    const grid = color('--line', 'rgba(143,172,202,.13)');
+    const border = color('--line-strong', 'rgba(143,172,202,.24)');
+    const tooltipBg = color('--tooltip-bg', 'rgba(7, 13, 21, 0.96)');
+    const tooltipText = color('--tooltip-text', '#e9f2fb');
+
+    this.Chart.defaults.font.family = color('--font-sans', 'system-ui, sans-serif');
+    this.Chart.defaults.color = textMuted;
+
+    const scales = this.chart.options.scales;
+    scales.x.grid.color = grid;
+    scales.x.border.color = grid;
+    scales.x.ticks.color = textMuted;
+    scales.y.grid.color = grid;
+    scales.y.ticks.color = textMuted;
+    scales.y.title.color = textMuted;
+
+    const tooltip = this.chart.options.plugins.tooltip;
+    tooltip.backgroundColor = tooltipBg;
+    tooltip.borderColor = border;
+    tooltip.titleColor = textSecondary;
+    tooltip.bodyColor = tooltipText;
+
+    this.chart.data.datasets.forEach((dataset, index) => {
+      dataset.borderColor = this.colors[index];
+      dataset.backgroundColor = this.colors[index];
+    });
+
+    this.chart.update('none');
   }
 
   /** Set the visible time window in milliseconds. */

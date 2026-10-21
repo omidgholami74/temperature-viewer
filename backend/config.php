@@ -39,4 +39,14 @@ return [
     'max_batch_samples' => 600,
     'max_request_bytes' => 131072,
     'default_max_points' => 1200,
+
+    // Longest silence between two samples that still counts as working time.
+    // At 10 Hz a normal gap is 100 ms; a longer one means the furnace was not
+    // reporting, so the dashboard timer stops instead of inventing seconds.
+    'max_sample_gap_ms' => max(100, (int) (getenv('FURNACE_MAX_SAMPLE_GAP_MS') ?: 3000)),
+
+    // Export and analysis. Ranges longer than the threshold are read from the
+    // one-second rollup (or averaged into coarser buckets) to stay responsive.
+    'analysis_rollup_hours' => max(1, (int) (getenv('FURNACE_ANALYSIS_ROLLUP_HOURS') ?: 6)),
+    'export_max_rows' => max(1000, (int) (getenv('FURNACE_EXPORT_MAX_ROWS') ?: 100000)),
 ];

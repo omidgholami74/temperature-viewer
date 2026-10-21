@@ -7,8 +7,9 @@ namespace App;
 use PDO;
 
 /**
- * Recording sessions. The elapsed run time is always derived from
- * started_at_ms, so the dashboard counter is free to run past 24 hours.
+ * Recording sessions. elapsed_ms is the wall-clock span derived from
+ * started_at_ms; active_ms is the time covered by samples and is what the
+ * dashboard counter shows. Neither has a 24 hour ceiling.
  */
 final class RunRepository
 {
@@ -67,14 +68,16 @@ final class RunRepository
         return $row === false ? null : $row;
     }
 
-    public function addSamples(int $runId, int $count): void
+    public function addSamples(int $runId, int $count, int $activeMs = 0): void
     {
-        if ($count <= 0) {
+        if ($count <= 0 && $activeMs <= 0) {
             return;
         }
 
-        $statement = $this->pdo->prepare('UPDATE runs SET sample_count = sample_count + ? WHERE id = ?');
-        $statement->execute([$count, $runId]);
+        $statement = $this->pdo->prepare(
+            'UPDATE runs SET sample_count = sample_count + ?, active_ms = active_ms + ? WHERE id = ?',
+        );
+        $statement->execute([max(0, $count), max(0, $activeMs), $runId]);
     }
 
     /**
@@ -99,6 +102,9 @@ final class RunRepository
             'started_at_ms' => $startedAt,
             'ended_at_ms' => $endedAt,
             'elapsed_ms' => max(0, $reference - $startedAt),
+            // Time covered by samples. The dashboard counter follows this, not
+            // the wall clock, so a silent device freezes the timer.
+            'active_ms' => max(0, (int) ($row['active_ms'] ?? 0)),
             'running' => $endedAt === null,
             'sample_count' => (int) $row['sample_count'],
         ];

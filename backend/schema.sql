@@ -2,8 +2,9 @@
 --
 -- readings      : raw samples, one row per 0.1 s frame, short retention.
 -- readings_1s   : per-second averages written by bin/maintenance.php, long retention.
--- runs          : one firing / recording session. The UI timer is derived from
---                 started_at_ms, so it never wraps at 24 hours.
+-- runs          : one firing / recording session. active_ms is the time the
+--                 furnace actually produced data: gaps without samples are not
+--                 counted, so the counter cannot drift while the device is off.
 
 PRAGMA foreign_keys = ON;
 
@@ -12,7 +13,8 @@ CREATE TABLE IF NOT EXISTS runs (
     label         TEXT,
     started_at_ms INTEGER NOT NULL,
     ended_at_ms   INTEGER,
-    sample_count  INTEGER NOT NULL DEFAULT 0
+    sample_count  INTEGER NOT NULL DEFAULT 0,
+    active_ms     INTEGER NOT NULL DEFAULT 0
 );
 
 -- SQLite treats NULLs as distinct in unique indexes, so index a constant
@@ -53,5 +55,5 @@ CREATE TABLE IF NOT EXISTS meta (
     value TEXT NOT NULL
 );
 
-INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '1');
+INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '2');
 INSERT OR IGNORE INTO meta (key, value) VALUES ('last_rollup_ms', '0');

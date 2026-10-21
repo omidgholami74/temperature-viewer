@@ -52,8 +52,15 @@ try {
         $end->execute([$now, (int) $active]);
     }
 
-    $insertRun = $pdo->prepare('INSERT INTO runs (label, started_at_ms, ended_at_ms, sample_count) VALUES (?, ?, NULL, ?)');
-    $insertRun->execute([$label, $startedAt, $totalSamples]);
+    // The demo is generated at a fixed interval, so its recorded time is the
+    // sum of those gaps. Leaving active_ms at 0 would show a 00:00 timer.
+    $activeMs = $totalSamples > 1 ? ($totalSamples - 1) * $intervalMs : 0;
+
+    $insertRun = $pdo->prepare(
+        'INSERT INTO runs (label, started_at_ms, ended_at_ms, sample_count, active_ms)
+         VALUES (?, ?, NULL, ?, ?)',
+    );
+    $insertRun->execute([$label, $startedAt, $totalSamples, $activeMs]);
     $runId = (int) $pdo->lastInsertId();
 
     $insert = $pdo->prepare(

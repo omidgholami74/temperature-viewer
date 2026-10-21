@@ -1,0 +1,783 @@
+{
+    "actions": [
+    ],
+    "changeDrivenTransforms": false,
+    "diagramCollapse": {
+        "grp:0": false,
+        "src:0": false
+    },
+    "frozen": false,
+    "groups": [
+        {
+            "datasets": [
+                {
+                    "datasetId": 0,
+                    "displayFormat": "0d",
+                    "displayTickCount": 5,
+                    "fft": false,
+                    "fftMax": 0,
+                    "fftMin": 0,
+                    "fftSamples": 256,
+                    "fftSamplingRate": 100,
+                    "fftWindow": 5,
+                    "graph": true,
+                    "groupId": 0,
+                    "index": 2,
+                    "led": false,
+                    "ledHigh": 80,
+                    "log": false,
+                    "numericValue": 0,
+                    "plotMax": 0,
+                    "plotMin": 0,
+                    "title": "Furance 1",
+                    "uniqueId": 28,
+                    "units": "",
+                    "value": "",
+                    "widget": "",
+                    "widgetMax": 0,
+                    "widgetMin": 0,
+                    "xAxis": -2
+                },
+                {
+                    "datasetId": 1,
+                    "displayFormat": "0d",
+                    "displayTickCount": 5,
+                    "fft": false,
+                    "fftMax": 0,
+                    "fftMin": 0,
+                    "fftSamples": 256,
+                    "fftSamplingRate": 100,
+                    "fftWindow": 5,
+                    "graph": true,
+                    "groupId": 0,
+                    "index": 3,
+                    "led": false,
+                    "ledHigh": 80,
+                    "log": false,
+                    "numericValue": 0,
+                    "plotMax": 0,
+                    "plotMin": 0,
+                    "title": "Furance 2",
+                    "uniqueId": 29,
+                    "units": "",
+                    "value": "",
+                    "widget": "",
+                    "widgetMax": 0,
+                    "widgetMin": 0,
+                    "xAxis": -2
+                },
+                {
+                    "datasetId": 2,
+                    "displayFormat": "0d",
+                    "displayTickCount": 5,
+                    "fft": false,
+                    "fftMax": 0,
+                    "fftMin": 0,
+                    "fftSamples": 256,
+                    "fftSamplingRate": 100,
+                    "fftWindow": 5,
+                    "graph": true,
+                    "groupId": 0,
+                    "index": 4,
+                    "led": false,
+                    "ledHigh": 80,
+                    "log": false,
+                    "numericValue": 0,
+                    "plotMax": 0,
+                    "plotMin": 0,
+                    "title": "Furance 3",
+                    "uniqueId": 30,
+                    "units": "",
+                    "value": "",
+                    "widget": "",
+                    "widgetMax": 0,
+                    "widgetMin": 0,
+                    "xAxis": -2
+                },
+                {
+                    "datasetId": 3,
+                    "displayFormat": "0d",
+                    "displayTickCount": 5,
+                    "fft": false,
+                    "fftMax": 0,
+                    "fftMin": 0,
+                    "fftSamples": 256,
+                    "fftSamplingRate": 100,
+                    "fftWindow": 5,
+                    "graph": true,
+                    "groupId": 0,
+                    "index": 5,
+                    "led": false,
+                    "ledHigh": 80,
+                    "log": false,
+                    "numericValue": 0,
+                    "plotMax": 0,
+                    "plotMin": 0,
+                    "title": "Furance 4",
+                    "uniqueId": 31,
+                    "units": "",
+                    "value": "",
+                    "widget": "",
+                    "widgetMax": 0,
+                    "widgetMin": 0,
+                    "xAxis": -2
+                }
+            ],
+            "title": "Multi-Plot",
+            "uniqueId": 27,
+            "widget": "multiplot"
+        }
+    ],
+    "hexadecimalDelimiters": false,
+    "influxSink": {
+        "bucket": "",
+        "enabled": false,
+        "measurement": "serial_studio",
+        "org": "",
+        "url": ""
+    },
+    "luaFastMode": false,
+    "mqttPublisher": {
+        "alpnEnabled": false,
+        "alpnProtocol": "x-amzn-mqtt-ca",
+        "cleanSession": true,
+        "clientCertPath": "",
+        "customClientId": false,
+        "enabled": false,
+        "hostname": "127.0.0.1",
+        "keepAlive": 60,
+        "mode": 0,
+        "mqttVersion": 2,
+        "notificationTopic": "",
+        "peerVerifyDepth": 10,
+        "peerVerifyMode": 3,
+        "port": 1883,
+        "privateKeyPath": "",
+        "publishFrequency": 10,
+        "publishNotifications": false,
+        "scriptCode": "",
+        "scriptLanguage": 0,
+        "scriptTopic": "",
+        "sparkplugDeviceId": "",
+        "sparkplugEdgeNodeId": "",
+        "sparkplugEnabled": false,
+        "sparkplugGroupId": "",
+        "sslEnabled": false,
+        "sslProtocol": 5,
+        "topicBase": ""
+    },
+    "nextUniqueId": 32,
+    "plotTimeRange": 120,
+    "pointCount": 1000,
+    "schemaVersion": 3,
+    "sources": [
+        {
+            "busType": 0,
+            "checksum": "",
+            "checksumAlgorithm": "",
+            "connection": {
+                "autoReconnect": true,
+                "baudRate": 115200,
+                "dataBitsIndex": 3,
+                "deviceId": {
+                    "description": "Board in FS mode",
+                    "pid": "0005",
+                    "portName": "COM5",
+                    "serial": "E66480454F51C631",
+                    "vid": "2E8A"
+                },
+                "dtr": true,
+                "flowControlIndex": 0,
+                "parityIndex": 0,
+                "portIndex": 1,
+                "stopBitsIndex": 0
+            },
+            "decoder": 0,
+            "decoderMethod": 0,
+            "frameDetection": 1,
+            "frameEnd": "",
+            "frameParserCode": "/**\n * Comma-Separated Values (CSV) Parser\n *\n * Parses comma-separated data into an array of values.\n *\n * INPUT FORMAT: \"a,b,c,d,e,f\"\n * OUTPUT ARRAY: [\"a\", \"b\", \"c\", \"d\", \"e\", \"f\"]\n *\n * Note: Frame delimiters are automatically removed by Serial Studio.\n */\n\n//------------------------------------------------------------------------------\n// Frame Parser Function\n//------------------------------------------------------------------------------\n\n/**\n * Parses a CSV frame into an array of values.\n *\n * @param {string} frame - The CSV data from the data source\n * @returns {array} Array of string values\n */\nfunction parse(frame) {\n  return frame.split(',');\n}\n",
+            "frameStart": "",
+            "hexadecimalDelimiters": false,
+            "sourceId": 0,
+            "title": "Device A"
+        }
+    ],
+    "title": "tempreature kooreh",
+    "treeExpansion": {
+        "": false,
+        "tempreature kooreh": true,
+        "tempreature kooreh/ ": false,
+        "tempreature kooreh/Dashboard Widgets": true,
+        "tempreature kooreh/Dashboard Widgets/Multi-Plot": true,
+        "tempreature kooreh/Dashboard Widgets/Multi-Plot/Furance 1": false,
+        "tempreature kooreh/Dashboard Widgets/Multi-Plot/Furance 2": false,
+        "tempreature kooreh/Dashboard Widgets/Multi-Plot/Furance 3": false,
+        "tempreature kooreh/Dashboard Widgets/Multi-Plot/Furance 4": false,
+        "tempreature kooreh/Data Export": true,
+        "tempreature kooreh/Data Export/InfluxDB Sink": false,
+        "tempreature kooreh/Data Export/MQTT Publisher": false,
+        "tempreature kooreh/Device A": true,
+        "tempreature kooreh/Device A/Frame Parser": false,
+        "tempreature kooreh/Project Scripts": true,
+        "tempreature kooreh/Project Scripts/Control Loop": false,
+        "tempreature kooreh/Project Scripts/JavaScript Library": false,
+        "tempreature kooreh/Project Scripts/Lua Library": false,
+        "tempreature kooreh/Variables": true,
+        "tempreature kooreh/Variables/Dataset Values": false,
+        "tempreature kooreh/Workspaces": true,
+        "tempreature kooreh/Workspaces/Multi-Plot": false
+    },
+    "widgetDisplay": {
+        "freezeTitle": {
+            "10:24": "hidden"
+        }
+    },
+    "widgetSettings": {
+        "10:0:1": {
+            "page": 1
+        },
+        "10:0:5": {
+            "page": 1
+        },
+        "11:0:1": {
+            "page": 0
+        },
+        "11:0:2": {
+            "page": 0
+        },
+        "11:0:3": {
+            "page": 0
+        },
+        "11:0:4": {
+            "page": 0
+        },
+        "2:0:-1": {
+            "interpolationMode": 3,
+            "visibleCurves": null
+        },
+        "9:0:1": {
+            "interpolationMode": 1,
+            "showAreaUnderPlot": true
+        },
+        "9:0:2": {
+            "showAreaUnderPlot": true
+        },
+        "externalWindows": {
+            "data": [
+            ]
+        },
+        "layout:1002": {
+            "data": {
+                "autoLayout": false,
+                "canvasHeight": 847,
+                "canvasWidth": 1922,
+                "geometries": [
+                    {
+                        "height": 499,
+                        "id": 1,
+                        "relativeIndex": 0,
+                        "state": "normal",
+                        "widgetType": 2,
+                        "width": 1048,
+                        "x": 0,
+                        "y": 0
+                    },
+                    {
+                        "height": 499,
+                        "id": 4,
+                        "relativeIndex": 0,
+                        "state": "closed",
+                        "widgetType": 9,
+                        "width": 1048,
+                        "x": 463,
+                        "y": 198
+                    },
+                    {
+                        "height": 499,
+                        "id": 5,
+                        "relativeIndex": 1,
+                        "state": "closed",
+                        "widgetType": 9,
+                        "width": 1048,
+                        "x": 489,
+                        "y": 224
+                    },
+                    {
+                        "height": 48,
+                        "id": 6,
+                        "relativeIndex": 2,
+                        "state": "normal",
+                        "widgetType": 9,
+                        "width": 48,
+                        "x": 0,
+                        "y": 0
+                    },
+                    {
+                        "height": 48,
+                        "id": 7,
+                        "relativeIndex": 3,
+                        "state": "normal",
+                        "widgetType": 9,
+                        "width": 48,
+                        "x": 0,
+                        "y": 0
+                    }
+                ],
+                "userReordered": false,
+                "windowOrder": [
+                    1,
+                    4,
+                    5,
+                    6,
+                    7
+                ],
+                "windowOrderTyped": [
+                    {
+                        "relativeIndex": 0,
+                        "widgetType": 2
+                    },
+                    {
+                        "relativeIndex": 0,
+                        "widgetType": 9
+                    },
+                    {
+                        "relativeIndex": 1,
+                        "widgetType": 9
+                    },
+                    {
+                        "relativeIndex": 2,
+                        "widgetType": 9
+                    },
+                    {
+                        "relativeIndex": 3,
+                        "widgetType": 9
+                    }
+                ]
+            }
+        },
+        "layout:997": {
+            "data": {
+                "autoLayout": false,
+                "canvasHeight": 879,
+                "canvasWidth": 1923,
+                "geometries": [
+                    {
+                        "height": 426,
+                        "id": 4,
+                        "relativeIndex": 1,
+                        "state": "normal",
+                        "widgetType": 9,
+                        "width": 489,
+                        "x": 459,
+                        "y": 453
+                    },
+                    {
+                        "height": 412,
+                        "id": 3,
+                        "relativeIndex": 0,
+                        "state": "normal",
+                        "widgetType": 9,
+                        "width": 460,
+                        "x": 0,
+                        "y": 453
+                    },
+                    {
+                        "height": 454,
+                        "id": 8,
+                        "relativeIndex": 1,
+                        "state": "normal",
+                        "widgetType": 11,
+                        "width": 489,
+                        "x": 459,
+                        "y": 0
+                    },
+                    {
+                        "height": 454,
+                        "id": 7,
+                        "relativeIndex": 0,
+                        "state": "normal",
+                        "widgetType": 11,
+                        "width": 460,
+                        "x": 0,
+                        "y": 0
+                    },
+                    {
+                        "height": 454,
+                        "id": 9,
+                        "relativeIndex": 2,
+                        "state": "normal",
+                        "widgetType": 11,
+                        "width": 460,
+                        "x": 947,
+                        "y": 0
+                    },
+                    {
+                        "height": 426,
+                        "id": 5,
+                        "relativeIndex": 2,
+                        "state": "normal",
+                        "widgetType": 9,
+                        "width": 460,
+                        "x": 947,
+                        "y": 453
+                    },
+                    {
+                        "height": 454,
+                        "id": 10,
+                        "relativeIndex": 3,
+                        "state": "normal",
+                        "widgetType": 11,
+                        "width": 517,
+                        "x": 1406,
+                        "y": 0
+                    },
+                    {
+                        "height": 426,
+                        "id": 6,
+                        "relativeIndex": 3,
+                        "state": "normal",
+                        "widgetType": 9,
+                        "width": 517,
+                        "x": 1406,
+                        "y": 453
+                    }
+                ],
+                "userReordered": true,
+                "windowOrder": [
+                    4,
+                    3,
+                    8,
+                    7,
+                    9,
+                    5,
+                    10,
+                    6
+                ],
+                "windowOrderTyped": [
+                    {
+                        "relativeIndex": 1,
+                        "widgetType": 9
+                    },
+                    {
+                        "relativeIndex": 0,
+                        "widgetType": 9
+                    },
+                    {
+                        "relativeIndex": 1,
+                        "widgetType": 11
+                    },
+                    {
+                        "relativeIndex": 0,
+                        "widgetType": 11
+                    },
+                    {
+                        "relativeIndex": 2,
+                        "widgetType": 11
+                    },
+                    {
+                        "relativeIndex": 2,
+                        "widgetType": 9
+                    },
+                    {
+                        "relativeIndex": 3,
+                        "widgetType": 11
+                    },
+                    {
+                        "relativeIndex": 3,
+                        "widgetType": 9
+                    }
+                ]
+            }
+        },
+        "layout:998": {
+            "data": {
+                "autoLayout": false,
+                "canvasHeight": 847,
+                "canvasWidth": 1922,
+                "geometries": [
+                    {
+                        "height": 495,
+                        "id": 7,
+                        "relativeIndex": 0,
+                        "state": "normal",
+                        "widgetType": 11,
+                        "width": 520,
+                        "x": 0,
+                        "y": 0
+                    },
+                    {
+                        "height": 500,
+                        "id": 8,
+                        "relativeIndex": 1,
+                        "state": "normal",
+                        "widgetType": 11,
+                        "width": 459,
+                        "x": 521,
+                        "y": 3
+                    },
+                    {
+                        "height": 498,
+                        "id": 9,
+                        "relativeIndex": 2,
+                        "state": "normal",
+                        "widgetType": 11,
+                        "width": 471,
+                        "x": 981,
+                        "y": 3
+                    },
+                    {
+                        "height": 346,
+                        "id": 3,
+                        "relativeIndex": 0,
+                        "state": "normal",
+                        "widgetType": 9,
+                        "width": 521,
+                        "x": 0,
+                        "y": 496
+                    },
+                    {
+                        "height": 349,
+                        "id": 4,
+                        "relativeIndex": 1,
+                        "state": "normal",
+                        "widgetType": 9,
+                        "width": 454,
+                        "x": 524,
+                        "y": 497
+                    },
+                    {
+                        "height": 345,
+                        "id": 5,
+                        "relativeIndex": 2,
+                        "state": "normal",
+                        "widgetType": 9,
+                        "width": 475,
+                        "x": 979,
+                        "y": 501
+                    },
+                    {
+                        "height": 348,
+                        "id": 6,
+                        "relativeIndex": 3,
+                        "state": "normal",
+                        "widgetType": 9,
+                        "width": 468,
+                        "x": 1454,
+                        "y": 499
+                    },
+                    {
+                        "height": 500,
+                        "id": 10,
+                        "relativeIndex": 3,
+                        "state": "normal",
+                        "widgetType": 11,
+                        "width": 468,
+                        "x": 1454,
+                        "y": 0
+                    }
+                ],
+                "userReordered": false,
+                "windowOrder": [
+                    7,
+                    8,
+                    9,
+                    3,
+                    4,
+                    5,
+                    6,
+                    10
+                ],
+                "windowOrderTyped": [
+                    {
+                        "relativeIndex": 0,
+                        "widgetType": 11
+                    },
+                    {
+                        "relativeIndex": 1,
+                        "widgetType": 11
+                    },
+                    {
+                        "relativeIndex": 2,
+                        "widgetType": 11
+                    },
+                    {
+                        "relativeIndex": 0,
+                        "widgetType": 9
+                    },
+                    {
+                        "relativeIndex": 1,
+                        "widgetType": 9
+                    },
+                    {
+                        "relativeIndex": 2,
+                        "widgetType": 9
+                    },
+                    {
+                        "relativeIndex": 3,
+                        "widgetType": 9
+                    },
+                    {
+                        "relativeIndex": 3,
+                        "widgetType": 11
+                    }
+                ]
+            }
+        },
+        "layout:999": {
+            "data": {
+                "autoLayout": false,
+                "canvasHeight": 847,
+                "canvasWidth": 1922,
+                "geometries": [
+                    {
+                        "height": 483,
+                        "id": 10,
+                        "relativeIndex": 2,
+                        "state": "normal",
+                        "widgetType": 11,
+                        "width": 473,
+                        "x": 964,
+                        "y": 5
+                    },
+                    {
+                        "height": 349,
+                        "id": 3,
+                        "relativeIndex": 0,
+                        "state": "normal",
+                        "widgetType": 9,
+                        "width": 465,
+                        "x": 10,
+                        "y": 492
+                    },
+                    {
+                        "height": 484,
+                        "id": 9,
+                        "relativeIndex": 1,
+                        "state": "normal",
+                        "widgetType": 11,
+                        "width": 486,
+                        "x": 475,
+                        "y": 4
+                    },
+                    {
+                        "height": 353,
+                        "id": 4,
+                        "relativeIndex": 1,
+                        "state": "normal",
+                        "widgetType": 9,
+                        "width": 482,
+                        "x": 476,
+                        "y": 492
+                    },
+                    {
+                        "height": 487,
+                        "id": 8,
+                        "relativeIndex": 0,
+                        "state": "normal",
+                        "widgetType": 11,
+                        "width": 472,
+                        "x": 0,
+                        "y": 0
+                    },
+                    {
+                        "height": 353,
+                        "id": 5,
+                        "relativeIndex": 2,
+                        "state": "normal",
+                        "widgetType": 9,
+                        "width": 478,
+                        "x": 959,
+                        "y": 491
+                    },
+                    {
+                        "height": 133,
+                        "id": 7,
+                        "relativeIndex": 0,
+                        "state": "normal",
+                        "widgetType": 10,
+                        "width": 167,
+                        "x": 1465,
+                        "y": 441
+                    },
+                    {
+                        "height": 352,
+                        "id": 6,
+                        "relativeIndex": 3,
+                        "state": "normal",
+                        "widgetType": 9,
+                        "width": 470,
+                        "x": 1438,
+                        "y": 491
+                    },
+                    {
+                        "height": 485,
+                        "id": 11,
+                        "relativeIndex": 3,
+                        "state": "normal",
+                        "widgetType": 11,
+                        "width": 478,
+                        "x": 1439,
+                        "y": 4
+                    }
+                ],
+                "userReordered": true,
+                "windowOrder": [
+                    10,
+                    3,
+                    9,
+                    4,
+                    8,
+                    5,
+                    7,
+                    6,
+                    11
+                ],
+                "windowOrderTyped": [
+                    {
+                        "relativeIndex": 2,
+                        "widgetType": 11
+                    },
+                    {
+                        "relativeIndex": 0,
+                        "widgetType": 9
+                    },
+                    {
+                        "relativeIndex": 1,
+                        "widgetType": 11
+                    },
+                    {
+                        "relativeIndex": 1,
+                        "widgetType": 9
+                    },
+                    {
+                        "relativeIndex": 0,
+                        "widgetType": 11
+                    },
+                    {
+                        "relativeIndex": 2,
+                        "widgetType": 9
+                    },
+                    {
+                        "relativeIndex": 0,
+                        "widgetType": 10
+                    },
+                    {
+                        "relativeIndex": 3,
+                        "widgetType": 9
+                    },
+                    {
+                        "relativeIndex": 3,
+                        "widgetType": 11
+                    }
+                ]
+            }
+        },
+        "plugin:digital-indicator": {
+            "displays": [
+            ]
+        }
+    },
+    "writerVersion": "4.2.0",
+    "writerVersionAtCreation": "4.2.0"
+}

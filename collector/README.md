@@ -154,3 +154,42 @@ samples that had not been uploaded yet.
   certificate for a different domain, the collector reports
   `TLS certificate problem ...` and keeps the data; install SSL for the domain
   (AutoSSL / Let's Encrypt) rather than disabling verification.
+
+### Windows: `PermissionError: [WinError 5]` on `checkpoint.json`
+
+Windows refuses to rename a file that another program holds open, and a
+scanner or sync client touches `checkpoint.json` right after it is written:
+
+```
+PermissionError: [WinError 5] Access is denied:
+  '...\data\checkpoint.json.tmp' -> '...\data\checkpoint.json'
+```
+
+The collector now retries the rename, then rewrites the file in place, and the
+upload thread keeps running even when the save keeps failing; the samples stay
+in `samples.jsonl` and the next batch retries. The warning printed in that case
+names the file and the reason.
+
+If it keeps happening, one of these is holding the file:
+
+- Antivirus real-time scanning the project folder. Exclude `DATA_DIR`.
+- OneDrive/Dropbox/Google Drive syncing `E:\dev\...`. Move `DATA_DIR` out of
+the synced folder, for example `DATA_DIR = "C:/furnace-data"`.
+- A second copy of the collector still running. Close it; two writers fight
+  over the same checkpoint.
+- The file was opened in Notepad or Excel and left open. Close it, or clear the
+  read-only attribute with `attrib -r data\checkpoint.json`.
+
+Checkpoints are written in place only as a fallback, so a crash during that
+write can leave damaged JSON; the collector then reads it as offset `0` and
+re-sends already accepted samples (delivery is at-least-once, so no data is
+lost, only duplicated).
+
+## Tests
+
+No hardware and no network needed; the checkpoint behaviour is exercised with
+temporary files:
+
+```bash
+python3 -m unittest discover -s collector/tests -v
+```

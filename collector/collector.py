@@ -63,30 +63,122 @@ def resolve(path):
     return path if os.path.isabs(path) else os.path.join(BASE_DIR, path)
 
 
+# Windows refuses to rename over a file that another process holds open. The
+# antivirus scanner, OneDrive/Dropbox sync and a second collector do that
+# briefly, which surfaced as "PermissionError: [WinError 5] Access is denied".
+CHECKPOINT_RETRIES = 5
+CHECKPOINT_RETRY_DELAY_S = 0.15
+CHECKPOINT_WARNING_INTERVAL_S = 30
+
+_checkpoint_warned_at = 0.0
+
+
+def warn_about_checkpoint(message):
+    """Print a checkpoint problem at most once every 30 s (10 Hz is noisy)."""
+    global _checkpoint_warned_at
+    now = time.monotonic()
+
+    if now - _checkpoint_warned_at >= CHECKPOINT_WARNING_INTERVAL_S:
+        _checkpoint_warned_at = now
+        print(message, flush=True)
+
+
 def load_offset(source):
-    try:
-        with open(resolve(CHECKPOINT_FILE), "r", encoding="utf-8") as handle:
-            state = json.load(handle)
-    except (OSError, ValueError):
+    path = resolve(CHECKPOINT_FILE)
+    state = None
+
+    for attempt in range(CHECKPOINT_RETRIES):
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                state = json.load(handle)
+            break
+        except FileNotFoundError:
+            return 0
+        except PermissionError as error:
+            if attempt == CHECKPOINT_RETRIES - 1:
+                warn_about_checkpoint(
+                    f"Cannot read {path} ({error}); starting from offset 0, so "
+                    "samples that were already accepted may be sent again."
+                )
+                return 0
+            time.sleep(CHECKPOINT_RETRY_DELAY_S * (attempt + 1))
+        except (OSError, ValueError):
+            return 0
+
+    if not isinstance(state, dict):
         return 0
 
     if state.get("source") != source:
         return 0  # a different file: start from its beginning
 
-    return int(state.get("offset", 0))
+    try:
+        return int(state.get("offset", 0))
+    except (TypeError, ValueError):
+        return 0
 
 
-def save_offset(source, offset):
-    path = resolve(CHECKPOINT_FILE)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-
-    with open(tmp, "w", encoding="utf-8") as handle:
-        json.dump({"source": source, "offset": offset}, handle)
+def write_checkpoint(path, payload):
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(payload)
         handle.flush()
         os.fsync(handle.fileno())
 
-    os.replace(tmp, path)
+
+def replace_checkpoint(tmp, path):
+    """Atomic rename, retried: a scanner can hold the target open briefly."""
+    for attempt in range(CHECKPOINT_RETRIES):
+        try:
+            os.replace(tmp, path)
+            return True
+        except PermissionError:
+            if attempt < CHECKPOINT_RETRIES - 1:
+                time.sleep(CHECKPOINT_RETRY_DELAY_S * (attempt + 1))
+        except OSError:
+            return False
+
+    return False
+
+
+def save_offset(source, offset):
+    """Persist the byte offset the API has accepted.
+
+    Returns False when the checkpoint cannot be written. The caller keeps
+    uploading from the offset it already holds, so a locked file slows nothing
+    down and never kills the upload thread.
+    """
+    path = resolve(CHECKPOINT_FILE)
+    tmp = path + ".tmp"
+    payload = json.dumps({"source": source, "offset": offset})
+
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        write_checkpoint(tmp, payload)
+    except OSError as error:
+        warn_about_checkpoint(
+            f"Cannot write {tmp}: {error}. Point DATA_DIR at a folder this program may write."
+        )
+        return False
+
+    if replace_checkpoint(tmp, path):
+        return True
+
+    # The rename is refused but the folder is writable, which usually means
+    # another process (antivirus, OneDrive, a second collector) holds the
+    # destination open. Rewriting in place keeps the cursor correct; the file is
+    # a few dozen bytes and damaged JSON is read back as offset 0.
+    try:
+        write_checkpoint(path, payload)
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return True
+    except OSError as error:
+        warn_about_checkpoint(
+            f"Cannot save {path}: {error}. Close the program holding it (antivirus, "
+            "OneDrive, another collector) or set DATA_DIR to another folder."
+        )
+        return False
 
 
 def parse_sample(raw):
@@ -296,6 +388,21 @@ def upload(path, keep_waiting, clock=None):
             time.sleep(delay)
 
 
+def upload_forever(path):
+    """Supervise upload() so one unexpected error cannot stop the uploads.
+
+    The serial capture keeps appending to the spool file either way, so the
+    data is never lost, but a dead upload thread used to look like a frozen
+    dashboard.
+    """
+    while True:
+        try:
+            upload(path, keep_waiting=True)
+        except Exception as error:  # noqa: BLE001 - a background thread must survive
+            print(f"Upload thread error: {error}. Retrying in 5 s.", flush=True)
+            time.sleep(5)
+
+
 def pick_port():
     """Use the configured port or auto-detect a Pico style USB serial device."""
     if SERIAL_PORT:
@@ -426,7 +533,7 @@ def main():
         os.makedirs(os.path.dirname(spool_path), exist_ok=True)
         print(f"Collecting from serial and uploading to {API_URL}", flush=True)
 
-        threading.Thread(target=upload, args=(spool_path, True), daemon=True).start()
+        threading.Thread(target=upload_forever, args=(spool_path,), daemon=True).start()
 
         try:
             return capture_serial(spool_path)

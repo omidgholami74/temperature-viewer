@@ -202,6 +202,9 @@ node --test tests/format.test.mjs
 
 # API failure diagnostics used by the offline banner
 node --test tests/api-probe.test.mjs
+
+# collector checkpoint (including the Windows rename fallback)
+python3 -m unittest discover -s collector/tests -v
 ```
 
 ## Troubleshooting

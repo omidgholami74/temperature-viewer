@@ -32,7 +32,7 @@ php -S 0.0.0.0:8080 -t . index.php
 | Environment variable               | Default                                                              | Description                                    |
 | ---------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------- |
 | `FURNACE_DB`                       | `backend/var/furnace.sqlite`                                          | SQLite database file                           |
-| `FURNACE_ALLOWED_ORIGINS`          | `https://temp.futurefounderco.com,http://localhost:3000,http://127.0.0.1:3000` | Comma-separated browser origins allowed by CORS |
+| `FURNACE_ALLOWED_ORIGINS`          | `http://temp.futurefounderco.com,https://temp.futurefounderco.com,http://localhost:3000,http://127.0.0.1:3000` | Comma-separated browser origins allowed by CORS |
 | `FURNACE_INGEST_KEY`               | empty (open)                                                          | Value the device must send as `X-Api-Key`      |
 | `FURNACE_RAW_RETENTION_HOURS`      | `48`                                                                  | Raw 10 Hz rows kept before pruning             |
 | `FURNACE_AGGREGATE_RETENTION_DAYS` | `180`                                                                 | One-second rollup rows kept                    |
@@ -42,7 +42,7 @@ the same files work locally and on the production host. On the API server,
 override the allow-list explicitly:
 
 ```apache
-SetEnv FURNACE_ALLOWED_ORIGINS "https://temp.futurefounderco.com"
+SetEnv FURNACE_ALLOWED_ORIGINS "http://temp.futurefounderco.com,https://temp.futurefounderco.com"
 SetEnv FURNACE_INGEST_KEY "change-me"
 ```
 
@@ -54,8 +54,15 @@ environment, not with `SetEnv` (which is Apache-only).
 The dashboard origin is different from the API origin, so the browser sends
 CORS preflights:
 
+- An origin is scheme + host + port, so `http://temp.futurefounderco.com` and
+  `https://temp.futurefounderco.com` are two separate entries. List whichever
+  one the operator opens; the bundled default lists both.
 - `GET /api/live` and `GET /api/history` are simple requests; the API echoes
-  the allow-listed origin in `Access-Control-Allow-Origin`.
+  the allow-listed origin in `Access-Control-Allow-Origin`. An origin that is
+  not listed gets a normal `200` but **no** CORS header, so the browser drops
+  the response and the dashboard shows "Backend offline". `curl` cannot see
+  that failure: always test with the `Origin` header and inspect the response
+  headers.
 - `POST /api/ingest` and `POST /api/runs/reset` use JSON, so the browser first
   sends `OPTIONS`; the API answers `204` with `Access-Control-Allow-Methods`
   and `Access-Control-Allow-Headers: Content-Type, X-Api-Key`.
@@ -216,12 +223,17 @@ Never point it at production data.
 Point `apitemp.futurefounderco.com` at this directory, enable HTTPS, and allow
 the bundled `.htaccess`:
 
+`apitemp.futurefounderco.com` needs a certificate that matches its name; the
+host's default certificate (for example `CN = *.web-hosting.com`) is rejected
+by browsers, and the dashboard then reports the API as unreachable even though
+`curl http://…/api/health` works.
+
 ```apache
 <VirtualHost *:443>
     ServerName apitemp.futurefounderco.com
     DocumentRoot /srv/furnace/backend
 
-    SetEnv FURNACE_ALLOWED_ORIGINS "https://temp.futurefounderco.com"
+    SetEnv FURNACE_ALLOWED_ORIGINS "http://temp.futurefounderco.com,https://temp.futurefounderco.com"
     SetEnv FURNACE_INGEST_KEY "change-me"
 
     <Directory /srv/furnace/backend>
@@ -249,7 +261,7 @@ server {
     location = /index.php {
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME $document_root/index.php;
-        fastcgi_param FURNACE_ALLOWED_ORIGINS "https://temp.futurefounderco.com";
+        fastcgi_param FURNACE_ALLOWED_ORIGINS "http://temp.futurefounderco.com,https://temp.futurefounderco.com";
         fastcgi_param FURNACE_INGEST_KEY "change-me";
         fastcgi_pass unix:/run/php/php8.3-fpm.sock;
     }

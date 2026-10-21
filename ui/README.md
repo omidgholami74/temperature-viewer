@@ -155,7 +155,7 @@ server {
         add_header Cache-Control "public, max-age=300";
     }
 
-    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://apitemp.futurefounderco.com; base-uri 'none'; form-action 'none'" always;
+    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://apitemp.futurefounderco.com https://apitemp.futurefounderco.com; base-uri 'none'; form-action 'none'" always;
 }
 ```
 
@@ -163,7 +163,15 @@ Notes:
 
 - Do **not** proxy `/api` from the UI host; the browser must reach the API
   origin directly so CORS and the correct API URL apply.
-- Both hosts must be HTTPS; an HTTPS page cannot call an HTTP API.
+- `config.js` follows the page scheme (`https` page → `https` API, `http` page
+  → `http` API), so the same file works while the hosts only serve http and
+  after certificates are installed. An HTTPS page cannot call an HTTP API, and
+  an HTTPS API needs a certificate that matches its hostname.
+- The API only echoes CORS headers for allow-listed origins, and `http://` and
+  `https://` are different origins. Both are in the backend default; keep both
+  if you override `FURNACE_ALLOWED_ORIGINS`.
+- If you add a `connect-src` policy, list every scheme/host the browser may
+  call, or the fetch is blocked before it leaves the page.
 - Bump or disable the `config.js` cache when you change the API origin.
 - `chart.umd.min.js` is vendored; no CDN or external font request is made.
 

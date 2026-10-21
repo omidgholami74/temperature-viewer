@@ -11,7 +11,14 @@ The **UI and the API run on separate servers**:
 | API (PHP + SQLite) | <https://apitemp.futurefounderco.com> |
 
 The browser calls the API cross-origin; the API allows only the origins listed
-in `FURNACE_ALLOWED_ORIGINS` (defaults to the dashboard above).
+in `FURNACE_ALLOWED_ORIGINS` (defaults to the dashboard above, over both http
+and https — a browser treats those as two different origins).
+
+The dashboard and the API must be reached over the **same scheme**:
+`ui/config.js` copies `window.location.protocol`, so an `https://` page calls
+`https://apitemp…` and an `http://` page calls `http://apitemp…`. A page loaded
+over HTTPS cannot call an HTTP API (mixed content), and an HTTPS API without a
+matching certificate cannot be reached at all.
 
 ![Furnace dashboard](artifacts/dashboard-desktop.png)
 
@@ -152,11 +159,13 @@ The most important ones:
 | `FURNACE_INGEST_KEY`    | empty                         | Shared key the Pico must send    |
 | `FURNACE_ALLOWED_ORIGINS` | dashboard + localhost origins | Browser origins allowed by CORS |
 
-The UI reads its API origin from `ui/config.js`:
+The UI reads its API origin from `ui/config.js`. The scheme follows the page,
+so the same file works for an http and an https dashboard:
 
 ```js
 window.FURNACE_CONFIG = {
-  apiBaseUrl: 'https://apitemp.futurefounderco.com', // '' for same-origin
+  // https page -> https apitemp, http page -> http apitemp. '' for same-origin.
+  apiBaseUrl: `${window.location.protocol}//apitemp.futurefounderco.com`,
 };
 ```
 
@@ -167,11 +176,14 @@ window.FURNACE_CONFIG = {
    The front controller answers only `/api/*`; `/` returns a small JSON banner.
 2. **UI** — point `temp.futurefounderco.com` at `ui/` as a plain static site.
    Do not proxy API calls; the browser calls `apitemp` directly and needs CORS.
-3. **CORS** — keep `FURNACE_ALLOWED_ORIGINS=https://temp.futurefounderco.com`
-   on the API host (this is the built-in default). Add other origins only if
-   you really serve other dashboards.
-4. **TLS** — both hosts must use HTTPS. A page loaded over HTTPS cannot call an
-   HTTP API (mixed content).
+3. **CORS** — keep the dashboard origins in `FURNACE_ALLOWED_ORIGINS` on the API
+   host. The built-in default lists both `http://temp.futurefounderco.com` and
+   `https://temp.futurefounderco.com`; if you override the variable on the
+   server, include the scheme you actually open the dashboard with.
+4. **TLS** — an HTTPS page cannot call an HTTP API (mixed content), and an HTTPS
+   API needs a certificate whose name matches `apitemp.futurefounderco.com`.
+   Until both hosts have one, open the dashboard over `http://`; `config.js`
+   then uses the http API automatically.
 5. **Cron** — run `php backend/bin/maintenance.php --all` once a minute on the
    API host for rollups and retention.
 
@@ -188,6 +200,49 @@ PHP_BIN=php bash backend/tests/smoke.sh
 # timer, axis and number formatting
 node --test tests/format.test.mjs
 ```
+
+## Troubleshooting
+
+### The dashboard says "Backend offline" while data is arriving
+
+The collector and the browser reach the API in completely different ways, so
+one can work while the other fails. Check in this order:
+
+```bash
+# 1. Is the API itself alive? (no browser, no CORS involved)
+curl -s http://apitemp.futurefounderco.com/api/health
+
+# 2. Does the API answer the dashboard's exact origin?
+#    Copy the origin from the address bar, including http:// or https://.
+curl -s -D - -o /dev/null -H 'Origin: http://temp.futurefounderco.com' \
+  http://apitemp.futurefounderco.com/api/live | grep -i access-control-allow-origin
+
+# 3. Which certificate does the host really serve?
+openssl s_client -connect apitemp.futurefounderco.com:443 \
+  -servername apitemp.futurefounderco.com </dev/null 2>/dev/null \
+  | openssl x509 -noout -subject -ext subjectAltName
+```
+
+- **Step 1 returns 200 but step 2 prints nothing** — the browser origin is not
+  in `FURNACE_ALLOWED_ORIGINS`. The fetch fails with a CORS error even though
+  the API is healthy. Add the exact origin (scheme included) to
+  `backend/config.php` or the server's `FURNACE_ALLOWED_ORIGINS`, for example
+  `http://temp.futurefounderco.com,https://temp.futurefounderco.com`.
+- **Step 3 shows the host's default certificate** (for example
+  `CN = *.web-hosting.com` instead of the subdomain) — HTTPS is not usable yet.
+  Serve the dashboard over `http://` and `config.js` will call the http API,
+  or install a certificate for both subdomains (Let's Encrypt / cPanel
+  AutoSSL). Opening the HTTPS page anyway does not help: the API call needs a
+  valid certificate too.
+- **The dashboard was opened over HTTPS and the API is HTTP** — the browser
+  blocks the request as mixed content. Reload over the same scheme as the API.
+- **The status line names the origin that failed** (for example
+  `apitemp.futurefounderco.com unreachable`), which is the quickest way to see
+  whether a scheme or host is wrong. The browser console shows the precise
+  reason: CORS, mixed content or a certificate error.
+
+A collector that logs `Sent … samples` only proves the PC reached the API; it
+says nothing about CORS or certificates, which only affect the browser.
 
 ## Safety
 

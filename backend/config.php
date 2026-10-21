@@ -15,9 +15,16 @@ return [
     // Browser origins allowed to call this API. The production dashboard is
     // https://temp.futurefounderco.com; the localhost entries keep local
     // development working with `python3 -m http.server 3000 --directory ui`.
+    //
+    // Scheme matters: http://temp.futurefounderco.com and
+    // https://temp.futurefounderco.com are two different origins. Both are
+    // listed so the dashboard keeps working when it is opened over http (for
+    // example while the subdomains still only serve the host's default
+    // certificate) as well as over https.
+    //
     // Override with FURNACE_ALLOWED_ORIGINS on the server.
     // Use "*" only on a fully trusted network: it also allows cross-site reset.
-    'allowed_origins' => (string) (getenv('FURNACE_ALLOWED_ORIGINS') ?: 'https://temp.futurefounderco.com,http://localhost:3000,http://127.0.0.1:3000'),
+    'allowed_origins' => (string) (getenv('FURNACE_ALLOWED_ORIGINS') ?: 'http://temp.futurefounderco.com,https://temp.futurefounderco.com,http://localhost:3000,http://127.0.0.1:3000'),
 
     // Shared secret the Pico must send with ingest requests.
     // Leave empty to disable authentication (trusted local network only).

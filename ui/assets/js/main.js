@@ -1,4 +1,4 @@
-import { api } from './api.js';
+import { API_LABEL, api } from './api.js';
 import { TemperatureChart } from './chart-panel.js';
 import { LiveFeed } from './feed.js';
 import {
@@ -196,7 +196,9 @@ function updateStatus() {
     const failed = state.failures > 0;
     el.status.dataset.state = failed ? 'offline' : 'waiting';
     setText(el.statusLabel, failed ? 'Backend offline' : 'Connecting');
-    setText(el.statusMeta, failed ? 'PHP API unreachable' : 'API not reached yet');
+    // Name the origin the browser tried: a wrong scheme, a missing CORS header
+    // and a dead host all surface as the same failed fetch.
+    setText(el.statusMeta, failed ? `${API_LABEL} unreachable` : 'API not reached yet');
     setText(el.age, '—');
     return;
   }

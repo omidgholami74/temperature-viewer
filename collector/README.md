@@ -76,6 +76,14 @@ API_KEY = "the same value as FURNACE_INGEST_KEY"
 The `://` is part of the value. A typo such as `https//host` or `https:/host`
 is reported at startup instead of crashing on the first upload.
 
+If uploads fail with a certificate error (`CERTIFICATE_VERIFY_FAILED`,
+`SSLCertVerificationError`, or "hostname mismatch"), the host is serving a
+certificate that does not match `apitemp.futurefounderco.com` — typically the
+hosting provider's default certificate. Either install a certificate for the
+subdomain or point `API_URL` at `http://` for now. The collector talks to the
+API server-side, so switching its scheme has no effect on the browser
+dashboard, which uses its own `ui/config.js` origin.
+
 ## Serial mode
 
 Default. The program detects a Pico-style USB serial device, appends each JSON

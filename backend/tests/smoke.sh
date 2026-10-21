@@ -14,6 +14,9 @@ PORT="${PORT:-18080}"
 BASE="http://127.0.0.1:${PORT}"
 CORS_ORIGIN="http://127.0.0.1:3000"
 PROD_ORIGIN="https://temp.futurefounderco.com"
+# Same dashboard over plain http: a browser treats it as a different origin,
+# so the shipped defaults must list both schemes.
+PROD_ORIGIN_HTTP="http://temp.futurefounderco.com"
 TMP_DIR="$(mktemp -d)"
 LOG="${TMP_DIR}/server.log"
 SERVER_PID=""
@@ -75,6 +78,11 @@ DEFAULT_ORIGINS="$(FURNACE_ALLOWED_ORIGINS='' "${PHP_BIN}" -r '
 case ",${DEFAULT_ORIGINS}," in
   *",${PROD_ORIGIN},"*) ;;
   *) fail "shipped defaults must allow the production dashboard origin" ;;
+esac
+
+case ",${DEFAULT_ORIGINS}," in
+  *",${PROD_ORIGIN_HTTP},"*) ;;
+  *) fail "shipped defaults must allow the http production dashboard origin too (mixed-scheme CORS)" ;;
 esac
 
 echo "Starting PHP server on ${BASE} with a temporary database"

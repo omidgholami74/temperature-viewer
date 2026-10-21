@@ -9,6 +9,9 @@ const CONFIG = window.FURNACE_CONFIG ?? {};
 const API_BASE = String(CONFIG.apiBaseUrl ?? '').trim().replace(/\/+$/, '');
 const endpoint = (path) => `${API_BASE}${path}`;
 
+/** Human-readable API origin, e.g. for the offline banner. */
+export const API_LABEL = API_BASE.replace(/^https?:\/\//, '') || window.location.host;
+
 export class ApiError extends Error {
   constructor(message, status = 0) {
     super(message);

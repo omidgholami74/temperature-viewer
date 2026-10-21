@@ -95,7 +95,13 @@ const el = {
   rangeFrom: $('[data-role="range-from"]'),
   rangeTo: $('[data-role="range-to"]'),
   rangeApply: $('[data-role="range-apply"]'),
-  rangeNote: $('[data-role="range-note"]'),
+  analysisRangePresets: $$('[data-analysis-range]'),
+  analysisRangeCustom: $('[data-role="analysis-range-custom"]'),
+  analysisRangeFrom: $('[data-role="analysis-range-from"]'),
+  analysisRangeTo: $('[data-role="analysis-range-to"]'),
+  analysisRangeApply: $('[data-role="analysis-range-apply"]'),
+  analysisRangeNote: $('[data-role="analysis-range-note"]'),
+  exportChannelInputs: $$('[data-role="export-channel"]'),
   analysisCold: $('[data-role="analysis-cold"]'),
   analysisColdMeta: $('[data-role="analysis-cold-meta"]'),
   analysisColdTime: $('[data-role="analysis-cold-time"]'),
@@ -136,10 +142,11 @@ const state = {
   windowSeconds: DEFAULT_WINDOW,
   theme: document.documentElement.dataset.themePreference ?? 'system',
   bounds: null,
+  boundsError: null,
   range: { preset: DEFAULT_RANGE, fromMs: null, toMs: null },
+  analysisRange: { preset: 0, fromMs: null, toMs: null },
   analysis: null,
   analysisToken: 0,
-  analysisLoading: false,
 };
 
 /**
@@ -543,11 +550,12 @@ function switchToRun(runId) {
   renderRun(null);
   updateEmptyState();
 
-  // A different run means different bounds and different analysis.
+  // A different run means different bounds and a fresh analysis range.
   state.bounds = null;
   state.analysis = null;
   state.analysisToken += 1;
-  state.analysisLoading = false;
+  state.analysisRange = { preset: 0, fromMs: null, toMs: null };
+  updateAnalysisRangeUI();
   loadHistory({ runId });
 }
 
@@ -722,10 +730,8 @@ function selectTab(name) {
     ensureRange();
   }
 
-  // Analysis covers everything stored, so it is useful from the first sample
-  // instead of waiting for a 24 hour window to fill.
   if (name === 'analysis') {
-    loadAnalysis();
+    ensureAnalysis();
   }
 }
 
@@ -762,10 +768,18 @@ function fromLocalInput(value) {
   return Number.isFinite(parsed.getTime()) ? parsed.getTime() : null;
 }
 
-function rangeDuration() {
-  return state.range.toMs !== null && state.range.fromMs !== null
-    ? state.range.toMs - state.range.fromMs
-    : 0;
+function rangeLabel(fromMs, toMs) {
+  return `${formatStamp(fromMs)} → ${formatStamp(toMs)} · ${formatShortDuration(toMs - fromMs)}`;
+}
+
+/** Absolute window for a preset, anchored to the newest stored sample. */
+function presetWindow(bounds, seconds) {
+  const end = bounds.last_ms;
+  const start = seconds === 0
+    ? bounds.first_ms
+    : Math.max(bounds.first_ms, end - seconds * 1000);
+
+  return { fromMs: start, toMs: end };
 }
 
 function updateRangeUI() {
@@ -781,18 +795,11 @@ function updateRangeUI() {
 
   el.rangeCustom.hidden = preset !== 'custom';
 
-  if (ready) {
-    const label = `${formatStamp(fromMs)} → ${formatStamp(toMs)} · ${formatShortDuration(rangeDuration())}`;
-    setText(el.rangeNote, label);
-    setText(el.exportRange, label);
-    setText(el.dataStatus, 'Ready to download the selected range.');
-  } else {
-    setText(el.rangeNote, 'Pick a range to download.');
-    setText(el.exportRange, 'No range selected.');
-  }
+  // The range card is the only place the export range is spelled out, so the
+  // panel does not repeat the same label twice.
+  setText(el.exportRange, ready ? rangeLabel(fromMs, toMs) : 'No range selected.');
 
-  // A single-sample range is still downloadable; an empty one is not.
-  el.exportButton.disabled = !(ready && toMs >= fromMs);
+  updateExportAvailability();
 
   if (state.bounds) {
     el.rangeFrom.min = toLocalInput(state.bounds.first_ms);
@@ -800,6 +807,34 @@ function updateRangeUI() {
     el.rangeTo.min = toLocalInput(state.bounds.first_ms);
     el.rangeTo.max = toLocalInput(state.bounds.last_ms);
   }
+}
+
+/** Numbered furnaces ticked in the Export tab, sorted 1..4. */
+function selectedExportChannels() {
+  return el.exportChannelInputs
+    .filter((input) => input.checked)
+    .map((input) => Number(input.value))
+    .filter((value) => Number.isInteger(value) && value >= 1 && value <= 4)
+    .sort((a, b) => a - b);
+}
+
+function updateExportAvailability() {
+  const { fromMs, toMs } = state.range;
+  const ready = fromMs !== null && toMs !== null && toMs >= fromMs;
+
+  if (!ready) {
+    el.exportButton.disabled = true;
+    return;
+  }
+
+  if (selectedExportChannels().length === 0) {
+    el.exportButton.disabled = true;
+    setText(el.dataStatus, 'Select at least one furnace to export.');
+    return;
+  }
+
+  el.exportButton.disabled = false;
+  setText(el.dataStatus, 'Ready to download the selected range.');
 }
 
 function setRangePreset(seconds) {
@@ -825,13 +860,7 @@ function setRangePreset(seconds) {
     return;
   }
 
-  const end = bounds.last_ms;
-  const start = seconds === 0
-    ? bounds.first_ms
-    : Math.max(bounds.first_ms, end - seconds * 1000);
-
-  state.range.fromMs = start;
-  state.range.toMs = end;
+  Object.assign(state.range, presetWindow(bounds, seconds));
   updateRangeUI();
 }
 
@@ -855,25 +884,132 @@ function applyCustomRange() {
   updateRangeUI();
 }
 
-async function ensureRange() {
-  if (!state.bounds) {
-    try {
-      state.bounds = await api.bounds();
-    } catch (error) {
-      setText(el.dataStatus, `Could not load the export range: ${error.message}`);
-      return;
-    }
+async function ensureBounds() {
+  if (state.bounds) {
+    return true;
+  }
 
-    if (!state.bounds.last_ms) {
-      setText(el.dataStatus, 'No samples stored yet. Start the collector, then open this again.');
-      updateRangeUI();
-      return;
-    }
+  try {
+    state.bounds = await api.bounds();
+    return true;
+  } catch (error) {
+    // Keep the reason on screen: an unreachable API and an empty database
+    // need very different fixes.
+    state.boundsError = error.message;
+    return false;
+  }
+}
+
+async function ensureRange() {
+  if (!(await ensureBounds())) {
+    setText(el.dataStatus, `Could not load the export range: ${state.boundsError}`);
+    return;
+  }
+
+  if (!state.bounds.last_ms) {
+    setText(el.dataStatus, 'No samples stored yet. Start the collector, then open this again.');
+    updateRangeUI();
+    return;
   }
 
   if (state.range.fromMs === null) {
     setRangePreset(DEFAULT_RANGE);
   }
+}
+
+/* --- analysis range ----------------------------------------------------- */
+
+function updateAnalysisRangeUI() {
+  const { fromMs, toMs, preset } = state.analysisRange;
+
+  for (const button of el.analysisRangePresets) {
+    const value = button.dataset.analysisRange;
+    button.setAttribute('aria-pressed', String(
+      value === 'custom' ? preset === 'custom' : Number(value) === preset,
+    ));
+  }
+
+  el.analysisRangeCustom.hidden = preset !== 'custom';
+
+  if (fromMs !== null && toMs !== null && toMs > fromMs) {
+    setText(el.analysisRangeNote, rangeLabel(fromMs, toMs));
+  } else {
+    setText(el.analysisRangeNote, 'All recorded samples.');
+  }
+
+  if (state.bounds) {
+    el.analysisRangeFrom.min = toLocalInput(state.bounds.first_ms);
+    el.analysisRangeFrom.max = toLocalInput(state.bounds.last_ms);
+    el.analysisRangeTo.min = toLocalInput(state.bounds.first_ms);
+    el.analysisRangeTo.max = toLocalInput(state.bounds.last_ms);
+  }
+}
+
+function setAnalysisPreset(seconds) {
+  const bounds = state.bounds;
+  state.analysisRange.preset = seconds;
+
+  if (!bounds || !bounds.last_ms) {
+    state.analysisRange.fromMs = null;
+    state.analysisRange.toMs = null;
+    updateAnalysisRangeUI();
+    return;
+  }
+
+  if (seconds === 'custom') {
+    const toMs = state.analysisRange.toMs ?? bounds.last_ms;
+    const fromMs = state.analysisRange.fromMs
+      ?? Math.max(bounds.first_ms, toMs - DEFAULT_RANGE * 1000);
+
+    state.analysisRange.fromMs = fromMs;
+    state.analysisRange.toMs = toMs;
+    el.analysisRangeFrom.value = toLocalInput(fromMs);
+    el.analysisRangeTo.value = toLocalInput(toMs);
+    updateAnalysisRangeUI();
+    return;
+  }
+
+  Object.assign(state.analysisRange, presetWindow(bounds, seconds));
+  updateAnalysisRangeUI();
+}
+
+function applyAnalysisCustomRange() {
+  const from = fromLocalInput(el.analysisRangeFrom.value);
+  const to = fromLocalInput(el.analysisRangeTo.value);
+
+  if (from === null || to === null) {
+    setText(el.analysisStatus, 'Choose both the first and the last date.');
+    return;
+  }
+
+  if (to <= from) {
+    setText(el.analysisStatus, 'The last date must be after the first date.');
+    return;
+  }
+
+  state.analysisRange = { preset: 'custom', fromMs: from, toMs: to };
+  updateAnalysisRangeUI();
+  loadAnalysis();
+}
+
+async function ensureAnalysis() {
+  if (!(await ensureBounds())) {
+    setText(el.analysisStatus, `Could not load the recorded range: ${state.boundsError}`);
+    return;
+  }
+
+  if (!state.bounds.last_ms) {
+    resetAnalysis('No samples stored yet. The analysis fills as soon as the first sample arrives.');
+    updateAnalysisRangeUI();
+    return;
+  }
+
+  if (state.analysisRange.fromMs === null) {
+    setAnalysisPreset(0);
+  }
+
+  updateAnalysisRangeUI();
+  loadAnalysis();
 }
 
 /* --- analysis ----------------------------------------------------------- */
@@ -903,18 +1039,18 @@ function resetAnalysis(message) {
 }
 
 async function loadAnalysis() {
-  if (state.analysisLoading) {
-    return;
-  }
-
   const token = ++state.analysisToken;
-  state.analysisLoading = true;
+  const range = state.analysisRange;
+  // "All" asks for the whole database, so samples that arrived after the
+  // bounds were cached still count.
+  const request = range.preset === 0 || range.fromMs === null
+    ? {}
+    : { fromMs: range.fromMs, toMs: range.toMs };
+
   setText(el.analysisStatus, 'Loading analysis…');
 
   try {
-    // No range: the API analyses everything it has stored, which is never
-    // empty once the first sample exists.
-    const data = await api.summary();
+    const data = await api.summary(request);
 
     if (token !== state.analysisToken) {
       return;
@@ -925,10 +1061,6 @@ async function loadAnalysis() {
   } catch (error) {
     if (token === state.analysisToken) {
       resetAnalysis(`Could not load the analysis: ${error.message}`);
-    }
-  } finally {
-    if (token === state.analysisToken) {
-      state.analysisLoading = false;
     }
   }
 }
@@ -1037,6 +1169,13 @@ async function downloadExport() {
     return;
   }
 
+  const channels = selectedExportChannels();
+
+  if (channels.length === 0) {
+    setText(el.dataStatus, 'Select at least one furnace to export.');
+    return;
+  }
+
   const label = el.exportButton.querySelector('span') ?? el.exportButton;
   const original = label.textContent;
 
@@ -1049,6 +1188,7 @@ async function downloadExport() {
       fromMs: state.range.fromMs,
       toMs: state.range.toMs,
       resolution: el.exportResolution.value,
+      channels,
     });
 
     saveBlob(blob, filename);
@@ -1057,7 +1197,7 @@ async function downloadExport() {
   } catch (error) {
     setText(el.dataStatus, error.message);
   } finally {
-    el.exportButton.disabled = false;
+    el.exportButton.disabled = state.range.fromMs === null || selectedExportChannels().length === 0;
     label.textContent = original;
   }
 }
@@ -1093,7 +1233,8 @@ async function startNewRun() {
     state.bounds = null;
     state.analysis = null;
     state.analysisToken += 1;
-    state.analysisLoading = false;
+    state.analysisRange = { preset: 0, fromMs: null, toMs: null };
+    updateAnalysisRangeUI();
     closeSettings();
     toast('New run started');
   } catch (error) {
@@ -1160,6 +1301,24 @@ function bindEvents() {
   }
 
   el.rangeApply.addEventListener('click', applyCustomRange);
+
+  for (const button of el.analysisRangePresets) {
+    button.addEventListener('click', () => {
+      const value = button.dataset.analysisRange;
+      setAnalysisPreset(value === 'custom' ? 'custom' : Number(value));
+
+      // Custom waits for Apply; a preset can load immediately.
+      if (value !== 'custom') {
+        loadAnalysis();
+      }
+    });
+  }
+
+  el.analysisRangeApply.addEventListener('click', applyAnalysisCustomRange);
+
+  for (const input of el.exportChannelInputs) {
+    input.addEventListener('change', updateExportAvailability);
+  }
 
   el.exportButton.addEventListener('click', downloadExport);
 
@@ -1228,6 +1387,7 @@ function bootstrap() {
   }
 
   updateRangeUI();
+  updateAnalysisRangeUI();
   updateLegend(null);
   renderCards(null);
   renderRun(null);

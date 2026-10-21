@@ -191,13 +191,39 @@ grep -qi '^Content-Type: text/csv' "${TMP_DIR}/headers" || fail "export is not s
 grep -qi '^Content-Disposition: attachment; filename="furnace-' "${TMP_DIR}/headers" \
   || fail "export filename is missing"
 head -c 3 "${TMP_DIR}/body" | grep -q $'\xEF\xBB\xBF' || fail "export lacks a UTF-8 BOM for Excel"
-grep -q 'ch1_c,ch2_c,ch3_c,ch4_c' "${TMP_DIR}/body" || fail "export header is missing channels"
-EXPORT_ROWS="$(grep -c '^1,' "${TMP_DIR}/body" || true)"
+# One readable time column and one column per furnace: no run ids or epochs.
+grep -q '"Time (Iran)","Furnace 1 (°C)","Furnace 2 (°C)","Furnace 3 (°C)","Furnace 4 (°C)"' "${TMP_DIR}/body" \
+  || fail "export header is not the readable time + furnace columns"
+grep -q 'run_id\|epoch_ms\|recorded_at_utc' "${TMP_DIR}/body" && fail "export still leaks the old machine columns"
+grep -Eq '^"[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]",' "${TMP_DIR}/body" \
+  || fail "raw export time is not readable local time with tenths"
+EXPORT_ROWS="$(grep -c '^"[0-9]\{4\}-' "${TMP_DIR}/body" || true)"
 assert_eq "${EXPORT_ROWS}" "11" "raw export row count"
+
+# Furnace selection: only the requested columns are written.
+status="$(request GET "/api/export?resolution=raw&channels=2,4")"
+assert_eq "${status}" "200" "filtered export status"
+grep -q '"Time (Iran)","Furnace 2 (°C)","Furnace 4 (°C)"' "${TMP_DIR}/body" \
+  || fail "filtered export header should list only furnaces 2 and 4"
+grep -q 'Furnace 1\|Furnace 3' "${TMP_DIR}/body" && fail "filtered export still contains unselected furnaces"
+FILTERED_FIELDS="$(awk -F, 'NR==2 { print NF }' "${TMP_DIR}/body")"
+assert_eq "${FILTERED_FIELDS}" "3" "filtered export has time plus two temperature columns"
+
+status="$(request GET "/api/export?resolution=raw&channels=1,1,3")"
+assert_eq "${status}" "200" "duplicate furnace numbers are accepted"
+DEDUPED_FIELDS="$(awk -F, 'NR==2 { print NF }' "${TMP_DIR}/body")"
+assert_eq "${DEDUPED_FIELDS}" "3" "duplicate furnace numbers are written once"
+
+status="$(request GET "/api/export?channels=5")"
+assert_eq "${status}" "422" "furnace outside 1..4 is rejected"
+status="$(request GET "/api/export?channels=")"
+assert_eq "${status}" "422" "an empty furnace list is rejected"
 
 status="$(request GET "/api/export?resolution=1s")"
 assert_eq "${status}" "200" "1 s export status"
-SECOND_ROWS="$(grep -c '^1,' "${TMP_DIR}/body" || true)"
+grep -Eq '^"[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}",' "${TMP_DIR}/body" \
+  || fail "1 s export time should stay readable without tenths"
+SECOND_ROWS="$(grep -c '^"[0-9]\{4\}-' "${TMP_DIR}/body" || true)"
 [[ "${SECOND_ROWS}" -lt "11" ]] || fail "1 s export should aggregate rows (got ${SECOND_ROWS})"
 
 status="$(request GET "/api/export?resolution=hourly")"
@@ -354,6 +380,16 @@ assert_eq "$(echo "${summary}" | json_get channels.0.max_at_ms)" "${AT_BASE}" "w
 assert_eq "$(echo "${summary}" | json_get channels.3.max_at_ms)" "${AT_BASE}" "warmest sample time for channel 4"
 assert_eq "$(echo "${summary}" | json_get coldest.at_ms)" "${AT_BASE}" "coldest highlight time"
 assert_eq "$(echo "${summary}" | json_get hottest.at_ms)" "${AT_BASE}" "hottest highlight time"
+
+# The export uses Iran local time, so the sheet is readable in Tehran.
+curl -sS -m 10 -o "${TMP_DIR}/abs-export.csv" "${ABS_BASE}/api/export?resolution=raw&channels=1,3"
+EXPECTED_TIME="$("${PHP_BIN}" -r '
+  echo (new DateTime("@" . intdiv((int) $argv[1], 1000)))
+      ->setTimezone(new DateTimeZone("Asia/Tehran"))
+      ->format("Y-m-d H:i:s");
+' "${AT_BASE}")"
+grep -q "^\"${EXPECTED_TIME}\.0\",700,720$" "${TMP_DIR}/abs-export.csv" \
+  || fail "export time should be ${EXPECTED_TIME} in Asia/Tehran with channels 1 and 3"
 
 status="$(curl -sS -m 10 -o /dev/null -w "%{http_code}" -X POST \
   -H "Content-Type: application/json" \

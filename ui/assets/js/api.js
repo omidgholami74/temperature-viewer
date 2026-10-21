@@ -165,12 +165,16 @@ export const api = {
    * Download a CSV for the range. Returns the blob and the filename the API
    * chose, so the browser save dialog gets a meaningful name.
    */
-  async exportData({ fromMs, toMs, resolution = 'auto' }) {
+  async exportData({ fromMs, toMs, resolution = 'auto', channels = [1, 2, 3, 4] }) {
     const params = new URLSearchParams({
       from_ms: String(Math.round(fromMs)),
       to_ms: String(Math.round(toMs)),
       resolution,
     });
+
+    if (channels.length > 0) {
+      params.set('channels', channels.join(','));
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 90000);
 

@@ -13,11 +13,11 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="assets/img/icon-180.png">
-  <link rel="stylesheet" href="assets/css/tokens.css?v=6">
-  <link rel="stylesheet" href="assets/css/app.css?v=6">
+  <link rel="stylesheet" href="assets/css/tokens.css?v=7">
+  <link rel="stylesheet" href="assets/css/app.css?v=7">
   <!-- Resolve the saved theme before the first paint, so a light-mode phone
        never flashes the dark dashboard. -->
-  <script src="assets/js/theme-boot.js?v=6"></script>
+  <script src="assets/js/theme-boot.js?v=7"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -268,8 +268,35 @@
         </section>
 
         <section class="tab-panel" id="tab-analysis" role="tabpanel" aria-labelledby="tab-btn-analysis" data-panel="analysis" hidden>
+          <div class="range-block">
+            <span class="field__label">Analysis range</span>
+            <div class="range-presets" role="group" aria-label="Analysis range" data-role="analysis-range-presets">
+              <button type="button" data-analysis-range="3600">1 h</button>
+              <button type="button" data-analysis-range="21600">6 h</button>
+              <button type="button" data-analysis-range="86400">24 h</button>
+              <button type="button" data-analysis-range="604800">7 d</button>
+              <button type="button" data-analysis-range="2592000">30 d</button>
+              <button type="button" data-analysis-range="0" aria-pressed="true">All</button>
+              <button type="button" data-analysis-range="custom" aria-pressed="false">Custom</button>
+            </div>
+
+            <div class="range-custom" data-role="analysis-range-custom" hidden>
+              <label class="field field--inline">
+                <span class="field__label">From</span>
+                <input type="datetime-local" step="60" data-role="analysis-range-from">
+              </label>
+              <label class="field field--inline">
+                <span class="field__label">To</span>
+                <input type="datetime-local" step="60" data-role="analysis-range-to">
+              </label>
+              <button class="btn btn--compact" type="button" data-role="analysis-range-apply">Apply</button>
+            </div>
+
+            <p class="range-note" data-role="analysis-range-note">All recorded samples.</p>
+          </div>
+
           <p class="settings-row__hint">
-            Every stored sample, oldest to newest. Each extreme carries the time it was first reached.
+            Each extreme carries the time it was first reached.
           </p>
 
           <div class="analysis-highlights">
@@ -333,8 +360,9 @@
         <section class="tab-panel" id="tab-data" role="tabpanel" aria-labelledby="tab-btn-data" data-panel="data" hidden>
           <p class="settings-row__title">Download recorded data</p>
           <p class="settings-row__hint">
-            A CSV file with one row per sample — time, furnace temperatures and faults.
-            Long ranges are averaged into fixed buckets so the file opens fast in Excel.
+            A CSV file with one readable time column (Iran local time) and one temperature
+            column per selected furnace. Long ranges are averaged into fixed buckets so the
+            file opens fast in Excel.
           </p>
 
           <div class="range-block">
@@ -360,13 +388,22 @@
               </label>
               <button class="btn btn--compact" type="button" data-role="range-apply">Apply</button>
             </div>
-
-            <p class="range-note" data-role="range-note">Pick a range to download.</p>
           </div>
 
           <div class="export-range">
             <span class="field__label">Range</span>
             <p class="export-range__value" data-role="export-range">No range selected.</p>
+          </div>
+
+          <div class="field">
+            <span class="field__label">Furnaces</span>
+            <div class="channel-picker" role="group" aria-label="Furnaces to export" data-role="export-channels">
+              <label class="channel-chip"><input type="checkbox" data-role="export-channel" value="1" checked><span>Furnace 1</span></label>
+              <label class="channel-chip"><input type="checkbox" data-role="export-channel" value="2" checked><span>Furnace 2</span></label>
+              <label class="channel-chip"><input type="checkbox" data-role="export-channel" value="3" checked><span>Furnace 3</span></label>
+              <label class="channel-chip"><input type="checkbox" data-role="export-channel" value="4" checked><span>Furnace 4</span></label>
+            </div>
+            <p class="field__hint">Only the ticked furnaces are written to the CSV.</p>
           </div>
 
           <label class="field field--inline">
@@ -380,7 +417,8 @@
           </label>
 
           <p class="range-note" data-role="export-note">
-            Auto keeps raw samples up to 6 hours, 1 second averages up to 36 hours and 1 minute averages beyond that.
+            Auto keeps raw samples up to 6 hours, 1 second averages up to 36 hours and 1 minute
+            averages beyond that. Times are Tehran local time.
           </p>
 
           <div class="settings-actions">
@@ -401,8 +439,8 @@
 
   <!-- ?v= busts stale copies of the API origin on already-open phones and tabs;
        bump it whenever config.js or main.js changes meaning. -->
-  <script src="config.js?v=6"></script>
+  <script src="config.js?v=7"></script>
   <script src="assets/vendor/chart.umd.min.js"></script>
-  <script type="module" src="assets/js/main.js?v=6"></script>
+  <script type="module" src="assets/js/main.js?v=7"></script>
 </body>
 </html>

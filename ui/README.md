@@ -28,14 +28,16 @@ This folder is deployed on its **own web server**, separate from the PHP API:
    empty state while waiting for the first sample.
 
 ![Settings and range analysis](../artifacts/settings-analysis.png)
-5. Settings dialog with four tabs:
+5. Settings dialog with three tabs:
    - **Appearance** — dark / light / system theme and *Start new run*;
-   - **Analysis** — range presets or custom date-time pickers, coldest / hottest
-     / average highlights, and min/max/avg/points per furnace;
-   - **Export** — CSV download of the selected range, with auto/raw/1 s/1 min
-     resolution;
-   - **App** — install the dashboard as a PWA (or the Safari instructions when
-     the browser has no install prompt).
+   - **Analysis** — range presets (1 h, 6 h, 24 h, 7 d, 30 d, all, custom) or
+     custom date-time pickers, coldest / hottest / average highlights, and
+     min/max/avg/points per furnace;
+   - **Export** — CSV download of the selected range, furnace chips that pick
+     the exported columns, and auto/raw/1 s / 1 min resolution.
+
+Installing the dashboard as a PWA uses the browser's own install prompt (there
+is no separate App tab).
 
 The three blocks fill exactly one screen: the page itself never scrolls. The
 chart is the flex row that absorbs the remaining height, so a phone in portrait

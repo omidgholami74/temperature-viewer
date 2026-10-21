@@ -214,12 +214,18 @@ furnace:
 - the coldest and hottest furnace, and the average across all channels.
 
 Settings → **Export** downloads the **same range** as a UTF-8 CSV (with a BOM,
-so Excel opens it correctly). Columns are:
+so Excel opens it correctly). The furnace chips choose which columns are
+written; by default all four are included, so the sheet is one time column plus
+one temperature column per selected furnace:
 
 ```
-run_id, run_label, recorded_at_utc, epoch_ms, elapsed_s,
-  samples, ch1_c, ch2_c, ch3_c, ch4_c, faults
+"Time (Iran)","Furnace 1 (°C)","Furnace 2 (°C)","Furnace 3 (°C)","Furnace 4 (°C)"
+"2026-10-21 17:56:36.8",25.07,28.57,29.15,545.2
 ```
+
+The time column is Iran local time (Asia/Tehran), so the rows read as the clock
+on the wall; raw rows keep a tenth of a second. Unchecking every furnace
+disables the download instead of writing a file with no data.
 
 The resolution can be *Auto* (raw up to 6 h, 1 s averages up to 36 h, 1 minute
 averages beyond), or forced to raw / 1 s / 1 minute. Buckets are aligned to the

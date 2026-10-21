@@ -33,7 +33,7 @@ try {
                 'GET /api/history?window=<seconds>&max_points=<n>',
                 'GET /api/bounds',
                 'GET /api/summary?from_ms=<ms>&to_ms=<ms>',
-                'GET /api/export?from_ms=<ms>&to_ms=<ms>&resolution=auto|raw|1s|1min',
+                'GET /api/export?from_ms=<ms>&to_ms=<ms>&resolution=auto|raw|1s|1min&channels=1,2,3,4',
                 'POST /api/ingest',
                 'POST /api/runs/reset',
             ],
@@ -283,6 +283,7 @@ function handleApi(string $method, string $route, array $config): never
             $bounds = $readings->bounds();
             [$fromMs, $toMs] = resolveRange($bounds);
             $requested = strtolower(trim((string) ($_GET['resolution'] ?? 'auto')));
+            $selectedChannels = parseChannels($_GET['channels'] ?? null);
 
             if (!in_array($requested, ['auto', 'raw', '1s', '1min'], true)) {
                 throw new ApiError(422, 'resolution must be auto, raw, 1s or 1min');
@@ -343,10 +344,13 @@ function handleApi(string $method, string $route, array $config): never
                 $samples->rewind();
             }
 
+            // A readable file for Excel: one Tehran local-time column and one
+            // temperature column per selected furnace. The raw export keeps a
+            // tenth of a second so the ten rows of one second stay distinct.
             $filename = sprintf(
                 'furnace-%s_to_%s.csv',
-                gmdate('Ymd-Hi', intdiv($fromMs, 1000)),
-                gmdate('Ymd-Hi', intdiv($toMs, 1000)),
+                iranStamp($fromMs, 'Ymd-Hi'),
+                iranStamp($toMs, 'Ymd-Hi'),
             );
             Api::beginCsv($filename);
 
@@ -357,16 +361,14 @@ function handleApi(string $method, string $route, array $config): never
             }
 
             fwrite($out, "\xEF\xBB\xBF");
-            fwrite($out, sprintf(
-                "# Razi Applied Science Foundation — furnace export\n# Range: %s .. %s UTC\n# Resolution: %s\n",
-                gmdate('Y-m-d H:i:s', intdiv($fromMs, 1000)),
-                gmdate('Y-m-d H:i:s', intdiv($toMs, 1000)),
-                $resolution,
-            ));
-            fputcsv($out, [
-                'run_id', 'run_label', 'recorded_at_utc', 'epoch_ms', 'elapsed_s',
-                'samples', 'ch1_c', 'ch2_c', 'ch3_c', 'ch4_c', 'faults',
-            ]);
+
+            $header = ['Time (Iran)'];
+
+            foreach ($selectedChannels as $furnace) {
+                $header[] = sprintf('Furnace %d (°C)', $furnace);
+            }
+
+            fputcsv($out, $header);
 
             // The generator was primed with rewind()/valid() above; continue
             // from its current row instead of iterating it a second time.
@@ -375,21 +377,14 @@ function handleApi(string $method, string $route, array $config): never
                 $samples->next();
                 $abs = (int) $row['abs_ms'];
                 $channels = $row['channels'];
-                $faults = trim((string) $row['faults']);
+                $line = [iranTime($abs, $resolution === 'raw')];
 
-                fputcsv($out, [
-                    $row['run_id'],
-                    csvSafe((string) ($row['run_label'] ?? '')),
-                    gmdate('Y-m-d\TH:i:s', intdiv($abs, 1000)) . sprintf('.%03dZ', $abs % 1000),
-                    $abs,
-                    round(($abs - (int) $row['started_at_ms']) / 1000, 1),
-                    $row['samples'],
-                    $channels[0] === null ? '' : round($channels[0], 2),
-                    $channels[1] === null ? '' : round($channels[1], 2),
-                    $channels[2] === null ? '' : round($channels[2], 2),
-                    $channels[3] === null ? '' : round($channels[3], 2),
-                    $faults === '' ? '' : str_replace(',', ';', $faults),
-                ]);
+                foreach ($selectedChannels as $furnace) {
+                    $value = $channels[$furnace - 1] ?? null;
+                    $line[] = $value === null ? '' : round((float) $value, 2);
+                }
+
+                fputcsv($out, $line);
             }
 
             fclose($out);
@@ -525,7 +520,7 @@ function handleApi(string $method, string $route, array $config): never
                 'GET /api/history?window=<seconds>&max_points=<n>',
                 'GET /api/bounds',
                 'GET /api/summary?from_ms=<ms>&to_ms=<ms>',
-                'GET /api/export?from_ms=<ms>&to_ms=<ms>&resolution=auto|raw|1s|1min',
+                'GET /api/export?from_ms=<ms>&to_ms=<ms>&resolution=auto|raw|1s|1min&channels=1,2,3,4',
                 'POST /api/ingest',
                 'POST /api/runs/reset',
             ],
@@ -539,6 +534,74 @@ function handleApi(string $method, string $route, array $config): never
 function nowMs(): int
 {
     return (int) floor(microtime(true) * 1000);
+}
+
+/**
+ * Furnace numbers (1..4) selected for an export. Absent means all four.
+ *
+ * @return list<int>
+ */
+function parseChannels(mixed $raw): array
+{
+    if ($raw === null) {
+        return [1, 2, 3, 4];
+    }
+
+    if (!is_string($raw) || trim($raw) === '') {
+        throw new ApiError(422, 'channels must list at least one furnace (1 to 4)');
+    }
+
+    $selected = [];
+
+    foreach (explode(',', $raw) as $part) {
+        $part = trim($part);
+
+        if ($part === '') {
+            continue;
+        }
+
+        if (!preg_match('/^[1-4]$/', $part)) {
+            throw new ApiError(422, 'channels must list furnace numbers between 1 and 4');
+        }
+
+        $selected[(int) $part] = (int) $part;
+    }
+
+    if ($selected === []) {
+        throw new ApiError(422, 'channels must list at least one furnace (1 to 4)');
+    }
+
+    ksort($selected);
+
+    return array_values($selected);
+}
+
+/**
+ * Absolute milliseconds rendered in Iran local time for the CSV.
+ *
+ * Asia/Tehran instead of UTC keeps the sheet readable for the operator. A raw
+ * export also keeps one decimal, because ten rows share each second.
+ */
+function iranTime(int $absoluteMs, bool $tenths): string
+{
+    static $zone = null;
+    $zone ??= new DateTimeZone('Asia/Tehran');
+
+    $moment = (new DateTimeImmutable('@' . intdiv($absoluteMs, 1000)))->setTimezone($zone);
+    $text = $moment->format('Y-m-d H:i:s');
+
+    return $tenths ? $text . sprintf('.%d', intdiv($absoluteMs % 1000, 100)) : $text;
+}
+
+/** Iran local time with a custom pattern, e.g. the export filename. */
+function iranStamp(int $absoluteMs, string $format): string
+{
+    static $zone = null;
+    $zone ??= new DateTimeZone('Asia/Tehran');
+
+    return (new DateTimeImmutable('@' . intdiv($absoluteMs, 1000)))
+        ->setTimezone($zone)
+        ->format($format);
 }
 
 /**
@@ -561,14 +624,6 @@ function resolveRange(array $bounds): array
     }
 
     return [$fromMs, $toMs];
-}
-
-/**
- * Keep a spreadsheet from treating a run label as a formula.
- */
-function csvSafe(string $value): string
-{
-    return $value !== '' && str_contains('=+-@', $value[0]) ? "'" . $value : $value;
 }
 
 /** Truncate a UTF-8 string without splitting a character. */

@@ -217,22 +217,28 @@ overlaps it, using absolute time (`runs.started_at_ms + readings.t_ms`).
 reached; ties resolve to the earliest sample. Without `from_ms`/`to_ms` the
 whole database is summarised, which is what the dashboard's Analysis tab uses.
 
-### `GET /api/export?from_ms=<ms>&to_ms=<ms>&resolution=auto|raw|1s|1min`
+### `GET /api/export?from_ms=<ms>&to_ms=<ms>&resolution=auto|raw|1s|1min&channels=1,2,3,4`
 
 Streams a UTF-8 CSV (BOM included for Excel). `auto` keeps raw rows up to 6 h,
 1 s averages up to 36 h and 1 minute averages beyond; the other values force a
 resolution. Buckets are aligned to the start of the selected range.
 
+`channels` is a comma separated list of furnace numbers (1–4) in the order they
+should appear; it defaults to all four. An empty list or a number outside 1–4
+answers `422`. Each requested furnace becomes one temperature column, so the
+sheet is one time column plus the furnaces the operator ticked.
+
 ```
-run_id,run_label,recorded_at_utc,epoch_ms,elapsed_s,samples,ch1_c,ch2_c,ch3_c,ch4_c,faults
+"Time (Iran)","Furnace 1 (°C)","Furnace 3 (°C)","Furnace 4 (°C)"
+"2026-10-21 17:56:36.8",25.07,29.15,545.2
 ```
 
-- `recorded_at_utc` is ISO 8601 UTC with milliseconds; `epoch_ms` is the same
-  instant for tools that prefer integers.
-- `elapsed_s` is seconds from that run's start, not from the selected range.
-- `samples` is 1 for raw rows and the bucket count for averaged rows.
-- `faults` is `f1;f2;f3;f4` on raw rows and empty on averaged rows, because a
-  rollup cannot represent a fault.
+- The time column is **Asia/Tehran local time** (`Y-m-d H:i:s`), with tenths of a
+  second on raw rows so the ten samples of one second stay distinct. Excel reads
+  it as a date/time, not as an opaque UTC string.
+- A furnace with no reading in a sample (sensor fault) leaves its cell empty
+  instead of writing a made-up value.
+- Temperatures are rounded to two decimals.
 
 If the file would exceed `FURNACE_EXPORT_MAX_ROWS`, the endpoint answers `413`
 with `{error, details: {rows, max_rows, hint}}` before writing a byte; it never

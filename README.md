@@ -23,10 +23,12 @@ matching certificate cannot be reached at all.
 ![Furnace dashboard](artifacts/dashboard-desktop.png)
 
 The dashboard is branded for the **Razi Applied Science Foundation** and ships
-with a light and a dark theme, range analysis, CSV export and an installable
-PWA manifest.
+with a light and a dark theme, min/max/average analysis with the time of each
+extreme, CSV export with its own date picker, and an installable PWA manifest.
 
-![Settings and range analysis](artifacts/settings-analysis.png)
+![Settings and analysis](artifacts/settings-analysis.png)
+
+![Export range picker](artifacts/export-range.png)
 
 ![Light theme](artifacts/dashboard-light.png)
 
@@ -134,12 +136,13 @@ No CORS environment variable is needed locally: the API already allows
 ### Demo history (optional)
 
 ```bash
-FURNACE_DB=backend/var/demo.sqlite php backend/bin/seed_demo.php --hours=26
+FURNACE_DB=backend/var/demo.sqlite php backend/bin/seed_demo.php --hours=1
 FURNACE_DB=backend/var/demo.sqlite php -S 0.0.0.0:8080 -t backend backend/index.php
 ```
 
-The seeded run ends at the moment of seeding, so the timer starts near
-`26:00:00:0` and the "All" window shows the whole firing curve.
+The demo is generated at the real 10 Hz cadence, so the seeded run ends at the
+moment of seeding with a timer near `01:00:00:0`, and the "All" window shows
+the whole firing curve.
 
 ## Hardware
 
@@ -159,11 +162,12 @@ Wiring, firmware upload and calibration are documented in
 - The tenths group renders a dim leading zero plus the live digit, so the
   display always has eight digit positions, exactly like `00:00:00:00`.
 - Hours are not masked: the field grows from `99` to `100` and beyond.
-- The value is `runs.active_ms`, the sum of the gaps between stored samples
-  (each gap capped at `FURNACE_MAX_SAMPLE_GAP_MS`, 3 s by default). It is not a
-  wall-clock counter: a Pico that stops sending freezes the timer instead of
-  inventing time, and the timer resumes from the same value when samples come
-  back.
+- The value is the run's sample count: **one stored sample is 0.1 s**, so ten
+  samples are one second and 8 620 samples read `00:14:22:0`. The count comes
+  from the server, so it is exact even while the collector uploads in batches.
+  It is not a wall-clock counter: a Pico that stops sending freezes the timer
+  instead of inventing time, and the timer resumes from the same value when
+  samples come back.
 - Refreshing the page, rebooting the Pico, or crossing midnight does not reset
   it. A reload shows the exact time the server recorded.
 - The chip says **Recording** while samples arrive and **Paused** after 2.5 s
@@ -185,7 +189,7 @@ The most important ones:
 | `FURNACE_DB`            | `backend/var/furnace.sqlite`  | SQLite file                      |
 | `FURNACE_INGEST_KEY`    | empty                         | Shared key the Pico must send    |
 | `FURNACE_ALLOWED_ORIGINS` | dashboard + localhost origins | Browser origins allowed by CORS |
-| `FURNACE_MAX_SAMPLE_GAP_MS` | `3000`                    | Longest silence still counted by the timer |
+| `FURNACE_MAX_SAMPLE_GAP_MS` | `3000`                    | Longest silence still counted in `active_ms` |
 | `FURNACE_EXPORT_MAX_ROWS` | `100000`                    | Largest CSV the API will build   |
 | `FURNACE_ANALYSIS_ROLLUP_HOURS` | `6`                  | Range above which the 1 s rollup is read |
 

@@ -78,7 +78,7 @@
         </div>
 
         <p class="counter__human"><span class="counter__human-label">Equivalent</span> <span data-role="human">—</span></p>
-        <p class="timer-card__hint">Counts only time covered by serial frames. It pauses when the port goes quiet.</p>
+        <p class="timer-card__hint">One frame is 0.1 s (10 frames per second). It pauses when the port goes quiet.</p>
 
         <div class="timer-card__stats">
           <span class="stat"><span class="stat__label">Samples</span><b class="stat__value" data-role="samples">0</b></span>
@@ -215,7 +215,13 @@
           </div>
           <div class="noise-controls">
             <label class="noise-toggle"><input type="checkbox" data-role="noise-enabled" checked><span>Enabled</span></label>
-            <label class="noise-threshold"><span class="field__label">Drop threshold</span><select class="select" data-role="noise-threshold"><option value="20">20%</option><option value="40">40%</option><option value="60" selected>60%</option><option value="80">80%</option></select></label>
+            <label class="noise-threshold">
+              <span class="field__label">Drop threshold</span>
+              <span class="noise-threshold__field">
+                <input class="input" type="number" inputmode="decimal" min="1" max="95" step="1" value="60" data-role="noise-threshold">
+                <span class="noise-threshold__unit" aria-hidden="true">%</span>
+              </span>
+            </label>
           </div>
           <p class="settings-status" data-role="noise-status" aria-live="polite">Enabled · ignores isolated drops of 60% or more. Raw frames and timer remain unchanged.</p>
         </section>

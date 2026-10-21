@@ -238,6 +238,8 @@ function handleApi(string $method, string $route, array $config): never
                     'min' => $channel['min'],
                     'max' => $channel['max'],
                     'avg' => $channel['avg'],
+                    'min_at_ms' => $channel['min_at_ms'],
+                    'max_at_ms' => $channel['max_at_ms'],
                 ];
 
                 if ($channel['samples'] === 0 || $channel['min'] === null || $channel['max'] === null) {
@@ -245,11 +247,19 @@ function handleApi(string $method, string $route, array $config): never
                 }
 
                 if ($coldest === null || $channel['min'] < $coldest['value']) {
-                    $coldest = ['channel' => $index, 'value' => $channel['min']];
+                    $coldest = [
+                        'channel' => $index,
+                        'value' => $channel['min'],
+                        'at_ms' => $channel['min_at_ms'],
+                    ];
                 }
 
                 if ($hottest === null || $channel['max'] > $hottest['value']) {
-                    $hottest = ['channel' => $index, 'value' => $channel['max']];
+                    $hottest = [
+                        'channel' => $index,
+                        'value' => $channel['max'],
+                        'at_ms' => $channel['max_at_ms'],
+                    ];
                 }
 
                 $sum += (float) $channel['avg'] * $channel['samples'];

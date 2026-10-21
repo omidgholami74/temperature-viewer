@@ -6,11 +6,12 @@ declare(strict_types=1);
  * Fill the database with a realistic firing run so the dashboard can be
  * previewed without a Pico. Never run this against production data.
  *
- *   FURNACE_DB=var/demo.sqlite php backend/bin/seed_demo.php --hours=26 --interval=1
+ *   FURNACE_DB=var/demo.sqlite php backend/bin/seed_demo.php --hours=1
  *
  * Options:
- *   --hours=26      length of the generated run
- *   --interval=1    seconds between generated samples (0.5 for denser data)
+ *   --hours=1       length of the generated run
+ *   --interval=0.1  seconds between generated samples, matching the 10 Hz
+ *                   firmware so the dashboard timer reads the real duration
  *   --label=...     run label
  */
 
@@ -22,12 +23,12 @@ $config = require __DIR__ . '/../config.php';
 $options = getopt('', ['hours::', 'interval::', 'label::', 'help']);
 
 if (isset($options['help'])) {
-    fwrite(STDOUT, "Usage: php seed_demo.php [--hours=26] [--interval=1] [--label=\"Demo firing\"]\n");
+    fwrite(STDOUT, "Usage: php seed_demo.php [--hours=1] [--interval=0.1] [--label=\"Demo firing\"]\n");
     exit(0);
 }
 
-$hours = max(0.05, (float) ($options['hours'] ?? 26));
-$interval = max(0.2, (float) ($options['interval'] ?? 1));
+$hours = max(0.05, (float) ($options['hours'] ?? 1));
+$interval = max(0.1, (float) ($options['interval'] ?? 0.1));
 $label = (string) ($options['label'] ?? 'Demo firing');
 $intervalMs = (int) round($interval * 1000);
 $durationMs = (int) round($hours * 3600 * 1000);

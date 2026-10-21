@@ -1410,7 +1410,8 @@ input[type="datetime-local"]:focus-visible {
   gap: 9px;
 }
 
-.select {
+.select,
+.input {
   min-width: 90px;
   padding: 8px 10px;
   border: 1px solid var(--line);
@@ -1419,6 +1420,34 @@ input[type="datetime-local"]:focus-visible {
   color: var(--text-1);
   font: inherit;
   font-size: 12px;
+}
+
+.input {
+  width: 72px;
+  min-width: 0;
+  padding-right: 24px;
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The percent sign sits inside the field, so the number reads as a percentage. */
+.noise-threshold__field {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.noise-threshold__unit {
+  position: absolute;
+  right: 9px;
+  color: var(--text-3);
+  font-size: 11px;
+  pointer-events: none;
 }
 
 @media (max-width: 560px) {

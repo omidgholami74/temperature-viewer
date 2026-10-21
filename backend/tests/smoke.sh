@@ -345,6 +345,16 @@ live="$(cat "${TMP_DIR}/body")"
 assert_eq "$(echo "${live}" | json_get run.started_at_ms)" "${AT_BASE}" "run starts at the first absolute sample"
 assert_eq "$(echo "${live}" | json_get latest.t_ms)" "200" "absolute times keep the 100 ms grid"
 
+# Analysis must say when each extreme happened, not just how warm it was.
+status="$(curl -sS -m 10 -o "${TMP_DIR}/body" -w "%{http_code}" "${ABS_BASE}/api/summary")"
+assert_eq "${status}" "200" "absolute-time summary status"
+summary="$(cat "${TMP_DIR}/body")"
+assert_eq "$(echo "${summary}" | json_get channels.0.min_at_ms)" "${AT_BASE}" "coldest sample time"
+assert_eq "$(echo "${summary}" | json_get channels.0.max_at_ms)" "${AT_BASE}" "warmest sample time for channel 1"
+assert_eq "$(echo "${summary}" | json_get channels.3.max_at_ms)" "${AT_BASE}" "warmest sample time for channel 4"
+assert_eq "$(echo "${summary}" | json_get coldest.at_ms)" "${AT_BASE}" "coldest highlight time"
+assert_eq "$(echo "${summary}" | json_get hottest.at_ms)" "${AT_BASE}" "hottest highlight time"
+
 status="$(curl -sS -m 10 -o /dev/null -w "%{http_code}" -X POST \
   -H "Content-Type: application/json" \
   --data '{"samples":[{"u":1,"at":1.5,"t":[1,2,3,4],"f":[0,0,0,0]}]}' \

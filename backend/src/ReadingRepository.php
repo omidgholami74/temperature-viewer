@@ -168,9 +168,11 @@ final class ReadingRepository
      * Per-channel min/max/average over an absolute time range.
      *
      * Runs are queried one at a time so the (run_id, t_ms) index is used and
-     * long histories do not turn into a full table scan.
+     * long histories do not turn into a full table scan. Each extreme also
+     * carries the absolute time it first occurred, because "the furnace hit
+     * 1180 °C" is only useful together with *when* it did.
      *
-     * @return array{samples: int, runs: int, channels: list<array{samples: int, min: ?float, max: ?float, avg: ?float}>}
+     * @return array{samples: int, runs: int, channels: list<array{samples: int, min: ?float, max: ?float, avg: ?float, min_at_ms: ?int, max_at_ms: ?int}>}
      */
     public function stats(int $fromMs, int $toMs, bool $rollup = false): array
     {
@@ -185,7 +187,14 @@ final class ReadingRepository
             $table,
         ));
 
-        $channels = array_fill(0, 4, ['samples' => 0, 'min' => null, 'max' => null, 'avg' => null]);
+        $channels = array_fill(0, 4, [
+            'samples' => 0,
+            'min' => null,
+            'max' => null,
+            'avg' => null,
+            'min_at_ms' => null,
+            'max_at_ms' => null,
+        ]);
         $sums = [0.0, 0.0, 0.0, 0.0];
         $totals = 0;
         $runs = 0;
@@ -217,14 +226,39 @@ final class ReadingRepository
                     continue;
                 }
 
+                $min = (float) $row['min' . $column];
+                $max = (float) $row['max' . $column];
                 $channel = &$channels[$index];
                 $channel['samples'] += $n;
-                $channel['min'] = $channel['min'] === null
-                    ? (float) $row['min' . $column]
-                    : min($channel['min'], (float) $row['min' . $column]);
-                $channel['max'] = $channel['max'] === null
-                    ? (float) $row['max' . $column]
-                    : max($channel['max'], (float) $row['max' . $column]);
+
+                // Only look up the time when this run actually holds the new
+                // extreme; the per-value lookup is cheap but not free.
+                if ($channel['min'] === null || $min < $channel['min']) {
+                    $channel['min'] = $min;
+                    $minT = $this->firstTimeOfValue(
+                        $table,
+                        (int) $run['id'],
+                        $fromT,
+                        $toT,
+                        $column,
+                        $min,
+                    );
+                    $channel['min_at_ms'] = $minT === null ? null : $startedAt + $minT;
+                }
+
+                if ($channel['max'] === null || $max > $channel['max']) {
+                    $channel['max'] = $max;
+                    $maxT = $this->firstTimeOfValue(
+                        $table,
+                        (int) $run['id'],
+                        $fromT,
+                        $toT,
+                        $column,
+                        $max,
+                    );
+                    $channel['max_at_ms'] = $maxT === null ? null : $startedAt + $maxT;
+                }
+
                 $sums[$index] += (float) $row['avg' . $column] * $n;
                 unset($channel);
             }
@@ -240,6 +274,33 @@ final class ReadingRepository
         unset($channel);
 
         return ['samples' => $totals, 'runs' => $runs, 'channels' => $channels];
+    }
+
+    /**
+     * First time (relative to the run) that a channel held an exact value.
+     *
+     * The value always comes from the aggregate query above, so equality is a
+     * bit-for-bit match on the stored REAL. Ties resolve to the earliest row,
+     * which is the moment the extreme was first reached.
+     */
+    private function firstTimeOfValue(
+        string $table,
+        int $runId,
+        int $fromT,
+        int $toT,
+        int $channel,
+        float $value,
+    ): ?int {
+        $statement = $this->pdo->prepare(sprintf(
+            'SELECT t_ms FROM %s WHERE run_id = ? AND t_ms >= ? AND t_ms <= ? AND ch%d = ?
+             ORDER BY t_ms ASC LIMIT 1',
+            $table,
+            $channel,
+        ));
+        $statement->execute([$runId, $fromT, $toT, $value]);
+        $found = $statement->fetchColumn();
+
+        return $found === false || $found === null ? null : (int) $found;
     }
 
     /**

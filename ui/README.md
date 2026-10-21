@@ -105,15 +105,18 @@ The manifest uses `start_url: "./"` and `scope: "./"` for the same reason.
   minutes. Requests are cancelled logically with a token so stale answers are
   ignored.
 - The counter is repainted with `requestAnimationFrame`, but only digits that
-  changed are touched. It follows the server's `active_ms` (time covered by
-  samples) with a 0.7 s local projection so tenths stay smooth between polls.
-  It never moves backwards, and it freezes when no new sample arrives; the
-  server keeps the authoritative value, so a reload is exact. By contrast,
+  changed are touched. It is derived from `run.sample_count`: one sample is
+  `0.1` s, so 8 620 samples read `00:14:22:0` regardless of how the collector
+  batches its uploads. It never moves backwards and freezes when no new sample
+  arrives; the server keeps the authoritative count, so a reload is exact.
   `elapsed_ms` is the wall-clock run span and is only used for the *Idle* stat.
-- The settings dialog fetches `/api/bounds` once, then `/api/summary` for the
-  selected range. Export reuses that range and downloads `/api/export` as a
-  blob, so the API error message (for example a 413 for an oversized range)
-  can be shown in the dialog.
+- Settings → Analysis fetches `/api/summary` without a range, so it covers every
+  stored sample and shows min/max/average plus the time each extreme was first
+  reached. It does not wait for a 24 hour window to fill.
+- Settings → Export has its own date picker (presets and a custom range). It
+  fetches `/api/bounds` once to set the picker limits and downloads
+  `/api/export` as a blob, so the API error message (for example a 413 for an
+  oversized range) can be shown in the dialog.
 - The chart window is anchored to the newest recorded sample, so a stopped Pico
   still shows its last data instead of an empty chart.
 - Every API call is cross-origin, uses `credentials: 'omit'` and relies on the

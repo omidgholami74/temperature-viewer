@@ -43,9 +43,12 @@ const DEFAULT_WINDOW = 600;
 const FAULT_SENTINEL = -1000;
 const STALE_MS = 2500;
 const LOST_MS = 15000;
-// Longest silence between frames that still counts as working time. The port
-// can stall for seconds; those seconds must not appear on the timer.
-const MAX_FRAME_GAP_MS = 3000;
+// The firmware prints one frame every 100 ms, so ten frames are one recorded
+// second. Counting frames instead of wall-clock gaps keeps the timer exact and
+// frozen while the port is quiet.
+const SAMPLE_MS = 100;
+const MIN_THRESHOLD = 1;
+const MAX_THRESHOLD = 95;
 const FAULT_BITS = [
   [1, 'Open thermocouple'],
   [2, 'Short to GND'],
@@ -149,7 +152,7 @@ function trendFor(delta) {
 }
 
 function elapsedMs() {
-  return state.session?.activeMs ?? 0;
+  return state.samples * SAMPLE_MS;
 }
 
 /** Wall-clock span of the session, used only to show idle time. */
@@ -314,7 +317,6 @@ function startSession(uptime) {
     startedAtEpoch: Date.now(),
     baseUptime: uptime,
     lastUptime: uptime,
-    activeMs: 0,
     stoppedAt: undefined,
   };
   state.samples = 0;
@@ -330,15 +332,6 @@ function startSession(uptime) {
 function applyFrame(frame) {
   if (!state.session || frame.u < state.session.lastUptime) {
     startSession(frame.u);
-  }
-
-  const previousUptime = state.session.lastUptime;
-  const gap = frame.u - previousUptime;
-
-  // Only real intervals between frames are working time. A long silence is
-  // capped, so the counter pauses instead of catching up in one jump.
-  if (gap > 0 && gap <= MAX_FRAME_GAP_MS) {
-    state.session.activeMs += gap;
   }
 
   const tMs = frame.u - state.session.baseUptime;
@@ -592,6 +585,15 @@ function startCounter() {
   requestAnimationFrame(frame);
 }
 
+/** Keep the typed drop threshold a whole percentage inside the allowed range. */
+function normalizeThreshold(value, fallback = 60) {
+  const numeric = Number(value);
+
+  return Number.isFinite(numeric)
+    ? Math.min(MAX_THRESHOLD, Math.max(MIN_THRESHOLD, Math.round(numeric)))
+    : fallback;
+}
+
 function loadNoiseSettings() {
   let saved = null;
   try {
@@ -600,7 +602,7 @@ function loadNoiseSettings() {
     saved = null;
   }
   const enabled = saved?.enabled !== false;
-  const threshold = [20, 40, 60, 80].includes(Number(saved?.threshold)) ? Number(saved.threshold) : 60;
+  const threshold = normalizeThreshold(saved?.threshold ?? 60);
   NOISE_SETTINGS.enabled = enabled;
   NOISE_SETTINGS.threshold = threshold;
   noiseFilter.configure({ enabled, threshold });
@@ -615,7 +617,8 @@ function noiseStatusText(enabled, threshold) {
 
 function saveNoiseSettings() {
   const enabled = el.noiseEnabled.checked;
-  const threshold = Number(el.noiseThreshold.value);
+  const threshold = normalizeThreshold(el.noiseThreshold.value);
+  el.noiseThreshold.value = String(threshold);
   NOISE_SETTINGS.enabled = enabled;
   NOISE_SETTINGS.threshold = threshold;
   noiseFilter.configure({ enabled, threshold });

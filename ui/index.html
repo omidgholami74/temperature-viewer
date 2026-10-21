@@ -13,11 +13,11 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="assets/img/icon-180.png">
-  <link rel="stylesheet" href="assets/css/tokens.css?v=4">
-  <link rel="stylesheet" href="assets/css/app.css?v=4">
+  <link rel="stylesheet" href="assets/css/tokens.css?v=6">
+  <link rel="stylesheet" href="assets/css/app.css?v=6">
   <!-- Resolve the saved theme before the first paint, so a light-mode phone
        never flashes the dark dashboard. -->
-  <script src="assets/js/theme-boot.js?v=4"></script>
+  <script src="assets/js/theme-boot.js?v=6"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -85,7 +85,7 @@
         </div>
 
         <p class="counter__human"><span class="counter__human-label">Equivalent</span> <span data-role="human">—</span></p>
-        <p class="timer-card__hint">Counts only time covered by samples. It pauses when the furnace sends nothing.</p>
+        <p class="timer-card__hint">One sample is 0.1 s (10 samples per second). It pauses when the furnace sends nothing.</p>
 
         <div class="timer-card__stats">
           <span class="stat"><span class="stat__label">Samples</span><b class="stat__value" data-role="samples">0</b></span>
@@ -226,7 +226,6 @@
         <button class="tab" id="tab-btn-appearance" type="button" role="tab" aria-selected="true" aria-controls="tab-appearance" data-tab="appearance">Appearance</button>
         <button class="tab" id="tab-btn-analysis" type="button" role="tab" aria-selected="false" aria-controls="tab-analysis" data-tab="analysis">Analysis</button>
         <button class="tab" id="tab-btn-data" type="button" role="tab" aria-selected="false" aria-controls="tab-data" data-tab="data">Export</button>
-        <button class="tab" id="tab-btn-app" type="button" role="tab" aria-selected="false" aria-controls="tab-app" data-tab="app">App</button>
       </div>
 
       <div class="dialog__body">
@@ -248,9 +247,15 @@
             </div>
             <div class="noise-controls">
               <label class="noise-toggle"><input type="checkbox" data-role="noise-enabled" checked><span>Enabled</span></label>
-              <label class="noise-threshold"><span class="field__label">Drop threshold</span><select class="select" data-role="noise-threshold"><option value="20">20%</option><option value="40">40%</option><option value="60" selected>60%</option><option value="80">80%</option></select></label>
+              <label class="noise-threshold">
+                <span class="field__label">Drop threshold</span>
+                <span class="noise-threshold__field">
+                  <input class="input" type="number" inputmode="decimal" min="1" max="95" step="1" value="60" data-role="noise-threshold" aria-describedby="noise-status">
+                  <span class="noise-threshold__unit" aria-hidden="true">%</span>
+                </span>
+              </label>
             </div>
-            <p class="settings-row__hint" data-role="noise-status" aria-live="polite">Enabled · ignores isolated drops of 60% or more. Stored readings and timer remain unchanged.</p>
+            <p class="settings-row__hint" id="noise-status" data-role="noise-status" aria-live="polite">Enabled · ignores isolated drops of 60% or more. Stored readings and timer remain unchanged.</p>
           </div>
 
           <div class="settings-row">
@@ -263,9 +268,78 @@
         </section>
 
         <section class="tab-panel" id="tab-analysis" role="tabpanel" aria-labelledby="tab-btn-analysis" data-panel="analysis" hidden>
+          <p class="settings-row__hint">
+            Every stored sample, oldest to newest. Each extreme carries the time it was first reached.
+          </p>
+
+          <div class="analysis-highlights">
+            <article class="highlight">
+              <span class="highlight__label">Coldest</span>
+              <b class="highlight__value" data-role="analysis-cold">—</b>
+              <span class="highlight__meta" data-role="analysis-cold-meta">per furnace</span>
+              <span class="highlight__time" data-role="analysis-cold-time">—</span>
+            </article>
+            <article class="highlight">
+              <span class="highlight__label">Hottest</span>
+              <b class="highlight__value" data-role="analysis-hot">—</b>
+              <span class="highlight__meta" data-role="analysis-hot-meta">per furnace</span>
+              <span class="highlight__time" data-role="analysis-hot-time">—</span>
+            </article>
+            <article class="highlight">
+              <span class="highlight__label">Average</span>
+              <b class="highlight__value" data-role="analysis-avg">—</b>
+              <span class="highlight__meta">all channels</span>
+              <span class="highlight__time" data-role="analysis-avg-span">—</span>
+            </article>
+          </div>
+
+          <div class="analysis-table" data-role="analysis-table" aria-live="polite">
+            <div class="analysis-table__head" aria-hidden="true">
+              <span>Furnace</span><span>Min</span><span>Max</span><span>Avg</span><span>Points</span>
+            </div>
+            <div class="analysis-row" data-channel-row="0">
+              <span class="analysis-row__name"><span class="furnace-card__dot" aria-hidden="true"></span>Furnace 1</span>
+              <span class="analysis-cell"><b data-role="row-min-0">—</b><small data-role="row-min-time-0"></small></span>
+              <span class="analysis-cell"><b data-role="row-max-0">—</b><small data-role="row-max-time-0"></small></span>
+              <span data-role="row-avg-0">—</span>
+              <span data-role="row-points-0">—</span>
+            </div>
+            <div class="analysis-row" data-channel-row="1">
+              <span class="analysis-row__name"><span class="furnace-card__dot" aria-hidden="true"></span>Furnace 2</span>
+              <span class="analysis-cell"><b data-role="row-min-1">—</b><small data-role="row-min-time-1"></small></span>
+              <span class="analysis-cell"><b data-role="row-max-1">—</b><small data-role="row-max-time-1"></small></span>
+              <span data-role="row-avg-1">—</span>
+              <span data-role="row-points-1">—</span>
+            </div>
+            <div class="analysis-row" data-channel-row="2">
+              <span class="analysis-row__name"><span class="furnace-card__dot" aria-hidden="true"></span>Furnace 3</span>
+              <span class="analysis-cell"><b data-role="row-min-2">—</b><small data-role="row-min-time-2"></small></span>
+              <span class="analysis-cell"><b data-role="row-max-2">—</b><small data-role="row-max-time-2"></small></span>
+              <span data-role="row-avg-2">—</span>
+              <span data-role="row-points-2">—</span>
+            </div>
+            <div class="analysis-row" data-channel-row="3">
+              <span class="analysis-row__name"><span class="furnace-card__dot" aria-hidden="true"></span>Furnace 4</span>
+              <span class="analysis-cell"><b data-role="row-min-3">—</b><small data-role="row-min-time-3"></small></span>
+              <span class="analysis-cell"><b data-role="row-max-3">—</b><small data-role="row-max-time-3"></small></span>
+              <span data-role="row-avg-3">—</span>
+              <span data-role="row-points-3">—</span>
+            </div>
+          </div>
+
+          <p class="settings-status" data-role="analysis-status">Nothing loaded yet.</p>
+        </section>
+
+        <section class="tab-panel" id="tab-data" role="tabpanel" aria-labelledby="tab-btn-data" data-panel="data" hidden>
+          <p class="settings-row__title">Download recorded data</p>
+          <p class="settings-row__hint">
+            A CSV file with one row per sample — time, furnace temperatures and faults.
+            Long ranges are averaged into fixed buckets so the file opens fast in Excel.
+          </p>
+
           <div class="range-block">
-            <span class="field__label">Time range</span>
-            <div class="range-presets" role="group" aria-label="Time range" data-role="range-presets">
+            <span class="field__label">Export range</span>
+            <div class="range-presets" role="group" aria-label="Export range" data-role="range-presets">
               <button type="button" data-range="3600">1 h</button>
               <button type="button" data-range="21600">6 h</button>
               <button type="button" data-range="86400" aria-pressed="true">24 h</button>
@@ -287,70 +361,8 @@
               <button class="btn btn--compact" type="button" data-role="range-apply">Apply</button>
             </div>
 
-            <p class="range-note" data-role="range-note">Open the analysis to load the latest 24 hours.</p>
+            <p class="range-note" data-role="range-note">Pick a range to download.</p>
           </div>
-
-          <div class="analysis-highlights">
-            <article class="highlight">
-              <span class="highlight__label">Coldest</span>
-              <b class="highlight__value" data-role="analysis-cold">—</b>
-              <span class="highlight__meta" data-role="analysis-cold-meta">per furnace</span>
-            </article>
-            <article class="highlight">
-              <span class="highlight__label">Hottest</span>
-              <b class="highlight__value" data-role="analysis-hot">—</b>
-              <span class="highlight__meta" data-role="analysis-hot-meta">per furnace</span>
-            </article>
-            <article class="highlight">
-              <span class="highlight__label">Average</span>
-              <b class="highlight__value" data-role="analysis-avg">—</b>
-              <span class="highlight__meta">all channels</span>
-            </article>
-          </div>
-
-          <div class="analysis-table" data-role="analysis-table" aria-live="polite">
-            <div class="analysis-table__head" aria-hidden="true">
-              <span>Furnace</span><span>Min</span><span>Max</span><span>Avg</span><span>Points</span>
-            </div>
-            <div class="analysis-row" data-channel-row="0">
-              <span class="analysis-row__name"><span class="furnace-card__dot" aria-hidden="true"></span>Furnace 1</span>
-              <span data-role="row-min-0">—</span>
-              <span data-role="row-max-0">—</span>
-              <span data-role="row-avg-0">—</span>
-              <span data-role="row-points-0">—</span>
-            </div>
-            <div class="analysis-row" data-channel-row="1">
-              <span class="analysis-row__name"><span class="furnace-card__dot" aria-hidden="true"></span>Furnace 2</span>
-              <span data-role="row-min-1">—</span>
-              <span data-role="row-max-1">—</span>
-              <span data-role="row-avg-1">—</span>
-              <span data-role="row-points-1">—</span>
-            </div>
-            <div class="analysis-row" data-channel-row="2">
-              <span class="analysis-row__name"><span class="furnace-card__dot" aria-hidden="true"></span>Furnace 3</span>
-              <span data-role="row-min-2">—</span>
-              <span data-role="row-max-2">—</span>
-              <span data-role="row-avg-2">—</span>
-              <span data-role="row-points-2">—</span>
-            </div>
-            <div class="analysis-row" data-channel-row="3">
-              <span class="analysis-row__name"><span class="furnace-card__dot" aria-hidden="true"></span>Furnace 4</span>
-              <span data-role="row-min-3">—</span>
-              <span data-role="row-max-3">—</span>
-              <span data-role="row-avg-3">—</span>
-              <span data-role="row-points-3">—</span>
-            </div>
-          </div>
-
-          <p class="settings-status" data-role="analysis-status">Nothing loaded yet.</p>
-        </section>
-
-        <section class="tab-panel" id="tab-data" role="tabpanel" aria-labelledby="tab-btn-data" data-panel="data" hidden>
-          <p class="settings-row__title">Download recorded data</p>
-          <p class="settings-row__hint">
-            A CSV file with one row per sample — time, furnace temperatures and faults.
-            Long ranges are averaged into fixed buckets so the file opens fast in Excel.
-          </p>
 
           <div class="export-range">
             <span class="field__label">Range</span>
@@ -379,24 +391,7 @@
               <span>Download CSV</span>
             </button>
           </div>
-          <p class="settings-status" data-role="data-status">Pick a range on the Analysis tab. The same range is used here.</p>
-        </section>
-
-        <section class="tab-panel" id="tab-app" role="tabpanel" aria-labelledby="tab-btn-app" data-panel="app" hidden>
-          <p class="settings-row__title">Install on this phone</p>
-          <p class="settings-row__hint">
-            Add the dashboard to the home screen to open it full screen, without the browser
-            bar. The last screen still opens when the network is down; live data needs the API.
-          </p>
-
-          <div class="settings-actions">
-            <button class="btn btn--primary" type="button" data-role="install" hidden>Install app</button>
-          </div>
-
-          <p class="settings-status" data-role="install-hint">
-            On iPhone or iPad: open this page in Safari, tap Share, then “Add to Home Screen”.
-            On Android or desktop Chrome: use the browser menu → “Install app”.
-          </p>
+          <p class="settings-status" data-role="data-status">Choose a range, then download the CSV.</p>
         </section>
       </div>
     </div>
@@ -406,8 +401,8 @@
 
   <!-- ?v= busts stale copies of the API origin on already-open phones and tabs;
        bump it whenever config.js or main.js changes meaning. -->
-  <script src="config.js?v=4"></script>
+  <script src="config.js?v=6"></script>
   <script src="assets/vendor/chart.umd.min.js"></script>
-  <script type="module" src="assets/js/main.js?v=4"></script>
+  <script type="module" src="assets/js/main.js?v=6"></script>
 </body>
 </html>

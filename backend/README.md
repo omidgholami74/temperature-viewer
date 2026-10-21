@@ -145,9 +145,10 @@ tells the client to reload history instead of appending.
 
 `elapsed_ms` is the wall-clock age of the run. `active_ms` is the time the
 furnace actually produced data: ingest adds the gap between consecutive
-samples, capped at `FURNACE_MAX_SAMPLE_GAP_MS`, so a silent Pico pauses the
-upstream timer instead of inflating it. The dashboard counter uses
-`active_ms`; `elapsed_ms` drives the *Idle* stat.
+samples, capped at `FURNACE_MAX_SAMPLE_GAP_MS`, so a silent Pico pauses it
+instead of inflating it. The dashboard counter uses `sample_count` (one sample
+= 0.1 s), which is exact even when the collector uploads in batches;
+`elapsed_ms` drives the *Idle* stat.
 
 ### `GET /api/history?window=<seconds>&max_points=<n>&run=<id>`
 
@@ -198,20 +199,23 @@ maintenance has run.
   "samples": 19220,
   "runs": 2,
   "channels": [
-    { "channel": 0, "samples": 19220, "min": 760.6, "max": 807.0, "avg": 787.5 },
-    { "channel": 1, "samples": 19220, "min": 701.0, "max": 739.0, "avg": 723.5 },
-    { "channel": 2, "samples": 19100, "min": 905.2, "max": 941.5, "avg": 929.2 },
-    { "channel": 3, "samples": 19220, "min": 624.0, "max": 653.1, "avg": 637.4 }
+    { "channel": 0, "samples": 19220, "min": 760.6, "max": 807.0, "avg": 787.5, "min_at_ms": 1792440136000, "max_at_ms": 1792501201000 },
+    { "channel": 1, "samples": 19220, "min": 701.0, "max": 739.0, "avg": 723.5, "min_at_ms": 1792429503900, "max_at_ms": 1792498800200 },
+    { "channel": 2, "samples": 19100, "min": 905.2, "max": 941.5, "avg": 929.2, "min_at_ms": 1792432520000, "max_at_ms": 1792499127000 },
+    { "channel": 3, "samples": 19220, "min": 624.0, "max": 653.1, "avg": 637.4, "min_at_ms": 1792433011000, "max_at_ms": 1792498044000 }
   ],
-  "coldest": { "channel": 3, "value": 624.0 },
-  "hottest": { "channel": 2, "value": 941.5 },
+  "coldest": { "channel": 3, "value": 624.0, "at_ms": 1792433011000 },
+  "hottest": { "channel": 2, "value": 941.5, "at_ms": 1792499127000 },
   "average": 769.1
 }
 ```
 
 The range is inclusive of both timestamps and is applied across every run that
 overlaps it, using absolute time (`runs.started_at_ms + readings.t_ms`).
-`channel` is 0-based and matches the UI cards.
+`channel` is 0-based and matches the UI cards. `min_at_ms`/`max_at_ms` (and
+`coldest.at_ms`/`hottest.at_ms`) are the absolute time each extreme was **first**
+reached; ties resolve to the earliest sample. Without `from_ms`/`to_ms` the
+whole database is summarised, which is what the dashboard's Analysis tab uses.
 
 ### `GET /api/export?from_ms=<ms>&to_ms=<ms>&resolution=auto|raw|1s|1min`
 
@@ -282,12 +286,14 @@ still aggregated. `--vacuum` reclaims disk space after a large prune.
 ## Demo data
 
 ```bash
-FURNACE_DB=var/demo.sqlite php bin/seed_demo.php --hours=26 --interval=1
+FURNACE_DB=var/demo.sqlite php bin/seed_demo.php --hours=1
 ```
 
-The script ends the active run, creates a 26-hour demo run with realistic heat
-up, soak drift and a periodic thermocouple fault, and prints the row count.
-Never point it at production data.
+The script ends the active run, creates a demo run with realistic heat-up, soak
+drift and a periodic thermocouple fault, and prints the row count. The default
+`--interval=0.1` matches the 10 Hz firmware, so the dashboard timer shows the
+real duration; `--interval=1` produces a smaller, coarser dataset for chart
+work. Never point it at production data.
 
 ## Deployment
 

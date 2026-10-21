@@ -99,11 +99,11 @@ mapped in a Project File.
 ### Recorded-time timer
 
 The counter is not derived from `performance.now()` and does not keep running
-while the port is quiet. `state.session.activeMs` only grows by the uptime
-delta between two frames, and only when that delta is at most
-`MAX_FRAME_GAP_MS` (3000 ms). Disconnecting stops the counter; reconnecting
-opens a new session because the Pico's uptime restarts. This is the same rule
-the API applies in `runs.active_ms`, so both dashboards behave identically.
+while the port is quiet. It is `state.samples * 0.1 s`: one frame is one
+tenth of a second, so ten frames advance the counter by exactly one second. The
+same rule applies on the API dashboard through `runs.sample_count`, so both
+pages read the same duration. Disconnecting stops the counter; reconnecting
+opens a new session because the Pico's uptime restarts.
 
 Styles, `format.js` and `chart-panel.js` are copied from `ui/`, so the pages
 look identical. Change them in `ui/` first, then copy the files over:

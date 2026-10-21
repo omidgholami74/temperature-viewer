@@ -26,9 +26,13 @@ const WINDOW_STORAGE_KEY = 'furnace.window';
 const THEME_STORAGE_KEY = 'furnace.theme';
 const DEFAULT_WINDOW = 600;
 const DEFAULT_RANGE = 86400;
-// The timer may run ahead of the server by at most this much while waiting for
-// the next poll; after that it freezes instead of inventing time.
-const TIMER_FRESH_MS = 700;
+// One firmware frame is 100 ms, so ten samples are one recorded second. The
+// counter is derived from the sample count instead of the upload clock: the
+// collector uploads in batches, and a clock-based counter would freeze between
+// batches and then jump.
+const SAMPLE_MS = 100;
+const MIN_THRESHOLD = 1;
+const MAX_THRESHOLD = 95;
 const PAUSED_AFTER_MS = 2500;
 const FAULT_BITS = [
   [1, 'Open thermocouple'],
@@ -94,14 +98,19 @@ const el = {
   rangeNote: $('[data-role="range-note"]'),
   analysisCold: $('[data-role="analysis-cold"]'),
   analysisColdMeta: $('[data-role="analysis-cold-meta"]'),
+  analysisColdTime: $('[data-role="analysis-cold-time"]'),
   analysisHot: $('[data-role="analysis-hot"]'),
   analysisHotMeta: $('[data-role="analysis-hot-meta"]'),
+  analysisHotTime: $('[data-role="analysis-hot-time"]'),
   analysisAvg: $('[data-role="analysis-avg"]'),
+  analysisAvgSpan: $('[data-role="analysis-avg-span"]'),
   analysisStatus: $('[data-role="analysis-status"]'),
   analysisRows: [0, 1, 2, 3].map((index) => ({
     root: $(`[data-channel-row="${index}"]`),
     min: $(`[data-role="row-min-${index}"]`),
+    minTime: $(`[data-role="row-min-time-${index}"]`),
     max: $(`[data-role="row-max-${index}"]`),
+    maxTime: $(`[data-role="row-max-time-${index}"]`),
     avg: $(`[data-role="row-avg-${index}"]`),
     points: $(`[data-role="row-points-${index}"]`),
   })),
@@ -110,8 +119,6 @@ const el = {
   exportRange: $('[data-role="export-range"]'),
   exportNote: $('[data-role="export-note"]'),
   dataStatus: $('[data-role="data-status"]'),
-  installButton: $('[data-role="install"]'),
-  installHint: $('[data-role="install-hint"]'),
   noiseEnabled: $('[data-role="noise-enabled"]'),
   noiseThreshold: $('[data-role="noise-threshold"]'),
   noiseStatus: $('[data-role="noise-status"]'),
@@ -124,7 +131,6 @@ const state = {
   filteredLatest: null,
   lastPayload: null,
   lastPayloadAt: 0,
-  lastDataAt: 0,
   failures: 0,
   reason: null,
   windowSeconds: DEFAULT_WINDOW,
@@ -133,21 +139,21 @@ const state = {
   range: { preset: DEFAULT_RANGE, fromMs: null, toMs: null },
   analysis: null,
   analysisToken: 0,
+  analysisLoading: false,
 };
 
 /**
- * The counter follows the server's active_ms (time covered by samples), with
- * a short local projection so the tenths stay smooth between polls. It never
- * moves backwards, and it freezes when samples stop arriving.
+ * Sample clock: one stored sample is exactly 0.1 s of recorded time. The count
+ * comes from the server, so a retried upload cannot count an interval twice,
+ * and the display freezes when no new samples arrive.
  */
-const clock = { base: 0, at: 0, shown: 0, running: false, dataAt: 0 };
+const clock = { samples: 0, shown: 0 };
 const noiseFilter = new TemperatureDropFilter();
 const NOISE_STORAGE_KEY = 'furnace.noise-filter';
 
 let chart = null;
 let historyRequest = 0;
 let toastTimer = null;
-let installPrompt = null;
 
 const feed = new LiveFeed({
   onData: applyPayload,
@@ -219,36 +225,23 @@ function trendFor(delta) {
 
 /* --- recorded-time clock ------------------------------------------------ */
 
+/** Recorded milliseconds for a run: ten stored samples are one second. */
+function sampleTime(run) {
+  return Math.max(0, Math.round(Number(run?.sample_count) || 0)) * SAMPLE_MS;
+}
+
 function syncClock(run) {
-  clock.base = Math.max(0, Number(run?.active_ms) || 0);
-  clock.at = performance.now();
-  clock.running = Boolean(run?.running);
-  clock.shown = Math.max(clock.shown, clock.base);
+  clock.samples = Math.max(0, Math.round(Number(run?.sample_count) || 0));
+  // A late or retried answer must never rewind the display.
+  clock.shown = Math.max(clock.shown, clock.samples * SAMPLE_MS);
 }
 
 function resetClock() {
-  clock.base = 0;
-  clock.at = performance.now();
+  clock.samples = 0;
   clock.shown = 0;
-  clock.running = false;
-  clock.dataAt = 0;
-}
-
-/** Mark a payload that actually carried a new sample. */
-function noteData() {
-  clock.at = performance.now();
-  clock.dataAt = clock.at;
-  state.lastDataAt = clock.at;
 }
 
 function elapsedNow() {
-  const now = performance.now();
-  const fresh = clock.running && clock.dataAt > 0 && now - clock.dataAt < TIMER_FRESH_MS;
-  const target = fresh ? clock.base + (now - clock.at) : clock.base;
-
-  // A late poll must not rewind the display by a fraction of a second.
-  clock.shown = Math.max(clock.shown, target);
-
   return clock.shown;
 }
 
@@ -337,9 +330,10 @@ function updateRunChip() {
 }
 
 function renderRun(run) {
-  const active = Math.max(0, Number(run?.active_ms) || 0);
-  const idle = Math.max(0, (Number(run?.elapsed_ms) || 0) - active);
-  const rate = run && active > 5000 ? run.sample_count / (active / 1000) : null;
+  const recorded = sampleTime(run);
+  const elapsed = Math.max(0, Number(run?.elapsed_ms) || 0);
+  const idle = Math.max(0, elapsed - recorded);
+  const rate = run && recorded > 5000 ? (Number(run.sample_count) || 0) / (recorded / 1000) : null;
 
   setText(el.started, run ? `Started ${formatDateTime(run.started_at_ms)}` : 'No run started');
   setText(el.samples, formatCount(run?.sample_count ?? 0));
@@ -439,12 +433,6 @@ function applyPayload(payload) {
   } else if (run) {
     state.run = run;
     syncClock(run);
-  }
-
-  const latestChanged = (payload.latest?.id ?? null) !== (state.rawLatest?.id ?? null);
-
-  if (payload.samples?.length || latestChanged) {
-    noteData();
   }
 
   if (payload.resync) {
@@ -554,6 +542,12 @@ function switchToRun(runId) {
   updateLegend(null);
   renderRun(null);
   updateEmptyState();
+
+  // A different run means different bounds and different analysis.
+  state.bounds = null;
+  state.analysis = null;
+  state.analysisToken += 1;
+  state.analysisLoading = false;
   loadHistory({ runId });
 }
 
@@ -659,6 +653,19 @@ function applyTheme(preference, { persist = true } = {}) {
   chart?.setTheme();
 }
 
+/** Keep the typed drop threshold a whole percentage inside the allowed range. */
+function normalizeThreshold(value, fallback = 60) {
+  const numeric = Number(value);
+
+  return Number.isFinite(numeric)
+    ? Math.min(MAX_THRESHOLD, Math.max(MIN_THRESHOLD, Math.round(numeric)))
+    : fallback;
+}
+
+function noiseStatusText(enabled, threshold) {
+  return `${enabled ? 'Enabled' : 'Disabled'} · ${enabled ? `ignores isolated drops of ${threshold}% or more` : 'all readings shown'}; raw samples and timer are unchanged.`;
+}
+
 function loadNoiseSettings() {
   let saved = null;
   try {
@@ -667,17 +674,18 @@ function loadNoiseSettings() {
     saved = null;
   }
   const enabled = saved?.enabled !== false;
-  const threshold = [20, 40, 60, 80].includes(Number(saved?.threshold)) ? Number(saved.threshold) : 60;
+  const threshold = normalizeThreshold(saved?.threshold ?? 60);
   noiseFilter.configure({ enabled, threshold });
   el.noiseEnabled.checked = enabled;
   el.noiseThreshold.value = String(threshold);
-  setText(el.noiseStatus, `${enabled ? 'Enabled' : 'Disabled'} · ${enabled ? `ignores isolated drops of ${threshold}% or more` : 'all readings shown'}; raw samples and timer are unchanged.`);
+  setText(el.noiseStatus, noiseStatusText(enabled, threshold));
   return { enabled, threshold };
 }
 
 function saveNoiseSettings() {
   const enabled = el.noiseEnabled.checked;
-  const threshold = Number(el.noiseThreshold.value);
+  const threshold = normalizeThreshold(el.noiseThreshold.value);
+  el.noiseThreshold.value = String(threshold);
   noiseFilter.configure({ enabled, threshold });
 
   try {
@@ -689,8 +697,7 @@ function saveNoiseSettings() {
   // Retain the displayed value as the new baseline. Changing settings during
   // a pending spike won't suddenly reveal it; future frames use the new rule.
   noiseFilter.reset(state.latest?.temps ?? []);
-  const status = `${enabled ? 'Enabled' : 'Disabled'} · ${enabled ? `ignores isolated drops of ${threshold}% or more` : 'all readings shown'}; raw samples and timer are unchanged.`;
-  setText(el.noiseStatus, status);
+  setText(el.noiseStatus, noiseStatusText(enabled, threshold));
   toast(`Noise filter ${enabled ? 'enabled' : 'disabled'}`);
 }
 
@@ -711,8 +718,14 @@ function selectTab(name) {
     panel.hidden = panel.dataset.panel !== name;
   }
 
-  if (name === 'analysis' || name === 'data') {
+  if (name === 'data') {
     ensureRange();
+  }
+
+  // Analysis covers everything stored, so it is useful from the first sample
+  // instead of waiting for a 24 hour window to fill.
+  if (name === 'analysis') {
+    loadAnalysis();
   }
 }
 
@@ -772,10 +785,14 @@ function updateRangeUI() {
     const label = `${formatStamp(fromMs)} → ${formatStamp(toMs)} · ${formatShortDuration(rangeDuration())}`;
     setText(el.rangeNote, label);
     setText(el.exportRange, label);
+    setText(el.dataStatus, 'Ready to download the selected range.');
   } else {
-    setText(el.rangeNote, 'Open the analysis to load the latest 24 hours.');
+    setText(el.rangeNote, 'Pick a range to download.');
     setText(el.exportRange, 'No range selected.');
   }
+
+  // A single-sample range is still downloadable; an empty one is not.
+  el.exportButton.disabled = !(ready && toMs >= fromMs);
 
   if (state.bounds) {
     el.rangeFrom.min = toLocalInput(state.bounds.first_ms);
@@ -785,7 +802,7 @@ function updateRangeUI() {
   }
 }
 
-function setRangePreset(seconds, { load = true } = {}) {
+function setRangePreset(seconds) {
   const bounds = state.bounds;
 
   if (!bounds || !bounds.last_ms) {
@@ -816,10 +833,6 @@ function setRangePreset(seconds, { load = true } = {}) {
   state.range.fromMs = start;
   state.range.toMs = end;
   updateRangeUI();
-
-  if (load) {
-    loadAnalysis();
-  }
 }
 
 function applyCustomRange() {
@@ -827,12 +840,12 @@ function applyCustomRange() {
   const to = fromLocalInput(el.rangeTo.value);
 
   if (from === null || to === null) {
-    setText(el.analysisStatus, 'Choose both the first and the last date.');
+    setText(el.dataStatus, 'Choose both the first and the last date.');
     return;
   }
 
   if (to <= from) {
-    setText(el.analysisStatus, 'The last date must be after the first date.');
+    setText(el.dataStatus, 'The last date must be after the first date.');
     return;
   }
 
@@ -840,7 +853,6 @@ function applyCustomRange() {
   state.range.fromMs = from;
   state.range.toMs = to;
   updateRangeUI();
-  loadAnalysis();
 }
 
 async function ensureRange() {
@@ -848,25 +860,19 @@ async function ensureRange() {
     try {
       state.bounds = await api.bounds();
     } catch (error) {
-      setText(el.analysisStatus, `Could not load the data range: ${error.message}`);
+      setText(el.dataStatus, `Could not load the export range: ${error.message}`);
       return;
     }
 
     if (!state.bounds.last_ms) {
-      setText(el.analysisStatus, 'No samples stored yet. Start the collector, then open this again.');
+      setText(el.dataStatus, 'No samples stored yet. Start the collector, then open this again.');
       updateRangeUI();
       return;
     }
-
-    setRangePreset(DEFAULT_RANGE, { load: false });
   }
 
   if (state.range.fromMs === null) {
-    setRangePreset(DEFAULT_RANGE, { load: false });
-  }
-
-  if (!state.analysis) {
-    loadAnalysis();
+    setRangePreset(DEFAULT_RANGE);
   }
 }
 
@@ -875,38 +881,40 @@ async function ensureRange() {
 function resetAnalysis(message) {
   state.analysis = null;
   setText(el.analysisCold, '—');
+  setText(el.analysisColdTime, '—');
   setText(el.analysisHot, '—');
+  setText(el.analysisHotTime, '—');
   setText(el.analysisAvg, '—');
+  setText(el.analysisAvgSpan, '—');
   setText(el.analysisColdMeta, 'per furnace');
   setText(el.analysisHotMeta, 'per furnace');
 
   for (const row of el.analysisRows) {
     row.root.classList.remove('is-cold', 'is-hot');
     setText(row.min, '—');
+    setText(row.minTime, '');
     setText(row.max, '—');
+    setText(row.maxTime, '');
     setText(row.avg, '—');
     setText(row.points, '—');
   }
 
   setText(el.analysisStatus, message);
-  setText(el.dataStatus, message);
-  el.exportButton.disabled = true;
 }
 
 async function loadAnalysis() {
-  if (state.range.fromMs === null || state.range.toMs === null) {
+  if (state.analysisLoading) {
     return;
   }
 
   const token = ++state.analysisToken;
+  state.analysisLoading = true;
   setText(el.analysisStatus, 'Loading analysis…');
-  el.exportButton.disabled = true;
 
   try {
-    const data = await api.summary({
-      fromMs: state.range.fromMs,
-      toMs: state.range.toMs,
-    });
+    // No range: the API analyses everything it has stored, which is never
+    // empty once the first sample exists.
+    const data = await api.summary();
 
     if (token !== state.analysisToken) {
       return;
@@ -918,12 +926,16 @@ async function loadAnalysis() {
     if (token === state.analysisToken) {
       resetAnalysis(`Could not load the analysis: ${error.message}`);
     }
+  } finally {
+    if (token === state.analysisToken) {
+      state.analysisLoading = false;
+    }
   }
 }
 
 function renderAnalysis(data) {
   if (!data || data.samples === 0) {
-    resetAnalysis('No samples in this range. Choose a wider range.');
+    resetAnalysis('No samples stored yet. The analysis fills as soon as the first sample arrives.');
     return;
   }
 
@@ -939,6 +951,10 @@ function renderAnalysis(data) {
     coldest ? CHANNELS[coldest.channel]?.name ?? '—' : 'no data',
   );
   setText(
+    el.analysisColdTime,
+    coldest?.at_ms ? formatDateTime(coldest.at_ms) : '—',
+  );
+  setText(
     el.analysisHot,
     hottest ? `${formatTemp(hottest.value)} °C` : '—',
   );
@@ -946,7 +962,17 @@ function renderAnalysis(data) {
     el.analysisHotMeta,
     hottest ? CHANNELS[hottest.channel]?.name ?? '—' : 'no data',
   );
+  setText(
+    el.analysisHotTime,
+    hottest?.at_ms ? formatDateTime(hottest.at_ms) : '—',
+  );
   setText(el.analysisAvg, data.average === null ? '—' : `${formatTemp(data.average)} °C`);
+  setText(
+    el.analysisAvgSpan,
+    data.from_ms && data.to_ms
+      ? `over ${formatShortDuration(data.to_ms - data.from_ms)}`
+      : '—',
+  );
 
   data.channels.forEach((channel, index) => {
     const row = el.analysisRows[index];
@@ -958,7 +984,9 @@ function renderAnalysis(data) {
     const hasSamples = channel.samples > 0;
 
     setText(row.min, hasSamples ? `${formatTemp(channel.min)}°` : '—');
+    setText(row.minTime, hasSamples && channel.min_at_ms ? formatDateTime(channel.min_at_ms) : '');
     setText(row.max, hasSamples ? `${formatTemp(channel.max)}°` : '—');
+    setText(row.maxTime, hasSamples && channel.max_at_ms ? formatDateTime(channel.max_at_ms) : '');
     setText(row.avg, hasSamples ? `${formatTemp(channel.avg)}°` : '—');
     setText(row.points, hasSamples ? formatCount(channel.samples) : '—');
     row.root.classList.toggle('is-cold', coldest?.channel === index);
@@ -966,12 +994,13 @@ function renderAnalysis(data) {
   });
 
   const source = data.resolution === '1s' ? '1 s averages' : 'raw samples';
+  const span = data.from_ms && data.to_ms
+    ? ` · ${formatStamp(data.from_ms)} → ${formatStamp(data.to_ms)}`
+    : '';
   setText(
     el.analysisStatus,
-    `${formatCount(data.samples)} points · ${data.runs} ${data.runs === 1 ? 'run' : 'runs'} · ${source}`,
+    `${formatCount(data.samples)} points · ${data.runs} ${data.runs === 1 ? 'run' : 'runs'} · ${source}${span}`,
   );
-  setText(el.dataStatus, 'Ready to download the selected range.');
-  el.exportButton.disabled = false;
 }
 
 /* --- export ------------------------------------------------------------- */
@@ -1004,7 +1033,7 @@ function saveBlob(blob, filename) {
 
 async function downloadExport() {
   if (state.range.fromMs === null || state.range.toMs === null) {
-    setText(el.dataStatus, 'Choose a range on the Analysis tab first.');
+    setText(el.dataStatus, 'Pick an export range first.');
     return;
   }
 
@@ -1055,8 +1084,6 @@ async function startNewRun() {
     noiseFilter.reset();
     resetClock();
     chart?.clear();
-    noiseFilter.configure(noiseSettings);
-    noiseFilter.reset();
     feed.selectRun(payload.run.id);
     syncClock(payload.run);
     renderRun(payload.run);
@@ -1065,63 +1092,24 @@ async function startNewRun() {
     updateEmptyState();
     state.bounds = null;
     state.analysis = null;
+    state.analysisToken += 1;
+    state.analysisLoading = false;
     closeSettings();
     toast('New run started');
   } catch (error) {
-    setText(el.analysisStatus, `Could not start a run: ${error.message}`);
+    setText(el.dataStatus, `Could not start a run: ${error.message}`);
     toast(`Could not start a run: ${error.message}`, 'error');
   } finally {
     el.newRun.disabled = false;
   }
 }
 
-/* --- install as an app -------------------------------------------------- */
+/* --- offline shell ------------------------------------------------------ */
 
-function isStandalone() {
-  return window.matchMedia('(display-mode: standalone)').matches
-    || window.navigator.standalone === true;
-}
-
-function setupInstall() {
-  if (isStandalone()) {
-    el.installButton.hidden = true;
-    setText(el.installHint, 'Installed. Open the dashboard from the home screen.');
-  }
-
-  window.addEventListener('beforeinstallprompt', (event) => {
-    event.preventDefault();
-    installPrompt = event;
-    el.installButton.hidden = false;
-    setText(el.installHint, 'Install the dashboard for full-screen monitoring on this device.');
-  });
-
-  window.addEventListener('appinstalled', () => {
-    installPrompt = null;
-    el.installButton.hidden = true;
-    setText(el.installHint, 'Installed. Open the dashboard from the home screen.');
-    toast('App installed');
-  });
-
-  el.installButton.addEventListener('click', async () => {
-    if (!installPrompt) {
-      return;
-    }
-
-    installPrompt.prompt();
-
-    try {
-      await installPrompt.userChoice;
-    } catch {
-      // The prompt can be dismissed by the browser without a choice.
-    }
-
-    installPrompt = null;
-    el.installButton.hidden = true;
-  });
-
+function registerWorker() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch((error) => {
-      // An install prompt still works without a worker; say nothing on screen.
+      // Live data still works without a worker; say nothing on screen.
       console.warn('[sw]', error.message);
     });
   }
@@ -1245,7 +1233,7 @@ function bootstrap() {
   renderRun(null);
   updateStatus();
   startCounter();
-  setupInstall();
+  registerWorker();
   bindEvents();
 
   feed.start();

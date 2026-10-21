@@ -46,6 +46,47 @@
     </header>
 
     <main id="main">
+      <section class="timer-card panel" aria-labelledby="timer-title">
+        <header class="timer-card__head">
+          <div class="section-title">
+            <p class="eyebrow">Run timer</p>
+            <h2 id="timer-title">Elapsed time</h2>
+          </div>
+          <div class="timer-card__meta">
+            <span class="chip chip--live" data-role="run-state">Waiting</span>
+            <span class="timer-card__started" data-role="started">No run started</span>
+          </div>
+        </header>
+
+        <div class="timer-display">
+          <div class="counter" role="timer" aria-label="Elapsed run time">
+            <span class="counter__digits" data-digit="hours">00</span>
+            <span class="counter__sep" aria-hidden="true">:</span>
+            <span class="counter__digits" data-digit="minutes">00</span>
+            <span class="counter__sep" aria-hidden="true">:</span>
+            <span class="counter__digits" data-digit="seconds">00</span>
+            <span class="counter__sep" aria-hidden="true">:</span>
+            <span class="counter__digits"><span class="counter__ghost" aria-hidden="true">0</span><span data-digit="tenths">0</span></span>
+
+            <span class="counter__label">hours</span>
+            <span aria-hidden="true"></span>
+            <span class="counter__label">minutes</span>
+            <span aria-hidden="true"></span>
+            <span class="counter__label">seconds</span>
+            <span aria-hidden="true"></span>
+            <span class="counter__label">0.1 second</span>
+          </div>
+        </div>
+
+        <p class="counter__human"><span class="counter__human-label">Equivalent</span> <span data-role="human">—</span></p>
+
+        <div class="timer-card__stats">
+          <span class="stat"><span class="stat__label">Samples recorded</span><b class="stat__value" data-role="samples">0</b></span>
+          <span class="stat"><span class="stat__label">Sample rate</span><b class="stat__value" data-role="rate">—</b></span>
+          <span class="stat"><span class="stat__label">Last sample</span><b class="stat__value" data-role="age">—</b></span>
+        </div>
+      </section>
+
       <section class="furnace-grid" aria-label="Furnace temperatures">
         <article class="furnace-card" data-channel="0">
           <header class="furnace-card__head">
@@ -94,47 +135,6 @@
             <span class="furnace-card__fault" data-role="fault" hidden></span>
           </footer>
         </article>
-      </section>
-
-      <section class="timer-card panel" aria-labelledby="timer-title">
-        <header class="timer-card__head">
-          <div class="section-title">
-            <p class="eyebrow">Run timer</p>
-            <h2 id="timer-title">Elapsed time</h2>
-          </div>
-          <div class="timer-card__meta">
-            <span class="chip chip--live" data-role="run-state">Waiting</span>
-            <span class="timer-card__started" data-role="started">No run started</span>
-          </div>
-        </header>
-
-        <div class="timer-display">
-          <div class="counter" role="timer" aria-label="Elapsed run time">
-            <span class="counter__digits" data-digit="hours">00</span>
-            <span class="counter__sep" aria-hidden="true">:</span>
-            <span class="counter__digits" data-digit="minutes">00</span>
-            <span class="counter__sep" aria-hidden="true">:</span>
-            <span class="counter__digits" data-digit="seconds">00</span>
-            <span class="counter__sep" aria-hidden="true">:</span>
-            <span class="counter__digits"><span class="counter__ghost" aria-hidden="true">0</span><span data-digit="tenths">0</span></span>
-
-            <span class="counter__label">hours</span>
-            <span aria-hidden="true"></span>
-            <span class="counter__label">minutes</span>
-            <span aria-hidden="true"></span>
-            <span class="counter__label">seconds</span>
-            <span aria-hidden="true"></span>
-            <span class="counter__label">0.1 second</span>
-          </div>
-        </div>
-
-        <p class="counter__human"><span class="counter__human-label">Equivalent</span> <span data-role="human">—</span></p>
-
-        <div class="timer-card__stats">
-          <span class="stat"><span class="stat__label">Samples recorded</span><b class="stat__value" data-role="samples">0</b></span>
-          <span class="stat"><span class="stat__label">Sample rate</span><b class="stat__value" data-role="rate">—</b></span>
-          <span class="stat"><span class="stat__label">Last sample</span><b class="stat__value" data-role="age">—</b></span>
-        </div>
       </section>
 
       <section class="chart-card panel" aria-labelledby="chart-title">

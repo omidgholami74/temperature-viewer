@@ -13,15 +13,19 @@ This folder is deployed on its **own web server**, separate from the PHP API:
 
 ## Screens
 
-1. Four furnace cards: name, colour, live temperature, 10-second change and a
-   heating / cooling / holding state. A faulted channel shows `--.-` and the
-   decoded fault reason.
-2. Run timer: eight digit positions `HH:MM:SS:T`, with days/hours/minutes
+1. Run timer: eight digit positions `HH:MM:SS:T`, with days/hours/minutes
    spelled out below and sample count, rate and last-sample age underneath.
    "New run" starts a fresh timer after a confirmation.
+2. Four furnace cards, under the timer: name, colour, live temperature,
+   10-second change and a heating / cooling / holding state. A faulted channel
+   shows `--.-` and the decoded fault reason.
 3. Chart: four linear series on one canvas, a custom legend that doubles as a
    series toggle, window presets (1 min, 10 min, 1 h, 6 h, 24 h, all) and an
    empty state while waiting for the first sample.
+
+The three blocks fill exactly one screen: the page itself never scrolls. The
+chart is the flex row that absorbs the remaining height, so a phone in portrait
+and a laptop window both show the same information without scrolling.
 
 ## Configuration
 
@@ -53,7 +57,7 @@ you deploy the UI elsewhere.
 ## Files
 
 ```
-index.html                  markup, four static furnace cards, timer, chart
+index.html                  markup, timer, four static furnace cards, chart
 config.js                   API origin for the current deployment
 assets/css/tokens.css       design tokens, reset, base typography
 assets/css/app.css          layout and components
@@ -96,12 +100,16 @@ All asset paths are relative, so the site can also be hosted under a sub-path.
 - semantic colours (`--accent`, `--warn`, `--danger`, `--info`);
 - channel identity `--ch-1` … `--ch-4` reused by cards, legend and chart;
 - spacing scale (4 px base), radii, elevation, motion tokens;
-- type scale with a fluid counter size `clamp(42px, 12vw, 112px)`.
+- type scale with a fluid counter size `clamp(30px, min(11vw, 7.5vh), 96px)`
+  that is capped by viewport height as well as width.
 
-Components only use these tokens. The layout is a single column of panels with
-a 4/2/1 column furnace grid at 1180 px and 560 px breakpoints. Focus rings,
-reduced-motion support, a skip link, `aria-pressed` on toggles and a live
-connection status keep it usable with a keyboard and a screen reader.
+Components only use these tokens. The layout is one viewport tall
+(`100dvh`, `overflow: hidden`) with three rows: timer, furnace grid, chart.
+The grid is four columns, two below 1180 px and still two — not one — on a
+phone, because four stacked cards would need a scroll. A short window drops the
+footer, the chart note and the eyebrow labels before it touches live data.
+Focus rings, reduced-motion support, a skip link, `aria-pressed` on toggles and
+a live connection status keep it usable with a keyboard and a screen reader.
 
 ## Performance choices
 

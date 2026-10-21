@@ -47,7 +47,8 @@
   --text-md: 14px;
   --text-lg: 17px;
   --text-xl: clamp(19px, 1.7vw, 23px);
-  --text-counter: clamp(42px, 12vw, 112px);
+  /* The timer shares the screen with the chart, so it is capped by height too. */
+  --text-counter: clamp(30px, min(11vw, 7.5vh), 96px);
 
   /* Spacing scale (4 px base) */
   --space-1: 4px;

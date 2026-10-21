@@ -29,11 +29,13 @@ matching certificate cannot be reached at all.
   uploads that file to the API in batches.
 - Stores every sample in SQLite through a small JSON API. No framework, no
   external database server.
-- Shows the four temperatures as colour-coded cards and as four live lines on
-  one chart.
-- Shows an **eight-digit run timer** `HH:MM:SS:T` above the chart (tenths of a
-  second on the right) plus a human-readable equivalent below it
+- Puts the **eight-digit run timer** `HH:MM:SS:T` at the top of the screen
+  (tenths of a second on the right) plus a human-readable equivalent below it
   ("1 day, 2 hours, 0 minutes, 18.7 seconds").
+- Shows the four temperatures as colour-coded cards under the timer and as four
+  live lines on the chart beneath them.
+- Fits one screen at every size: the page never scrolls, the chart absorbs the
+  height that is left over and the cards reflow from four columns to two.
 - The timer is derived from the run start time, so it **never resets at 24
   hours** and keeps counting past 99 hours.
 - Long windows are averaged inside SQLite into fixed time buckets, so the chart

@@ -1,7 +1,8 @@
 # Serial web monitor
 
-The same dashboard as [`ui/`](../ui) — identical cards, timer, chart and design
-tokens — fed directly from the USB serial port with the browser's Web Serial
+The same dashboard as [`ui/`](../ui) — identical timer, cards, chart and design
+tokens, with the timer at the top and everything on one screen that never
+scrolls — fed directly from the USB serial port with the browser's Web Serial
 API. No backend, no collector, no database.
 
 ![Serial web monitor](../artifacts/serial-web-dashboard.png)

@@ -4,23 +4,39 @@
    every live value uses tabular numerals and fixed-height containers.
    ========================================================================= */
 
+/*
+   One screen, no scrolling: the shell is exactly as tall as the viewport and
+   the chart absorbs whatever height is left over. Vertical spacing is tied to
+   vh so a laptop window and a phone both fit without a scrollbar.
+*/
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 .app-shell {
   position: relative;
   z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: clamp(14px, 1.8vw, 22px);
+  gap: clamp(7px, 1.1vh, 18px);
   width: 100%;
   max-width: 1500px;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   margin-inline: auto;
-  padding: clamp(14px, 2.4vw, 30px);
+  padding: clamp(8px, 1.5vh, 26px) clamp(11px, 2vw, 30px);
 }
 
 main {
-  display: flex;
-  flex-direction: column;
-  gap: clamp(14px, 1.8vw, 22px);
+  flex: 1 1 auto;
+  display: grid;
+  /* timer, temperature cards, then the chart takes the rest */
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: clamp(7px, 1.1vh, 18px);
+  min-height: 0;
 }
 
 /* -------------------------------------------------------------------------
@@ -31,15 +47,18 @@ main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: clamp(8px, 1vh, 16px);
   flex-wrap: wrap;
+  flex: none;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex: 0 1 auto;
   min-width: 0;
+  overflow: hidden;
 }
 
 .brand__mark {
@@ -63,7 +82,9 @@ main {
 }
 
 .brand h1 {
+  overflow: hidden;
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .app-bar__actions {
@@ -71,6 +92,7 @@ main {
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
+  flex: none;
 }
 
 /* -------------------------------------------------------------------------
@@ -213,7 +235,7 @@ main {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 188px;
+  min-width: 0;
   padding: 8px 14px 8px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-pill);
@@ -236,12 +258,15 @@ main {
 }
 
 .status__label {
+  overflow: hidden;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-2);
   line-height: 1.3;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .status__meta {
@@ -296,7 +321,8 @@ main {
 .furnace-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: clamp(10px, 1.2vw, 16px);
+  gap: clamp(7px, 1vw, 16px);
+  min-height: 0;
 }
 
 [data-channel="0"] {
@@ -320,7 +346,7 @@ main {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 15px 17px 13px;
+  padding: clamp(8px, 1.15vh, 15px) clamp(11px, 1.2vw, 17px) clamp(7px, 1vh, 13px);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background:
@@ -387,10 +413,10 @@ main {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  margin: 12px 0 10px;
+  margin: clamp(3px, 0.9vh, 12px) 0 clamp(3px, 0.7vh, 10px);
   overflow: hidden;
   font-family: var(--font-mono);
-  font-size: clamp(28px, 3.1vw, 42px);
+  font-size: clamp(24px, min(3.1vw, 4.6vh), 42px);
   font-weight: 600;
   letter-spacing: -0.045em;
   line-height: 1;
@@ -414,11 +440,11 @@ main {
   justify-content: space-between;
   gap: 8px;
   margin-top: auto;
-  padding-top: 8px;
+  padding-top: clamp(4px, 0.7vh, 8px);
   border-top: 1px solid var(--line-faint);
   color: var(--text-3);
   font-size: var(--text-xs);
-  min-height: 24px;
+  min-height: clamp(17px, 2.2vh, 24px);
 }
 
 .furnace-card__delta {
@@ -451,7 +477,8 @@ main {
    ------------------------------------------------------------------------- */
 
 .timer-card {
-  padding: clamp(16px, 2.2vw, 26px) clamp(16px, 2.4vw, 30px) clamp(14px, 1.8vw, 20px);
+  min-height: 0;
+  padding: clamp(9px, 1.5vh, 26px) clamp(13px, 2vw, 30px) clamp(8px, 1.3vh, 20px);
 }
 
 .timer-card__head {
@@ -477,8 +504,8 @@ main {
 
 .timer-display {
   position: relative;
-  margin-top: 14px;
-  padding: clamp(14px, 2.4vw, 26px) clamp(6px, 1.6vw, 20px) clamp(10px, 1.6vw, 16px);
+  margin-top: clamp(6px, 1.1vh, 14px);
+  padding: clamp(7px, 1.5vh, 26px) clamp(6px, 1.6vw, 20px) clamp(6px, 1vh, 16px);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background:
@@ -558,7 +585,7 @@ main {
   justify-content: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin-top: 16px;
+  margin-top: clamp(5px, 1vh, 16px);
   color: var(--text-2);
   font-size: var(--text-md);
   text-align: center;
@@ -576,10 +603,10 @@ main {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  gap: clamp(18px, 4vw, 54px);
+  gap: clamp(14px, 4vw, 54px);
   flex-wrap: wrap;
-  margin-top: 16px;
-  padding-top: 14px;
+  margin-top: clamp(6px, 1.1vh, 16px);
+  padding-top: clamp(6px, 1vh, 14px);
   border-top: 1px dashed var(--line);
 }
 
@@ -611,7 +638,10 @@ main {
    ------------------------------------------------------------------------- */
 
 .chart-card {
-  padding: clamp(16px, 2vw, 24px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: clamp(9px, 1.5vh, 24px) clamp(12px, 1.6vw, 24px);
 }
 
 .chart-card__head {
@@ -684,8 +714,8 @@ main {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 7px;
-  margin: 16px 0 12px;
+  gap: 6px;
+  margin: clamp(5px, 1vh, 16px) 0 clamp(4px, 0.8vh, 12px);
 }
 
 .legend__item {
@@ -750,7 +780,8 @@ main {
 
 .chart-frame {
   position: relative;
-  height: clamp(300px, 40vh, 440px);
+  flex: 1 1 auto;
+  min-height: 80px;
   min-width: 0;
 }
 
@@ -785,8 +816,9 @@ main {
 }
 
 .chart-note {
-  margin-top: 12px;
-  padding-top: 12px;
+  flex: none;
+  margin-top: clamp(5px, 0.9vh, 12px);
+  padding-top: clamp(5px, 0.9vh, 12px);
   border-top: 1px solid var(--line-faint);
   color: var(--text-3);
   font-size: 10px;
@@ -803,8 +835,8 @@ main {
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
-  margin-top: auto;
-  padding-top: 6px;
+  flex: none;
+  padding-top: 2px;
   color: var(--text-3);
   font-size: 10px;
 }
@@ -851,27 +883,40 @@ main {
 }
 
 @media (max-width: 820px) {
+  /* Keep the app bar on a single row: a second row would eat chart height. */
   .app-bar {
-    align-items: flex-start;
+    flex-wrap: nowrap;
+    gap: 8px;
   }
 
   .app-bar__actions {
-    width: 100%;
-    justify-content: space-between;
+    flex: none;
+    gap: 8px;
+    flex-wrap: nowrap;
   }
 
   .status {
-    flex: 1 1 auto;
+    min-width: 0;
+    padding: 6px 11px 6px 10px;
   }
 
-  .timer-card__head,
+  .status__meta {
+    display: none;
+  }
+
   .chart-card__head {
     flex-direction: column;
     align-items: stretch;
+    gap: 8px;
   }
 
-  .timer-card__meta {
-    justify-content: space-between;
+  .timer-card__head {
+    align-items: center;
+    gap: 8px;
+  }
+
+  .timer-card__started {
+    display: none;
   }
 
   .segmented-wrap {
@@ -888,26 +933,47 @@ main {
   }
 
   .segmented button {
-    padding: 6px 8px;
+    flex: 1 1 auto;
+    padding: 5px 6px;
+    font-size: 10px;
   }
 }
 
 @media (max-width: 560px) {
+  /* Two rows of two cards: four stacked cards would need a scroll. */
   .furnace-grid {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .brand {
+    gap: 8px;
   }
 
   .brand__mark {
-    width: 38px;
-    height: 38px;
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+  }
+
+  .brand__text .eyebrow {
+    display: none;
   }
 
   .brand h1 {
-    font-size: 18px;
+    font-size: 16px;
   }
 
   .btn {
-    padding: 9px 13px;
+    padding: 8px 11px;
+    font-size: 11px;
+  }
+
+  .status__label {
+    font-size: 10px;
+  }
+
+  .status {
+    padding: 6px 10px 6px 9px;
   }
 
   .timer-display {
@@ -923,23 +989,156 @@ main {
     letter-spacing: 0.1em;
   }
 
-  .timer-card__stats {
-    gap: 14px 22px;
+  .counter__human {
+    font-size: var(--text-sm);
   }
 
-  .chart-frame {
-    height: 300px;
+  /* Three stats in one row: wrapping them cost the chart 45 px. */
+  .timer-card__stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .stat {
+    min-width: 0;
+  }
+
+  .stat__label {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 8px;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .chart-card__head .section-title {
+    display: none;
+  }
+
+  /* The trend chip repeats what the value already shows ("--.-" when there
+     is no data), so the card keeps that width for the channel name. */
+  .furnace-card [data-role="trend"] {
+    display: none;
+  }
+
+  .app-footer {
+    display: none;
+  }
+
+  .furnace-card__name {
+    font-size: 9px;
+    letter-spacing: 0.08em;
+  }
+
+  .furnace-card__unit {
+    font-size: 11px;
+  }
+
+  .furnace-card__delta {
+    font-size: 9px;
   }
 
   .legend {
-    gap: 6px;
+    flex-wrap: nowrap;
+    gap: 4px;
   }
 
   .legend__item {
-    padding: 5px 9px;
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 5px;
+    padding: 4px 6px;
+    font-size: 9px;
+  }
+
+  /* On a phone the cards above already name the channels, so the legend
+     keeps only the colour dot and the live value it toggles. */
+  .legend__name {
+    display: none;
+  }
+
+  .legend__value {
+    font-size: 10px;
+  }
+
+  .legend__item {
+    justify-content: center;
+  }
+
+  .legend__dot {
+    width: 6px;
+    height: 6px;
   }
 
   .chart-note {
     display: none;
+  }
+}
+
+/* Short windows: drop the decoration the chart can use better. */
+@media (max-height: 800px) {
+  .app-footer,
+  .chart-note {
+    display: none;
+  }
+}
+
+@media (max-width: 430px) {
+  /* Keep the bar on one row: the mark stays, the wordmark goes. */
+  .brand__text {
+    display: none;
+  }
+}
+
+@media (max-height: 700px) {
+  .counter__human {
+    display: none;
+  }
+}
+
+@media (max-height: 620px) {
+  .brand__mark {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+  }
+
+  .brand__text .eyebrow,
+  .section-title .eyebrow,
+  .status__meta {
+    display: none;
+  }
+
+  .counter__label {
+    font-size: 8px;
+  }
+}
+
+/* Landscape phones: the timer and the chart have to share very little height. */
+@media (max-height: 480px) {
+  .timer-card__stats,
+  .legend,
+  .timer-card__head .section-title,
+  .chart-card__head .section-title {
+    display: none;
+  }
+
+  .app-shell {
+    gap: 6px;
+    padding-block: 6px;
+  }
+
+  .chart-frame {
+    min-height: 48px;
+  }
+}
+
+/* Landscape phones are wide enough for four temperature cards in a row, and
+   the two-row grid would push the chart off the screen. */
+@media (max-height: 480px) and (min-width: 560px) {
+  .furnace-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }

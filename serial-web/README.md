@@ -89,21 +89,24 @@ mapped in a Project File.
    fault). A Pico reboot (uptime going backwards) starts a new session.
 3. Frames are appended to the same `TemperatureChart` class used by `ui/`,
    using uptime differences, so the 0.1 s grid stays exact.
-4. The timer adds the gap between consecutive frames (capped at 3 s), so it
-   shows **recorded** time: unplugging the Pico or a silent port freezes it
-   instead of counting wall-clock time. The *Idle* stat shows how much of the
-   session had no frames.
+4. The timer counts frames, so it shows **recorded** time: unplugging the Pico
+   or a silent port freezes it instead of counting wall-clock time. The *Idle*
+   stat shows how much of the session had no frames.
 5. Cards, legend, timer, window buttons and toasts run the same formatting
    helpers (`format.js`) as the API dashboard.
 
 ### Recorded-time timer
 
-The counter is not derived from `performance.now()` and does not keep running
-while the port is quiet. It is `state.samples * 0.1 s`: one frame is one
-tenth of a second, so ten frames advance the counter by exactly one second. The
-same rule applies on the API dashboard through `runs.sample_count`, so both
-pages read the same duration. Disconnecting stops the counter; reconnecting
-opens a new session because the Pico's uptime restarts.
+The counter is not a wall-clock stopwatch and does not keep running while the
+port is quiet. It is `state.samples * 0.1 s`: one frame is one tenth of a
+second, so ten frames advance the counter by exactly one second. The last two
+digits are hundredths and count `00`–`99`: between two frames they run on by the
+part of the frame gap that has already passed, stopping short of the next frame
+so the display never rewinds, and they settle on the frame count as soon as the
+port goes quiet. The same rule applies on the API dashboard through
+`runs.sample_count`, so both pages read the same duration. Disconnecting stops
+the counter; reconnecting opens a new session because the Pico's uptime
+restarts.
 
 Styles, `format.js` and `chart-panel.js` are copied from `ui/`, so the pages
 look identical. Change them in `ui/` first, then copy the files over:

@@ -39,9 +39,9 @@ extreme, CSV export with its own date picker, and an installable PWA manifest.
   uploads that file to the API in batches.
 - Stores every sample in SQLite through a small JSON API. No framework, no
   external database server.
-- Puts the **eight-digit recorded-time timer** `HH:MM:SS:T` at the top of the
-  screen (tenths of a second on the right) plus a human-readable equivalent
-  below it.
+- Puts the **eight-digit recorded-time timer** `HH:MM:SS:CC` at the top of the
+  screen (hundredths of a second on the right, counting `00` to `99`) plus a
+  human-readable equivalent below it.
 - The timer follows **time covered by samples**, not the wall clock. It pauses
   while the furnace sends nothing, never jumps forward when data resumes, and
   keeps counting past 24 and 99 hours. A separate *Idle* stat shows the time
@@ -158,16 +158,19 @@ Wiring, firmware upload and calibration are documented in
 
 ![Run timer](artifacts/dashboard-mobile.png)
 
-- `HH:MM:SS:T` — hours, minutes, seconds and tenths of a second.
-- The tenths group renders a dim leading zero plus the live digit, so the
-  display always has eight digit positions, exactly like `00:00:00:00`.
+- `HH:MM:SS:CC` — hours, minutes, seconds and hundredths of a second.
+- The last two digits are a real 0–99 counter: they count `00` … `99` and then
+  carry into the seconds field, so the display always has eight digit
+  positions, exactly like `00:00:00:00`.
 - Hours are not masked: the field grows from `99` to `100` and beyond.
 - The value is the run's sample count: **one stored sample is 0.1 s**, so ten
-  samples are one second and 8 620 samples read `00:14:22:0`. The count comes
+  samples are one second and 8 620 samples read `00:14:22:00`. The count comes
   from the server, so it is exact even while the collector uploads in batches.
-  It is not a wall-clock counter: a Pico that stops sending freezes the timer
-  instead of inventing time, and the timer resumes from the same value when
-  samples come back.
+  Between two batches the hundredths run on for the part of the batch interval
+  that has already passed, which is what makes them move at all. It is not a
+  wall-clock counter: a Pico that stops sending settles the counter on the
+  stored count after at most one batch interval and then freezes instead of
+  inventing time, and it resumes from the same value when samples come back.
 - Refreshing the page, rebooting the Pico, or crossing midnight does not reset
   it. A reload shows the exact time the server recorded.
 - The chip says **Recording** while samples arrive and **Paused** after 2.5 s

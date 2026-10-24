@@ -78,7 +78,7 @@ const el = {
     hours: $('[data-digit="hours"]'),
     minutes: $('[data-digit="minutes"]'),
     seconds: $('[data-digit="seconds"]'),
-    tenths: $('[data-digit="tenths"]'),
+    hundredths: $('[data-digit="hundredths"]'),
   },
   human: $('[data-role="human"]'),
   samples: $('[data-role="samples"]'),
@@ -110,6 +110,9 @@ const state = {
 let chart = null;
 let port = null;
 let reader = null;
+// Anchor for the sub-frame animation: the last two digits run on between two
+// frames by the part of the frame gap that has already passed.
+const clock = { anchorAt: 0 };
 let running = false;
 let toastTimer = null;
 const noiseFilter = new TemperatureDropFilter();
@@ -152,7 +155,27 @@ function trendFor(delta) {
 }
 
 function elapsedMs() {
-  return state.samples * SAMPLE_MS;
+  const recorded = state.samples * SAMPLE_MS;
+  const fresh = Boolean(state.latest)
+    && performance.now() - state.latest.received_at <= STALE_MS;
+
+  // A quiet port settles the counter on the frame count instead of leaving it
+  // a hundredth ahead of the last frame.
+  if (!state.connected || !fresh || clock.anchorAt === 0) {
+    return recorded;
+  }
+
+  // The firmware sends one frame every 100 ms, so the hundredths may run on for
+  // at most that long: they reach the next frame's value just as it lands and
+  // never overshoot it, which keeps the counter from stepping backwards.
+  const drift = Math.max(0, performance.now() - clock.anchorAt);
+
+  return recorded + Math.min(drift, SAMPLE_MS);
+}
+
+/** Note when a frame landed, so the hundredths group can run on afterwards. */
+function anchorClock() {
+  clock.anchorAt = performance.now();
 }
 
 /** Wall-clock span of the session, used only to show idle time. */
@@ -320,6 +343,7 @@ function startSession(uptime) {
     stoppedAt: undefined,
   };
   state.samples = 0;
+  clock.anchorAt = 0;
   state.latest = null;
   noiseFilter.configure(NOISE_SETTINGS);
   noiseFilter.reset();
@@ -341,6 +365,7 @@ function applyFrame(frame) {
   chart?.appendSamples([{ t_ms: tMs, temps: filteredTemps }]);
 
   state.samples += 1;
+  anchorClock();
   state.latest = {
     t_ms: tMs,
     rawTemps: frame.temps,
@@ -384,6 +409,7 @@ async function openPort(candidate) {
   state.session = null;
   state.latest = null;
   state.samples = 0;
+  clock.anchorAt = 0;
   chart?.clear();
   renderCards(null);
   updateLegend(null);
@@ -558,7 +584,7 @@ function startCounter() {
       setText(el.digits.hours, digits.hours);
       setText(el.digits.minutes, digits.minutes);
       setText(el.digits.seconds, digits.seconds);
-      setText(el.digits.tenths, digits.tenths);
+      setText(el.digits.hundredths, digits.hundredths);
       digitsKey = digits.key;
     }
 

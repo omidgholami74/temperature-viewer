@@ -15,11 +15,19 @@ import {
   splitDuration,
 } from '../ui/assets/js/format.js';
 
-test('splitDuration keeps tenths, seconds, minutes and hours apart', () => {
-  assert.deepEqual(splitDuration(0), { hours: 0, minutes: 0, seconds: 0, tenths: 0 });
-  assert.deepEqual(splitDuration(999), { hours: 0, minutes: 0, seconds: 0, tenths: 9 });
-  assert.deepEqual(splitDuration(1234), { hours: 0, minutes: 0, seconds: 1, tenths: 2 });
-  assert.deepEqual(splitDuration(3_723_400), { hours: 1, minutes: 2, seconds: 3, tenths: 4 });
+test('splitDuration keeps hundredths, seconds, minutes and hours apart', () => {
+  assert.deepEqual(splitDuration(0), {
+    hours: 0, minutes: 0, seconds: 0, tenths: 0, hundredths: 0,
+  });
+  assert.deepEqual(splitDuration(999), {
+    hours: 0, minutes: 0, seconds: 0, tenths: 9, hundredths: 99,
+  });
+  assert.deepEqual(splitDuration(1234), {
+    hours: 0, minutes: 0, seconds: 1, tenths: 2, hundredths: 23,
+  });
+  assert.deepEqual(splitDuration(3_723_400), {
+    hours: 1, minutes: 2, seconds: 3, tenths: 4, hundredths: 40,
+  });
 });
 
 test('the counter always has eight digit slots', () => {
@@ -28,9 +36,31 @@ test('the counter always has eight digit slots', () => {
   assert.equal(digits.hours, '00');
   assert.equal(digits.minutes, '00');
   assert.equal(digits.seconds, '00');
-  assert.equal(digits.tenths, '0');
-  // The tenths group renders a dim leading zero plus the live digit.
-  assert.equal(`0${digits.tenths}`.length, 2);
+  assert.equal(digits.hundredths, '00');
+  assert.equal(digits.key.length, 8);
+});
+
+test('the last two digits count 00 to 99 before the second rolls over', () => {
+  const seen = new Set();
+
+  for (let step = 0; step < 100; step += 1) {
+    seen.add(formatDigits(step * 10).hundredths);
+  }
+
+  // 100 steps of 10 ms cover one full second: every value 00..99 appears once.
+  assert.equal(seen.size, 100);
+  assert.ok(seen.has('00') && seen.has('99'));
+
+  const endOfSecond = formatDigits(9_990);
+  assert.equal(endOfSecond.hundredths, '99');
+  assert.equal(endOfSecond.seconds, '09');
+
+  const nextSecond = formatDigits(10_000);
+  assert.equal(nextSecond.hundredths, '00');
+  assert.equal(nextSecond.seconds, '10');
+
+  // A 10 ms step is visible in the digits, so the display really ticks.
+  assert.notEqual(formatDigits(1_000).key, formatDigits(1_010).key);
 });
 
 test('hours keep counting past 24 and 99', () => {

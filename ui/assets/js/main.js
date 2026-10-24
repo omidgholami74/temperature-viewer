@@ -77,7 +77,7 @@ const el = {
     hours: $('[data-digit="hours"]'),
     minutes: $('[data-digit="minutes"]'),
     seconds: $('[data-digit="seconds"]'),
-    tenths: $('[data-digit="tenths"]'),
+    hundredths: $('[data-digit="hundredths"]'),
   },
   human: $('[data-role="human"]'),
   samples: $('[data-role="samples"]'),
@@ -152,9 +152,12 @@ const state = {
 /**
  * Sample clock: one stored sample is exactly 0.1 s of recorded time. The count
  * comes from the server, so a retried upload cannot count an interval twice,
- * and the display freezes when no new samples arrive.
+ * and the display freezes when no new samples arrive. Between two batches the
+ * last two digits run on by the part of the batch interval that has already
+ * passed, which is what makes them count 00 to 99 instead of stepping by ten.
  */
-const clock = { samples: 0, shown: 0 };
+const clock = { samples: 0, shown: 0, anchorAt: 0, lead: 0 };
+const MAX_LEAD_MS = 2000;
 const noiseFilter = new TemperatureDropFilter();
 const NOISE_STORAGE_KEY = 'furnace.noise-filter';
 
@@ -239,17 +242,44 @@ function sampleTime(run) {
 
 function syncClock(run) {
   clock.samples = Math.max(0, Math.round(Number(run?.sample_count) || 0));
+  const recorded = clock.samples * SAMPLE_MS;
+
   // A late or retried answer must never rewind the display.
-  clock.shown = Math.max(clock.shown, clock.samples * SAMPLE_MS);
+  if (recorded <= clock.shown) {
+    return;
+  }
+
+  // The gap between two batches is how long the next batch will cover, so it is
+  // also how far the display may run ahead before that batch lands.
+  const now = performance.now();
+  const gap = clock.anchorAt > 0 ? now - clock.anchorAt : SAMPLE_MS;
+
+  clock.lead = Math.min(Math.max(gap, SAMPLE_MS), MAX_LEAD_MS);
+  clock.shown = recorded;
+  clock.anchorAt = now;
 }
 
 function resetClock() {
   clock.samples = 0;
   clock.shown = 0;
+  clock.anchorAt = 0;
+  clock.lead = 0;
 }
 
+/**
+ * Recorded time plus the part of the current batch interval that has already
+ * passed. The last two digits run on between batches, yet the counter still
+ * settles on the stored count once samples stop.
+ */
 function elapsedNow() {
-  return clock.shown;
+  if (!clock.anchorAt || sampleAge() > PAUSED_AFTER_MS) {
+    return clock.shown;
+  }
+
+  // The lead is the gap the previous batch covered, so the digits reach the
+  // next batch's value exactly as it lands instead of overshooting it.
+  const drift = Math.max(0, performance.now() - clock.anchorAt);
+  return clock.shown + Math.min(drift, clock.lead);
 }
 
 /* --- rendering ---------------------------------------------------------- */
@@ -609,7 +639,7 @@ function startCounter() {
       setText(el.digits.hours, digits.hours);
       setText(el.digits.minutes, digits.minutes);
       setText(el.digits.seconds, digits.seconds);
-      setText(el.digits.tenths, digits.tenths);
+      setText(el.digits.hundredths, digits.hundredths);
       digitsKey = digits.key;
     }
 

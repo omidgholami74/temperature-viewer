@@ -15,7 +15,7 @@ This folder is deployed on its **own web server**, separate from the PHP API:
 
 1. Branded app bar: the foundation logo, **Razi Applied Science Foundation**,
    the connection status and a **Settings** button (a gear on a phone).
-2. Recorded-time timer: eight digit positions `HH:MM:SS:T`, with
+2. Recorded-time timer: eight digit positions `HH:MM:SS:CC`, with
    days/hours/minutes spelled out below, plus sample count, working rate, idle
    time and last-sample age. It pauses when samples stop; **Start new run**
    lives in Settings → Appearance.
@@ -108,10 +108,14 @@ The manifest uses `start_url: "./"` and `scope: "./"` for the same reason.
   ignored.
 - The counter is repainted with `requestAnimationFrame`, but only digits that
   changed are touched. It is derived from `run.sample_count`: one sample is
-  `0.1` s, so 8 620 samples read `00:14:22:0` regardless of how the collector
-  batches its uploads. It never moves backwards and freezes when no new sample
-  arrives; the server keeps the authoritative count, so a reload is exact.
-  `elapsed_ms` is the wall-clock run span and is only used for the *Idle* stat.
+  `0.1` s, so 8 620 samples read `00:14:22:00` regardless of how the collector
+  batches its uploads. The last two digits count `00`–`99` and are advanced
+  between batches by the part of the batch interval that has already passed, so
+  they move like a stopwatch instead of stepping by ten; the lead stops short
+  of the next batch, so the display never rewinds, and it settles on the stored
+  count when samples stop. The server keeps the authoritative count, so a
+  reload is exact. `elapsed_ms` is the wall-clock run span and is only used for
+  the *Idle* stat.
 - Settings → Analysis fetches `/api/summary` without a range, so it covers every
   stored sample and shows min/max/average plus the time each extreme was first
   reached. It does not wait for a 24 hour window to fill.

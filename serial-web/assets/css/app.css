@@ -603,11 +603,6 @@ main {
   text-shadow: 0 0 48px rgba(56, 224, 165, 0.16);
 }
 
-.counter__ghost {
-  color: var(--text-3);
-  opacity: 0.4;
-}
-
 .counter__sep {
   align-self: baseline;
   color: var(--text-3);

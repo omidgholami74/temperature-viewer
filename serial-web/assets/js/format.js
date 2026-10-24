@@ -14,32 +14,39 @@ const dateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
   hour12: false,
 });
 
-/** Split milliseconds into unbounded hours, minutes, seconds and tenths. */
+/**
+ * Split milliseconds into unbounded hours, minutes, seconds, tenths and the
+ * two sub-second digits (hundredths) the counter shows on the right.
+ */
 export function splitDuration(milliseconds) {
-  const totalTenths = Math.max(0, Math.floor(Number(milliseconds) / 100));
+  const totalHundredths = Math.max(0, Math.floor(Number(milliseconds) / 10));
 
   return {
-    hours: Math.floor(totalTenths / 36000),
-    minutes: Math.floor(totalTenths / 600) % 60,
-    seconds: Math.floor(totalTenths / 10) % 60,
-    tenths: totalTenths % 10,
+    hours: Math.floor(totalHundredths / 360000),
+    minutes: Math.floor(totalHundredths / 6000) % 60,
+    seconds: Math.floor(totalHundredths / 100) % 60,
+    tenths: Math.floor(totalHundredths / 10) % 10,
+    hundredths: totalHundredths % 100,
   };
 }
 
 /**
- * Digits for the eight-character counter: HH:MM:SS:T.
- * Hours are padded to two digits and then allowed to grow past 99.
+ * Digits for the eight-character counter: HH:MM:SS:CC.
+ * Hours are padded to two digits and then allowed to grow past 99; the last
+ * group counts hundredths of a second from 00 to 99 and then carries into the
+ * seconds field.
  */
 export function formatDigits(milliseconds) {
-  const { hours, minutes, seconds, tenths } = splitDuration(milliseconds);
+  const { hours, minutes, seconds, hundredths } = splitDuration(milliseconds);
   const hoursText = String(hours).padStart(2, '0');
+  const hundredthsText = pad2(hundredths);
 
   return {
     hours: hoursText,
     minutes: pad2(minutes),
     seconds: pad2(seconds),
-    tenths: String(tenths),
-    key: `${hoursText}${pad2(minutes)}${pad2(seconds)}${tenths}`,
+    hundredths: hundredthsText,
+    key: `${hoursText}${pad2(minutes)}${pad2(seconds)}${hundredthsText}`,
   };
 }
 

@@ -20,6 +20,11 @@ try:
 except ImportError:  # a build without TLS still works over http://
     ssl = None
 
+try:
+    import _thread
+except ImportError:  # no thread support: samples are sent inline
+    _thread = None
+
 MAX_SAMPLES_PER_REQUEST = 600  # the API rejects a larger batch with 413
 INGEST_PATH = "/api/ingest"
 # The API answers with a short JSON object; anything this big is not a sample.
@@ -27,6 +32,34 @@ MAX_RESPONSE_BYTES = 4096
 # A refused payload is dropped instead of retried forever: the server will
 # never accept it, and keeping it would block the queue.
 _DROP_STATUSES = (400, 413, 422)
+
+
+def _sleep_ms(milliseconds):
+    """MicroPython has sleep_ms, CPython (the host tests) only has sleep."""
+    if hasattr(time, "sleep_ms"):
+        time.sleep_ms(milliseconds)
+    else:
+        time.sleep(milliseconds / 1000.0)
+
+
+def _ticks_ms():
+    if hasattr(time, "ticks_ms"):
+        return time.ticks_ms()
+
+    return int(time.monotonic() * 1000)
+
+
+class _NoLock:
+    """Stand-in for a lock on builds without ``_thread``."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exception):
+        return False
+
+
+_NO_LOCK = _NoLock()
 
 
 def split_url(url):
@@ -106,11 +139,27 @@ class Ingest:
         self.dropped = 0
         self.last_error = ""
         self._sock = None
+        # The host name is resolved once: a DNS lookup costs a few hundred
+        # milliseconds on this board and must not be paid for every batch.
+        self._resolved = None
+        # Uploading runs in its own thread so the sampling loop never waits
+        # for a request (a TLS handshake here is 0.5-1 s, i.e. 5-10 samples).
+        self.use_background = bool(getattr(config, "BACKGROUND_UPLOAD", True))
+        self.background = False
+        self._lock = _thread.allocate_lock() if _thread is not None else None
+        self._send_lock = _thread.allocate_lock() if _thread is not None else None
+        self._worker = None
+        self._stop = False
+        self._last_trim_log = 0
 
     # -- queue ------------------------------------------------------------
 
+    def _guard(self):
+        """Lock guarding the queue (a no-op on builds without threads)."""
+        return self._lock if self._lock is not None else _NO_LOCK
+
     def add(self, uptime_ms, temperatures, faults, at_ms=None):
-        """Queue one frame. Flushes automatically when the batch is full."""
+        """Queue one frame; returns at once when the upload runs in a thread."""
         sample = {
             "u": int(uptime_ms),
             "t": [_clean(value) for value in temperatures],
@@ -120,31 +169,114 @@ class Ingest:
         if at_ms is not None:
             sample["at"] = int(at_ms)
 
-        self.pending.append(sample)
+        with self._guard():
+            self.pending.append(sample)
+            self._trim()
+            full = len(self.pending) >= self.batch
 
-        if len(self.pending) >= self.batch:
+        # Inline mode: the caller sends, exactly as before.
+        if full and not self.background:
             self.flush()
+
+    def _trim(self):
+        """Drop the oldest samples beyond BUFFER_LIMIT (logged once a second).
+
+        Called with the queue lock held.
+        """
+        overflow = len(self.pending) - self.limit
+
+        if overflow <= 0:
+            return 0
+
+        self.pending = self.pending[overflow:]
+        self.dropped += overflow
+        now = _ticks_ms()
+
+        if now - self._last_trim_log >= 1000:
+            self._last_trim_log = now
+            self.log("API: buffer full, dropped the %d oldest samples" % (overflow,))
+
+        return overflow
 
     def flush(self):
         """Send everything queued. Returns True when the queue is empty."""
         if not self.pending:
             return True
 
-        while self.pending:
-            chunk = self.pending[:MAX_SAMPLES_PER_REQUEST]
+        while True:
+            with self._guard():
+                chunk = self.pending[:MAX_SAMPLES_PER_REQUEST]
+
+            if not chunk:
+                break
 
             if not self._send(chunk):
                 break
 
-            self.pending = self.pending[len(chunk):]
-
-        if len(self.pending) > self.limit:
-            overflow = len(self.pending) - self.limit
-            self.pending = self.pending[overflow:]
-            self.dropped += overflow
-            self.log("API: buffer full, dropped the %d oldest samples" % (overflow,))
+            with self._guard():
+                self.pending = self.pending[len(chunk):]
+                self._trim()
 
         return not self.pending
+
+    # -- background uploader ----------------------------------------------
+
+    def start(self):
+        """Upload from a thread so sampling never waits. False = send inline."""
+        if self._worker is not None:
+            return True
+
+        if _thread is None or not self.use_background:
+            return False
+
+        self._stop = False
+
+        # The default thread stack is too small for an mbedtls handshake.
+        if hasattr(_thread, "stack_size"):
+            for size in (16384, 8192):
+                try:
+                    _thread.stack_size(size)
+                    break
+                except Exception:
+                    continue
+
+        try:
+            self._worker = _thread.start_new_thread(self._run, ())
+        except Exception as error:
+            self.log("API: background upload unavailable (%s), sending inline" % (error,))
+            return False
+
+        self.background = True
+        return True
+
+    def stop(self):
+        """Stop the uploader, send what is left and release the socket."""
+        self._stop = True
+
+        for _ in range(100):
+            if self._worker is None:
+                break
+
+            _sleep_ms(10)
+
+        self.flush()
+        self.close()
+        self.background = False
+
+    def _run(self):
+        """Worker body: drain the queue, pace retries, never busy-spin."""
+        try:
+            while not self._stop:
+                if not self.pending:
+                    _sleep_ms(20)
+                    continue
+
+                self.flush()
+
+                if self.pending:
+                    _sleep_ms(200)  # offline: retry slowly, keep the queue
+        finally:
+            self._worker = None
 
     def stats(self):
         return "sent=%d pending=%d dropped=%d failures=%d" % (
@@ -167,8 +299,13 @@ class Ingest:
         if self.key:
             headers["X-Api-Key"] = self.key
 
+        lock = self._send_lock if self._send_lock is not None else _NO_LOCK
+
         try:
-            status, payload = self._request(body, headers)
+            # One request at a time on the shared socket, even when stop()
+            # flushes while the worker is still finishing a send.
+            with lock:
+                status, payload = self._request(body, headers)
         except Exception as error:  # OSError, ssl errors, DNS failures
             self.failures += 1
             self.last_error = str(error)
@@ -209,9 +346,16 @@ class Ingest:
             except Exception:
                 pass
 
+    def _remote(self):
+        """The cached server address; a DNS lookup per batch is too slow here."""
+        if self._resolved is None:
+            self._resolved = socket.getaddrinfo(self.host, self.port)[0][-1]
+
+        return self._resolved
+
     def _connect(self):
         """Dial the API, with TLS when API_URL is https."""
-        address = socket.getaddrinfo(self.host, self.port)[0][-1]
+        address = self._remote()
         sock = socket.socket()
         sock.settimeout(self.timeout)
 
@@ -232,6 +376,8 @@ class Ingest:
                     sock = ssl.wrap_socket(sock, server_hostname=self.host)
                     self.log("API: TLS certificate not verified (TLS_VERIFY = False)")
         except Exception:
+            # The network changed (DHCP, DNS): resolve again on the next try.
+            self._resolved = None
             try:
                 sock.close()
             except Exception:

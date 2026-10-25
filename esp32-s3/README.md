@@ -162,6 +162,7 @@ a microcontroller.
 | `API_KEY`       | `""`                             | Must equal `FURNACE_INGEST_KEY` on the server  |
 | `API_TIMEOUT_S` | `8`                              | Socket timeout per request                     |
 | `BATCH_SIZE`    | `10`                             | Samples per POST (max 600); 10 = 1 s of data   |
+| `BACKGROUND_UPLOAD` | `True`                       | Send from a thread so sampling never waits     |
 | `BUFFER_LIMIT`  | `600`                            | Samples kept while the API is down (60 s)      |
 | `NTP_ENABLED`   | `True`                           | Send absolute `at` timestamps                  |
 | `NTP_HOST`      | `pool.ntp.org`                   |                                                |
@@ -184,17 +185,23 @@ CA is in the bundle. `http://` also works and skips TLS entirely.
 
 - **10 Hz grid.** Each pass reads all four channels, prints `ms,f1..f4`, queues
   the frame and sleeps until the next 100 ms slot. The time column is
-  *measured* (`ticks_ms`), so a slow upload cannot make it drift; if an upload
-  takes longer than a frame, the loop resynchronises instead of burning through
-  missed slots, and that gap is visible in the data.
+  *measured* (`ticks_ms`), so nothing makes it drift.
+- **Uploads never pause sampling.** With `BACKGROUND_UPLOAD = True` (default) a
+  worker thread does the POST while the main loop keeps reading sensors, so the
+  serial column stays on a clean 100 ms grid even during a TLS handshake. The
+  queue is shared under a lock and trimmed to `BUFFER_LIMIT`. Without
+  `_thread` in the build (or with the setting off) the firmware sends inline as
+  before, and a slow request then stretches the sample gap by its duration.
 - **Batching.** One request carries `BATCH_SIZE` samples (10 by default, so
   the server has a sample about a second after it was read). The API anchors a
   batch without `at` on its arrival time and places the rest on the 0.1 s grid,
   so the dashboard timer (which counts samples) is unaffected by batching.
-- **One connection.** The TCP socket (and its TLS session) stays open between
-  batches: a handshake costs a few hundred milliseconds on this chip, which is
-  several samples of delay. The socket is dropped and redialled only after a
-  failure or when the server closes it.
+- **One connection, one lookup.** The TCP socket (and its TLS session) stays
+  open between batches, and the host name is resolved once instead of per
+  request: a handshake plus a DNS lookup costs several hundred milliseconds on
+  this chip. The socket is dropped and redialled only after a failure or when
+  the server closes it; a failed dial also clears the cached address so a new
+  DHCP lease is picked up.
 - **Outages.** A failed upload keeps the batch and retries on the next flush. A
   `400/413/422` is a refused payload and is dropped instead of blocking the
   queue; `401/403` and a wrong URL are retried while the console prints a hint.
@@ -234,5 +241,6 @@ python3 -m unittest discover -s esp32-s3/tests -v
 | `API 404` | `API_URL` points at the dashboard or at a path without `/api/ingest`. |
 | `API: TLS certificate not verified` | Expected with `TLS_VERIFY = False`; the connection is encrypted but unverified. A handshake failure instead means the CA is not in the axtls bundle — use `http://` or `TLS_VERIFY = False`. |
 | Data arrives with a delay | `BATCH_SIZE` samples are buffered before each POST; lower it (for example 5) for faster updates at more requests per second. |
+| Serial gaps of ~1 s every few seconds | Not the upload: it runs in its own thread (`# upload runs in a background thread` at boot). A gap that size means the loop itself is slow — check the SPI wiring/power and the sensor reads. |
 | All four channels `--.-` / `-1000` | Wiring: 3V3, GND, SCK and MISO (and MOSI on the MAX31865), one CS per board, thermocouple polarity. Run `module/check.py`-style spot checks or the serial console. |
 | Dashboard shows a second run starting | The board's `at` jumped (NTP correction) or someone pressed *Start new run*; see [backend/README.md](../backend/README.md#post-apiingest). |

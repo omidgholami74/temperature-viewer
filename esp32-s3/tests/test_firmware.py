@@ -13,8 +13,10 @@ import os
 import socket
 import sys
 import threading
+import time
 import types
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, ".."))
@@ -443,6 +445,150 @@ class KeepAliveTests(unittest.TestCase):
 
         with self.assertRaises(OSError):
             ingest.parse_head(b"garbage")
+
+
+class BackgroundUploadTests(unittest.TestCase):
+    """Sampling must keep its 100 ms grid while a request is in flight."""
+
+    def make(self, **overrides):
+        values = {
+            "API_URL": "http://127.0.0.1:9",
+            "API_KEY": "",
+            "API_TIMEOUT_S": 5,
+            "BATCH_SIZE": 10,
+            "BUFFER_LIMIT": 600,
+            "TLS_VERIFY": False,
+        }
+        values.update(overrides)
+        client = ingest.Ingest(types.SimpleNamespace(**values), log=lambda *_: None)
+        self.addCleanup(client.stop)
+        return client
+
+    def test_sampling_does_not_wait_for_the_upload(self):
+        client = self.make()
+
+        def slow_send(samples):
+            # A real POST with a TLS handshake is slower than this.
+            time.sleep(0.25)
+            client.sent += len(samples)
+            return True
+
+        client._send = slow_send
+        self.assertTrue(client.start())
+
+        spacing = []
+        previous = None
+        started = time.monotonic()
+
+        for step in range(30):  # 3 s of samples at 10 Hz
+            client.add(step * 100, [700.0 + step, 710.0, 720.0, 730.0], [0, 0, 0, 0])
+            now = time.monotonic()
+
+            if previous is not None:
+                spacing.append(now - previous)
+
+            previous = now
+            remaining = started + (step + 1) * 0.1 - now
+
+            if remaining > 0:
+                time.sleep(remaining)
+
+        client.stop()
+
+        # One slot is 100 ms; a send that blocked the loop would add 250 ms.
+        self.assertLess(max(spacing), 0.16, "a sample slot was lost to an upload")
+        self.assertEqual(client.sent, 30, "the background thread did not send everything")
+        self.assertEqual(client.pending, [])
+
+    def test_a_dead_api_keeps_the_queue_bounded_without_blocking(self):
+        client = self.make(BATCH_SIZE=5, BUFFER_LIMIT=20)
+
+        def offline(samples):
+            client.failures += 1
+            return False
+
+        client._send = offline
+        self.assertTrue(client.start())
+
+        started = time.monotonic()
+
+        for step in range(60):
+            client.add(step * 100, [1, 2, 3, 4], [0, 0, 0, 0])
+
+        elapsed = time.monotonic() - started
+        client.stop()
+
+        self.assertLess(elapsed, 0.2, "add() waited for the network")
+        self.assertLessEqual(len(client.pending), 20)
+        self.assertGreater(client.dropped, 0)
+
+    def test_stop_sends_what_is_still_queued(self):
+        client = self.make(BATCH_SIZE=50)
+        sent = []
+        client._send = lambda samples: (sent.append(len(samples)), True)[1]
+        self.assertTrue(client.start())
+
+        for step in range(7):
+            client.add(step * 100, [1, 2, 3, 4], [0, 0, 0, 0])
+
+        client.stop()
+
+        self.assertEqual(sum(sent), 7, "the last samples were not flushed on stop")
+
+    def test_inline_mode_still_sends_a_full_batch(self):
+        client = self.make(BATCH_SIZE=2)
+        sent = []
+        client._send = lambda samples: (sent.append(len(samples)), True)[1]
+
+        with mock.patch.object(ingest, "_thread", None):
+            self.assertFalse(client.start(), "no thread module still started a thread")
+
+        client.add(0, [1, 2, 3, 4], [0, 0, 0, 0])
+        self.assertEqual(sent, [], "a partial batch was sent")
+        client.add(100, [1, 2, 3, 4], [0, 0, 0, 0])
+        self.assertEqual(sent, [2])
+
+    def test_background_upload_can_be_turned_off(self):
+        client = self.make(BATCH_SIZE=2, BACKGROUND_UPLOAD=False)
+        sent = []
+        client._send = lambda samples: (sent.append(len(samples)), True)[1]
+
+        self.assertFalse(client.start())
+        client.add(0, [1, 2, 3, 4], [0, 0, 0, 0])
+        client.add(100, [1, 2, 3, 4], [0, 0, 0, 0])
+
+        self.assertEqual(sent, [2])
+
+    def test_the_host_is_resolved_once(self):
+        server = ScriptedServer()
+        client = ingest.Ingest(
+            types.SimpleNamespace(
+                API_URL="http://127.0.0.1:%d" % (server.port,),
+                API_KEY="",
+                API_TIMEOUT_S=5,
+                BATCH_SIZE=1,
+                BUFFER_LIMIT=10,
+                TLS_VERIFY=False,
+            ),
+            log=lambda *_: None,
+        )
+        calls = []
+        real = socket.getaddrinfo
+
+        def counting(*args, **kwargs):
+            calls.append(args)
+            return real(*args, **kwargs)
+
+        try:
+            with mock.patch.object(socket, "getaddrinfo", counting):
+                for step in range(3):
+                    client.add(step * 100, [1.0, 2.0, 3.0, 4.0], [0, 0, 0, 0])
+
+            self.assertEqual(len(server.payloads), 3)
+            self.assertEqual(len(calls), 1, "the host was resolved for every batch")
+        finally:
+            client.close()
+            server.close()
 
 
 class RtdTests(unittest.TestCase):

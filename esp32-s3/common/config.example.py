@@ -22,6 +22,10 @@ API_TIMEOUT_S = 8
 # batches, so a smaller batch does not cost a TLS handshake every time.
 # The API accepts at most 600 samples per request.
 BATCH_SIZE = 10
+# Send from a background thread, so the 100 ms sampling grid never waits for a
+# request (or a TLS handshake, which costs 0.5-1 s on this board). The counter
+# keeps sampling while a batch is in flight. Set False to send inline again.
+BACKGROUND_UPLOAD = True
 # Samples kept while the API is unreachable: 600 samples are one minute at
 # 10 Hz. Beyond this the oldest samples are dropped, so a long outage cannot
 # exhaust the board's RAM.

@@ -163,6 +163,11 @@ def main():
         clock_ok = wifi.sync_time(config)
 
     ingest = Ingest(config)
+
+    # Upload from a thread: a request (or a TLS handshake) takes 0.5-1 s here,
+    # and the sampling loop must stay on the 100 ms grid while it happens.
+    if ingest.start():
+        print("# upload runs in a background thread")
     echo = bool(getattr(config, "SERIAL_ECHO", True))
 
     if not clock_ok:
@@ -237,8 +242,7 @@ def main():
         pass
     finally:
         print("# stopping, flushing %d samples" % (len(ingest.pending),))
-        ingest.flush()
-        ingest.close()
+        ingest.stop()
 
 
 main()

@@ -16,9 +16,9 @@ import time
 
 from machine import Pin, SPI
 
-import config
-import wifi
-from ingest import Ingest
+from common import config
+from common import wifi
+from common.ingest import Ingest
 
 # ==========================================
 # ESP32-S3 + 4x MAX31855

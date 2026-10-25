@@ -1,6 +1,12 @@
 import { TemperatureChart } from './chart-panel.js';
 import { TemperatureDropFilter } from './drop-filter.js';
 import {
+  describeSerialSupport,
+  pickPort,
+  portKey,
+  requestOptions,
+} from './ports.js';
+import {
   formatAge,
   formatCount,
   formatDateTime,
@@ -27,10 +33,9 @@ const CHANNELS = [
 ];
 
 // The port number (COM5) is never written in code: the browser shows a picker
-// and the operator chooses the device once. Filters only narrow that list so
-// the Raspberry Pi Pico appears alone. Set to [] if your board is not listed.
-// Raspberry Pi USB vendor id is 0x2e8a (Pico, Pico W, Pico 2).
-const PORT_FILTERS = [{ usbVendorId: 0x2e8a }];
+// and the operator chooses the device once. The picker is unfiltered by
+// default (see ports.js), so a Pico, an ESP32 with a CH343 bridge or any other
+// USB serial adapter shows up; a USB-id filter once hid everything else.
 const BAUD_RATE = 115200; // must match the firmware
 // Reuse a port the browser already allowed, so a reload connects without the
 // picker. Set to false to always choose the port by hand.
@@ -38,6 +43,9 @@ const AUTO_CONNECT = true;
 
 const WINDOWS = [60, 600, 3600, 21600, 86400, 0];
 const WINDOW_STORAGE_KEY = 'furnace.serial.window';
+// Remembers which granted port was opened last, so a reload reopens the board
+// instead of another serial device the site is also allowed to use.
+const PORT_STORAGE_KEY = 'furnace.serial.port';
 const NOISE_STORAGE_KEY = 'furnace.serial.noise-filter';
 const DEFAULT_WINDOW = 600;
 const FAULT_SENTINEL = -1000;
@@ -383,18 +391,6 @@ function applyFrame(frame) {
 
 /* --- port handling ----------------------------------------------------- */
 
-function matchesFilter(candidate) {
-  if (!PORT_FILTERS.length) return true;
-
-  const info = candidate.getInfo ? candidate.getInfo() : {};
-
-  return PORT_FILTERS.some(
-    (filter) =>
-      (filter.usbVendorId === undefined || filter.usbVendorId === info.usbVendorId) &&
-      (filter.usbProductId === undefined || filter.usbProductId === info.usbProductId),
-  );
-}
-
 async function openPort(candidate) {
   try {
     await candidate.open({ baudRate: BAUD_RATE });
@@ -419,21 +415,30 @@ async function openPort(candidate) {
 
   el.portLabel.textContent = 'Disconnect';
   notify('Serial port connected');
+
+  try {
+    localStorage.setItem(PORT_STORAGE_KEY, portKey(candidate));
+  } catch {
+    // Private mode or storage disabled: auto-connect still works.
+  }
+
   readLoop();
 
   return true;
 }
 
 async function connect() {
-  if (!('serial' in navigator)) {
-    notify('Web Serial is not available in this browser. Use Chrome or Edge.', 'error');
+  const unavailable = describeSerialSupport();
+
+  if (unavailable) {
+    notify(unavailable, 'error');
     return;
   }
 
   let candidate;
 
   try {
-    candidate = await navigator.serial.requestPort({ filters: PORT_FILTERS });
+    candidate = await navigator.serial.requestPort(requestOptions());
   } catch (error) {
     // Cancelling the picker is not an error worth a toast.
     if (error.name !== 'NotFoundError') {
@@ -451,7 +456,15 @@ async function autoConnect() {
 
   try {
     const granted = await navigator.serial.getPorts();
-    const candidate = granted.find(matchesFilter);
+    let preferred = null;
+
+    try {
+      preferred = localStorage.getItem(PORT_STORAGE_KEY);
+    } catch {
+      preferred = null;
+    }
+
+    const candidate = pickPort(granted, preferred);
 
     if (candidate && (await openPort(candidate))) {
       notify('Reconnected to the saved port');

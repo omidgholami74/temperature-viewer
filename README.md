@@ -84,10 +84,14 @@ extreme, CSV export with its own date picker, and an installable PWA manifest.
 | `backend/`  | PHP API only: JSON endpoints, SQLite schema, CLI tools, tests    |
 | `ui/`       | Static dashboard: HTML, design tokens, CSS, ES modules, config   |
 | `module/`   | Pico firmware: serial + flash log at 10 Hz, no network, simulator |
+| `esp32-s3/` | ESP32-S3 firmware: Wi-Fi, 10 Hz, **direct** `POST /api/ingest` (MAX31855 or MAX31865) |
 | `collector/`| PC console app: serial/file capture, checkpointed upload to API   |
 | `serial-web/`| Browser dashboard reading the COM port directly (Web Serial)     |
 | `tests/`    | Node unit tests for the timer and formatting helpers             |
 | `artifacts/`| Dashboard, settings and serial screenshots                      |
+
+The ESP32-S3 firmware removes the PC from that diagram: the board itself posts
+the same 10 Hz payload to `/api/ingest` over Wi-Fi.
 
 ## Quick start (no hardware)
 
@@ -125,6 +129,9 @@ python collector/collector.py
 Both scripts take no arguments; their settings are constants at the top of the
 file. See [`collector/README.md`](collector/README.md).
 
+With an **ESP32-S3** there is no step 4 at all: the board joins the Wi-Fi and
+posts to the API itself. See [`esp32-s3/README.md`](esp32-s3/README.md).
+
 The simulator takes no arguments: its `API_URL` (default
 `http://127.0.0.1:8080`), `API_KEY` and intervals are constants at the top of
 `module/simulator.py`.
@@ -146,13 +153,27 @@ the whole firing curve.
 
 ## Hardware
 
-- Raspberry Pi Pico — a plain board is enough, no WiFi needed.
+Two supported boards, pick one:
+
+**Raspberry Pi Pico (no network).** A plain board is enough, no WiFi needed.
+
 - 4x MAX31855 breakout boards with K-type thermocouples.
 - A PC connected to the Pico by USB, running `collector/`.
 - Shared SPI bus, one chip-select pin per amplifier.
 
 Wiring, firmware upload and calibration are documented in
 [`module/README.md`](module/README.md).
+
+**ESP32-S3 (Wi-Fi, no PC).** The board uploads to the API itself, so the PC
+and `collector/` drop out of the picture.
+
+- 4x MAX31855 + K-type probes (SCK 14, MISO 12, CS 15/16/17/18), or
+- 4x MAX31865 + PT100/PT1000 RTDs (SCK 14, **MOSI 11**, MISO 12, CS 15/16/17/18).
+
+Pin tables, flashing and the API payload are in
+[`esp32-s3/README.md`](esp32-s3/README.md),
+[`esp32-s3/max31855/README.md`](esp32-s3/max31855/README.md) and
+[`esp32-s3/max31865/README.md`](esp32-s3/max31865/README.md).
 
 ## Timer behaviour
 
@@ -288,6 +309,9 @@ node --test tests/api-probe.test.mjs
 
 # collector checkpoint (including the Windows rename fallback)
 python3 -m unittest discover -s collector/tests -v
+
+# ESP32-S3 firmware: ingest HTTP client and RTD maths (no board needed)
+python3 -m unittest discover -s esp32-s3/tests -v
 ```
 
 ## Troubleshooting

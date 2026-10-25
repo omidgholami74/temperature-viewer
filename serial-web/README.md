@@ -25,6 +25,10 @@ ms,furnace1,furnace2,furnace3,furnace4
 12400,781.25,660.00,940.00,-1000.00
 ```
 
+The ESP32-S3 firmware in [`esp32-s3/`](../esp32-s3/README.md) prints exactly the
+same line while it uploads over Wi-Fi, so this page works with those boards
+through their CH343 USB port too.
+
 `-1000.00` means that channel reported a fault. The page shows `--.-`, marks
 the card red and draws a gap in the chart. JSON lines
 (`{"u":…,"t":[…],"f":[…]}`) are accepted too, so `SERIAL_FORMAT = "json"`
@@ -57,19 +61,26 @@ that site afterwards. Only two settings live in
 [`assets/js/serial.js`](assets/js/serial.js):
 
 ```js
-const PORT_FILTERS = [{ usbVendorId: 0x2e8a }]; // Raspberry Pi boards only
-const BAUD_RATE = 115200;                       // must match the firmware
-const AUTO_CONNECT = true;                      // reopen the allowed port
+const BAUD_RATE = 115200;   // must match the firmware
+const AUTO_CONNECT = true;  // reopen the allowed port
 ```
 
-`PORT_FILTERS` narrows the picker to Raspberry Pi USB devices; clear it
-(`const PORT_FILTERS = [];`) if your board does not show up. To check what the
-browser sees, open the console on the page and run
+Which devices the dialog offers is set by `PORT_FILTERS` in
+[`assets/js/ports.js`](assets/js/ports.js). It is **empty on purpose**: an empty
+list shows every serial port, so a Pico, an ESP32-S3 with a CH343 bridge
+(`USB-Enhanced-SERIAL CH343 (COM6)`, vendor `0x1a86`) and any other USB serial
+adapter all appear. A list like `[{ usbVendorId: 0x2e8a }]` makes Chrome hide
+everything else — the list stays empty and no port can be picked — while a
+desktop app such as Serial Studio still opens the same port, because it does not
+use the browser picker. Narrow the list only when the machine has other serial
+devices worth hiding. To check what the browser sees, open the console and run
 `await navigator.serial.getPorts()`.
 
 With `AUTO_CONNECT = true`, a page reload reopens the port the operator already
-allowed, without the picker. Set it to `false` to choose the port by hand every
-time. Unplugging the cable is detected and the page returns to “Ready”.
+allowed, without the picker, and it reopens the one it remembers rather than
+the first granted device when the site may use several. Set it to `false` to
+choose the port by hand every time. Unplugging the cable is detected and the
+page returns to “Ready”.
 
 ## Serial Studio
 
@@ -130,6 +141,7 @@ the cards and chart update exactly as they would from the port.
 | ------------------------------- | ------------------------------------------ |
 | `index.html`                    | Dashboard markup (same as `ui/index.html`) |
 | `assets/js/serial.js`           | Web Serial reader and UI controller        |
+| `assets/js/ports.js`            | Port picker filters and support messages   |
 | `assets/js/chart-panel.js`      | Chart, copied from `ui/`                   |
 | `assets/js/format.js`           | Number/timer formatting, copied from `ui/` |
 | `assets/css/`                   | Design tokens and layout, copied from `ui/`|
@@ -143,7 +155,11 @@ history, use `collector/` and the API dashboard instead.
 
 | Symptom                              | Check                                                     |
 | ------------------------------------ | --------------------------------------------------------- |
+| Dialog opens with no port to pick    | `PORT_FILTERS` in `assets/js/ports.js` must be `[]`; the   |
+|                                      | list hides devices whose USB ids do not match             |
 | `Web Serial is not available…`       | Chrome or Edge, and open the page from `http://localhost`  |
+| `…needs a secure page`               | A LAN address over plain http never exposes Web Serial;    |
+|                                      | use `localhost` or serve the folder over HTTPS            |
 | `Could not open the port…`           | Close Thonny/Serial Studio/collector; replug the Pico      |
 | Connects but stays on “Waiting”      | `SERIAL_FORMAT = "csv"`, `SERIAL_ECHO = True`, 115200 baud |
 | Every card shows `--.-`              | Run `module/check.py` on the Pico to see the sensor fault  |

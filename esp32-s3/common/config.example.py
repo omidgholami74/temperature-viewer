@@ -1,0 +1,48 @@
+# Copy this file to config.py on the ESP32-S3 and edit the values.
+# config.py is ignored by git.
+
+# --- Wi-Fi (2.4 GHz only: the ESP32-S3 has no 5 GHz radio) ---------------
+WIFI_SSID = "your-network"
+WIFI_PASSWORD = "your-password"
+WIFI_HOSTNAME = "furnace-esp32"   # shown by the router's client list
+WIFI_TIMEOUT_S = 20               # give up waiting for an association after this
+WIFI_RETRY_S = 15                 # re-association attempt interval at runtime
+
+# --- API (the board talks to the PHP API directly) -----------------------
+# No PC in the middle: the firmware POSTs to /api/ingest itself.
+# Use the API host, not the dashboard host. "/api/ingest" is appended, so a
+# URL that already ends in a path (a proxy) is used exactly as written.
+API_URL = "https://apitemp.futurefounderco.com"
+# Must equal FURNACE_INGEST_KEY on the server; empty when the API is open.
+API_KEY = ""
+API_TIMEOUT_S = 8
+
+# One request carries BATCH_SIZE samples (10 Hz -> 2 s of data with 20).
+# The API accepts at most 600 samples per request.
+BATCH_SIZE = 20
+# Samples kept while the API is unreachable: 600 samples are one minute at
+# 10 Hz. Beyond this the oldest samples are dropped, so a long outage cannot
+# exhaust the board's RAM.
+BUFFER_LIMIT = 600
+
+# --- Time ----------------------------------------------------------------
+# Real timestamps make the history correct even after a reboot, and they are
+# what the dashboard's date pickers rely on. With NTP off (or unreachable) the
+# board sends no time at all and the server stamps the batch on arrival, which
+# is fine for live viewing but shifts after a backfill.
+NTP_ENABLED = True
+NTP_HOST = "pool.ntp.org"
+NTP_TIMEOUT_S = 6
+
+# --- Console -------------------------------------------------------------
+# Also print the sample on USB serial (same CSV as module/), so the board can
+# be watched in Thonny, Serial Studio or serial-web while it uploads.
+SERIAL_ECHO = True
+
+# --- Wi-Fi security note -------------------------------------------------
+# TLS_VERIFY = True makes the firmware validate the server certificate. The
+# MicroPython ssl module ships a small root store, so a certificate issued by
+# a CA that is not in it fails the handshake. Keep False if the board cannot
+# connect to https and prefer an ingest key plus a private network; set True
+# when the server's CA is in the bundle (or served through a pinned proxy).
+TLS_VERIFY = False

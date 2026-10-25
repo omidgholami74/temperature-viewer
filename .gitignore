@@ -3,8 +3,10 @@ backend/var/*.sqlite
 backend/var/*.sqlite-wal
 backend/var/*.sqlite-shm
 
-# Pico credentials
+# Board credentials (Wi-Fi password, ingest key)
 module/config.py
+esp32-s3/common/config.py
+esp32-s3/**/config.py
 
 # Pico logs and the collector's spool/checkpoint
 *.jsonl

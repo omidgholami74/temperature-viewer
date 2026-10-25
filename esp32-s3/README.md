@@ -15,6 +15,23 @@ Two sensor variants are included, and the rest of the project is unchanged:
 `common/` holds the files both variants share: `config.example.py`, `wifi.py`
 and `ingest.py`.
 
+### MicroPython or Arduino?
+
+Both flavours are included and do the same job — pick by the toolchain you
+already use:
+
+| | MicroPython (`common/`, `max31855/`, `max31865/`) | Arduino/C++ ([`arduino/`](arduino/README.md)) |
+| --- | --- | --- |
+| Written for | Thonny, `mpremote` | Arduino IDE 2.x, `arduino-cli` |
+| Upload | copy `.py` files to the board | compile and flash one sketch |
+| Pins | identical | identical |
+| CSV on USB serial | yes | yes |
+| Payload | identical | identical |
+
+The Arduino sketch covers the same two sensors (switch with one `#define`),
+uses no extra library beyond the ESP32 core, and its maths/JSON are tested on a
+PC with `g++`. Details: [`arduino/README.md`](arduino/README.md).
+
 ## Why no collector
 
 ```
@@ -57,6 +74,10 @@ esp32-s3/
 │   ├── main.py               firmware for 4x MAX31865 RTD
 │   ├── max31865.py           RTD driver: CDC maths, fault register
 │   └── README.md             wiring, 2/3/4-wire, RREF, calibration
+├── arduino/                  the same firmware as an Arduino/C++ sketch
+│   ├── README.md             install, pins, build sizes, troubleshooting
+│   ├── furnace_arduino/      open this folder in the Arduino IDE
+│   └── tests/                host tests with g++ (no board needed)
 └── tests/
     └── test_firmware.py      HTTP client and RTD maths, no hardware needed
 ```

@@ -84,7 +84,7 @@ extreme, CSV export with its own date picker, and an installable PWA manifest.
 | `backend/`  | PHP API only: JSON endpoints, SQLite schema, CLI tools, tests    |
 | `ui/`       | Static dashboard: HTML, design tokens, CSS, ES modules, config   |
 | `module/`   | Pico firmware: serial + flash log at 10 Hz, no network, simulator |
-| `esp32-s3/` | ESP32-S3 firmware: Wi-Fi, 10 Hz, **direct** `POST /api/ingest` (MAX31855 or MAX31865) |
+| `esp32-s3/` | ESP32-S3 firmware: Wi-Fi, 10 Hz, **direct** `POST /api/ingest` — MicroPython and Arduino/C++ (MAX31855 or MAX31865) |
 | `collector/`| PC console app: serial/file capture, checkpointed upload to API   |
 | `serial-web/`| Browser dashboard reading the COM port directly (Web Serial)     |
 | `tests/`    | Node unit tests for the timer and formatting helpers             |
@@ -174,7 +174,9 @@ and `collector/` drop out of the picture.
 Pin tables, flashing and the API payload are in
 [`esp32-s3/README.md`](esp32-s3/README.md),
 [`esp32-s3/max31855/README.md`](esp32-s3/max31855/README.md) and
-[`esp32-s3/max31865/README.md`](esp32-s3/max31865/README.md).
+[`esp32-s3/max31865/README.md`](esp32-s3/max31865/README.md). The same firmware
+is also available as an Arduino/C++ sketch:
+[`esp32-s3/arduino/README.md`](esp32-s3/arduino/README.md).
 
 ## Timer behaviour
 
@@ -313,6 +315,9 @@ python3 -m unittest discover -s collector/tests -v
 
 # ESP32-S3 firmware: ingest HTTP client and RTD maths (no board needed)
 python3 -m unittest discover -s esp32-s3/tests -v
+
+# Arduino/C++ firmware: sensor decoding, RTD curve and JSON body (needs g++)
+bash esp32-s3/arduino/tests/run.sh
 ```
 
 ## Troubleshooting

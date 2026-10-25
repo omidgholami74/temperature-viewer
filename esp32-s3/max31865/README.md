@@ -91,6 +91,9 @@ mpremote connect COM6 repl
 [`max31865.py`](max31865.py) is self-contained (no `mip install`):
 
 - `MAX31865(spi, cs, r_ref, r_nominal, wire_mode, filter_hz)` — one channel.
+  The bus must run in **SPI mode 1** (CPOL 0, CPHA 1) at 1 MHz, which is how
+  `main.py` builds it; mode 0 happens to work on some boards but is outside the
+  datasheet timing.
 - `begin()` — bias on, continuous conversion, first reading after 100 ms.
 - `read()` → `(celsius_or_None, fault_mask)`; `read_resistance()` → `(ohms, mask)`.
 - `resistance_to_celsius(ohms, r_nominal)` — IEC 60751 Callendar–Van Dusen

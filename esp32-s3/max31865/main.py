@@ -51,12 +51,13 @@ FILTER_HZ = 50      # Iran's mains frequency: keep the 50 Hz notch enabled
 CSV_HEADER = "ms,furnace1,furnace2,furnace3,furnace4"
 FAULT_SENTINEL = -1000.0
 
-# SPI configuration (a real MOSI line is required here)
+# SPI configuration (a real MOSI line is required here). The MAX31865 samples
+# on the falling clock edge, which is SPI mode 1: CPOL 0, CPHA 1.
 spi = SPI(
     1,
     baudrate=1000000,
     polarity=0,
-    phase=0,
+    phase=1,
     bits=8,
     firstbit=SPI.MSB,
     sck=Pin(SCK_PIN),

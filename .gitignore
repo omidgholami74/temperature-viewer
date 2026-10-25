@@ -7,6 +7,10 @@ backend/var/*.sqlite-shm
 module/config.py
 esp32-s3/common/config.py
 esp32-s3/**/config.py
+esp32-s3/**/config.h
+
+# Arduino build output
+build/
 
 # Pico logs and the collector's spool/checkpoint
 *.jsonl

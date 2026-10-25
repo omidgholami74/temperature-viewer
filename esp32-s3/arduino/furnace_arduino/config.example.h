@@ -19,18 +19,22 @@
 #define API_URL "https://apitemp.futurefounderco.com/api/ingest"
 // Must equal FURNACE_INGEST_KEY on the server; empty when the API is open.
 #define API_KEY ""
-#define API_TIMEOUT_MS 8000
+#define API_TIMEOUT_MS 5000
 
 // TLS. false = encrypted but the certificate is not checked (the ESP32 root
 // store is small and a missing CA would silently block the upload). true needs
 // API_ROOT_CA below, for example the ISRG Root X1 PEM of Let's Encrypt.
+// Uploads keep the connection open between batches either way, so the TLS
+// handshake is paid once instead of on every request.
 #define API_TLS_VERIFY false
 #define API_ROOT_CA ""
 
 // --- Batching ------------------------------------------------------------
-// One request carries BATCH_SIZE samples (10 Hz -> 2 s of data with 20).
+// One request carries BATCH_SIZE samples: 10 at 10 Hz means the server sees
+// each sample about one second after it was read, and ten requests a second
+// fewer than a batch of 1 would need. Bigger = fewer requests but later data.
 // The API accepts at most 600 samples per request.
-#define BATCH_SIZE 20
+#define BATCH_SIZE 10
 // Samples kept while the API is unreachable: 600 are one minute at 10 Hz.
 // Each queued sample costs ~40 bytes of RAM.
 #define BUFFER_LIMIT 600

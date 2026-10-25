@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Console collector: store Pico samples in a file on this computer and upload them.
 
-The plain Pico has no network stack, so the firmware prints one JSON sample per
-line on USB serial. This program either:
+The plain Pico has no network stack, so the firmware prints one CSV line per
+sample on USB serial. This program either:
 
 * ``SOURCE = "serial"`` — captures that stream into ``data/samples.jsonl`` on
   this computer and uploads the file to the PHP API while it grows, or
@@ -54,6 +54,10 @@ API_KEY = ""  # must match FURNACE_INGEST_KEY when the API requires a key
 BATCH_SIZE = 100  # samples per request
 POLL_INTERVAL_S = 1.0  # pause when there is nothing new to upload
 RETRY_DELAYS_S = (1, 2, 5, 10, 30)  # backoff between failed uploads
+
+# Serial line shape: uptime in ms followed by one column per channel.
+CSV_COLUMNS = 5
+CSV_FAULT_SENTINEL = -1000.0  # the firmware's "this channel faulted" value
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -192,6 +196,49 @@ def parse_sample(raw):
         return None
 
     return sample
+
+
+def parse_csv_line(text):
+    """``12300,781.25,-1000.00,940.00,545.75`` to an API sample, or None.
+
+    The boards print CSV on USB serial and only JSON in the flash log, so the
+    serial capture converts the five numbers back into ``u``/``t``/``f``.
+    ``-1000.00`` is what the firmware prints for a channel that faulted: the
+    line carries no fault bits, so the reading becomes ``null`` with fault 8
+    (read error) and the dashboard shows the channel as broken, not as 0 °C.
+    """
+    parts = text.split(",")
+
+    if len(parts) != CSV_COLUMNS:
+        return None
+
+    try:
+        uptime = int(parts[0])
+        readings = [float(part) for part in parts[1:]]
+    except ValueError:
+        return None  # a header row, a banner, or a half-written line
+
+    temperatures = [None if value == CSV_FAULT_SENTINEL else value for value in readings]
+
+    return {
+        "u": uptime,
+        "t": temperatures,
+        "f": [8 if value is None else 0 for value in temperatures],
+    }
+
+
+def parse_line(raw):
+    """One serial line: JSON from a copied log, or the CSV the firmware prints."""
+    text = raw.decode("utf-8", "replace") if isinstance(raw, (bytes, bytearray)) else raw
+    text = text.strip()
+
+    if not text or text.startswith("#"):
+        return None
+
+    if text.startswith("{"):
+        return parse_sample(text)
+
+    return parse_csv_line(text)
 
 
 def parse_iso8601(text):
@@ -425,7 +472,7 @@ def pick_port():
 
 
 def capture_serial(spool_path):
-    """Append every JSON line from the Pico to spool_path, forever."""
+    """Append every CSV (or JSON) line from the board to spool_path, forever."""
     try:
         import serial
     except ImportError:
@@ -451,10 +498,7 @@ def capture_serial(spool_path):
                     while True:
                         raw = connection.readline().strip()
 
-                        if not raw.startswith(b"{"):
-                            continue
-
-                        sample = parse_sample(raw)
+                        sample = parse_line(raw)
 
                         if sample is None:
                             continue

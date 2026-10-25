@@ -10,10 +10,10 @@ API. No backend, no collector, no database.
 
 ## What the Pico must send
 
-In `module/config.py`:
+Every firmware here prints CSV on USB serial; the only switch is echoing it.
+In `module/config.py` (and `esp32-s3/*/config.py`):
 
 ```python
-SERIAL_FORMAT = "csv"   # default in config.example.py
 SERIAL_ECHO = True
 ```
 
@@ -31,8 +31,8 @@ through their CH343 USB port too.
 
 `-1000.00` means that channel reported a fault. The page shows `--.-`, marks
 the card red and draws a gap in the chart. JSON lines
-(`{"u":…,"t":[…],"f":[…]}`) are accepted too, so `SERIAL_FORMAT = "json"`
-still works.
+(`{"u":…,"t":[…],"f":[…]}`) are still accepted, so a board running an older
+firmware keeps working.
 
 The flash log on the Pico stays JSON, so `collector/` can upload it later.
 
@@ -166,6 +166,6 @@ history, use `collector/` and the API dashboard instead.
 | `…needs a secure page`               | A LAN address over plain http never exposes Web Serial;    |
 |                                      | use `localhost` or serve the folder over HTTPS            |
 | `Could not open the port…`           | Close Thonny/Serial Studio/collector; replug the Pico      |
-| Connects but stays on “Waiting”      | `SERIAL_FORMAT = "csv"`, `SERIAL_ECHO = True`, 115200 baud |
+| Connects but stays on “Waiting”      | `SERIAL_ECHO = True`, 115200 baud |
 | Every card shows `--.-`              | Run `module/check.py` on the Pico to see the sensor fault  |
 | Chart is empty on a fresh page       | It fills when the first numeric line arrives               |

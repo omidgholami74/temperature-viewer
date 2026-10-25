@@ -238,6 +238,7 @@ def main():
     finally:
         print("# stopping, flushing %d samples" % (len(ingest.pending),))
         ingest.flush()
+        ingest.close()
 
 
 main()

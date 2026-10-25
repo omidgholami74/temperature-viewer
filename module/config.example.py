@@ -16,12 +16,12 @@ SPI_BAUD_RATE = 1_000_000
 SAMPLE_INTERVAL_MS = 100   # 10 samples per second, per channel
 
 # --- Output --------------------------------------------------------------
-# Format of the line printed on USB serial:
-#   "csv"  -> 12300,781.25,660.00,940.00,545.75   (Serial Studio, serial-web)
-#   "json" -> {"u":12300,"t":[...],"f":[...]}     (collector/collector.py)
-# CSV starts with a header line and uses -1000.00 for a faulted channel.
-# The flash log is always JSON, so the collector can still upload it later.
-SERIAL_FORMAT = "csv"
+# One line per sample on USB serial, always CSV:
+#   12300,781.25,660.00,940.00,545.75
+# preceded by the header line ms,furnace1,furnace2,furnace3,furnace4.
+# Serial Studio and serial-web read it directly; collector/collector.py turns
+# the same lines back into API samples. A faulted channel prints -1000.00.
+# The flash log is JSON, so the collector can still upload it later.
 SERIAL_ECHO = True
 
 # Also keep a copy on the Pico's flash, so a serial dropout does not lose data.

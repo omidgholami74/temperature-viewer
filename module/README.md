@@ -5,11 +5,12 @@ thermocouple amplifiers on one SPI bus, each with its own chip-select pin.
 
 The board has no network stack and MicroPython for the Pico ships no HTTP
 client, so the firmware uses **only built-in modules** (`machine`, `time`,
-`os`, `ujson`) and never uploads anything. Each sample is printed as one JSON
-line on USB serial and optionally appended to a log file on the Pico's flash.
-A PC then runs [`collector/collector.py`](../collector/README.md), which saves
-those lines in a file on the computer and POSTs them to the PHP API at
-`https://apitemp.futurefounderco.com`.
+`os`, `ujson`) and never uploads anything. Each sample is printed as one CSV
+line on USB serial — the same `ms,f1,f2,f3,f4` line every other firmware in
+this repository prints — and optionally appended to a JSON log file on the
+Pico's flash. A PC then runs [`collector/collector.py`](../collector/README.md),
+which reads the CSV lines, writes them to a file on the computer and POSTs them
+to the PHP API at `https://apitemp.futurefounderco.com`.
 
 ## Files
 
@@ -18,7 +19,7 @@ those lines in a file on the computer and POSTs them to the PHP API at
 | `max31855.py`      | Pico    | SPI driver, signed 14-bit read, fault decoding       |
 | `sampler.py`       | Pico    | Drift-free 100 ms sampling scheduler                 |
 | `hardware.py`      | Pico    | Shared SPI bus setup                                 |
-| `main.py`          | Pico    | Sample loop: JSON line to serial and to the log file |
+| `main.py`          | Pico    | Sample loop: CSV line to serial, JSON line to the log|
 | `check.py`         | Pico    | One-shot wiring check: raw frames and fault names    |
 | `config.example.py`| —       | Copy to `config.py` and edit; `config.py` is ignored |
 | `simulator.py`     | PC      | Sends fake furnace data to the API (no hardware)     |
@@ -57,26 +58,33 @@ twisted, with the shield grounded at one end only.
 4. Run `main.py`. It can be saved as `main.py` on the board, which is the file
    MicroPython runs at boot.
 
-The board prints a short banner, then the header and one line per sample
-(`SERIAL_FORMAT = "csv"`, the default):
+The board prints a short banner, then the header and one line per sample:
 
 ```
 # furnace monitor: 4 channels every 100 ms
 # serial format: csv | log file: samples.jsonl
 ms,furnace1,furnace2,furnace3,furnace4
-100,781.25,660.00,940.50,-1000.00
-200,781.25,660.00,940.50,-1000.00
+105,781.25,660.00,940.50,-1000.00
+205,781.25,660.00,940.50,-1000.00
 ```
 
-`-1000.00` is a faulted channel. Point Serial Studio at the port (Quick Plot)
-or open [`serial-web/index.html`](../serial-web/README.md) to read it in the
-browser. With `SERIAL_FORMAT = "json"` the same lines look like
-`{"u": 100, "t": [...], "f": [...]}`, which is what `collector.py` reads.
+That is the whole protocol on the wire, and every firmware in this repository
+prints it: the Pico, the ESP32-S3 MicroPython boards and the Arduino/C++
+sketch. Point Serial Studio at the port (Quick Plot), open
+[`serial-web/index.html`](../serial-web/README.md) in the browser, or let
+`collector.py` read the same lines and upload them.
+
+`-1000.00` is a faulted channel, so a broken probe never looks like 0 °C. The
+collector turns it back into `null` + fault 8 before uploading.
+
+There is no format switch any more: an older `config.py` that still sets
+`SERIAL_FORMAT = "json"` is ignored and the board prints CSV.
 
 ### Flash log
 
 With `LOG_TO_FLASH = True` the samples are appended to `samples.jsonl` on
-the Pico as JSON, whatever `SERIAL_FORMAT` is. When the file reaches `MAX_LOG_BYTES` (1 MB ≈ 25 minutes at 10 Hz) it
+the Pico as JSON (`{"u": 100, "t": [...], "f": [...]}`), because the file is
+the API's own shape and keeps the exact fault bits. When the file reaches `MAX_LOG_BYTES` (1 MB ≈ 25 minutes at 10 Hz) it
 is renamed to `samples.jsonl.old` and a fresh file starts, so the most recent
 data is always available even if the PC was off.
 
@@ -97,7 +105,6 @@ or `mpremote cp :samples.jsonl samples.jsonl`) and run the collector in
 | `CS_PINS`             | `(5,7,9,11)`     | One chip select per furnace               |
 | `SPI_BAUD_RATE`       | `1_000_000`      | 1 MHz is reliable on short wires          |
 | `SAMPLE_INTERVAL_MS`  | `100`            | 10 samples per second                     |
-| `SERIAL_FORMAT`       | `"csv"`          | `csv` for Serial Studio/serial-web, `json` for the collector |
 | `SERIAL_ECHO`         | `True`           | Print one line per sample on USB          |
 | `LOG_TO_FLASH`        | `True`           | Also keep a log file on the Pico          |
 | `LOG_FILE`            | `samples.jsonl`  | Log path on the Pico filesystem           |
@@ -105,7 +112,13 @@ or `mpremote cp :samples.jsonl samples.jsonl`) and run the collector in
 
 ## Data protocol
 
-Each sample is a JSON object:
+USB serial carries one CSV line per sample:
+
+```
+12300,781.25,-1000.00,940.00,545.75
+```
+
+The flash log and the API body use the same sample as a JSON object:
 
 ```json
 { "u": 12300, "t": [781.25, null, 940.0, 545.75], "f": [0, 1, 0, 0] }

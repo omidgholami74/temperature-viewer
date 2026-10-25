@@ -1,10 +1,11 @@
 # Collector — Pico samples to the API
 
-The Pico is a plain, non-networked board: it prints one JSON sample per line on
-USB serial and cannot call the API itself. This console program runs on the PC
-and does two things:
+The Pico is a plain, non-networked board: it prints one CSV line per sample on
+USB serial (`105,781.25,660.00,940.00,545.75`) and cannot call the API itself.
+This console program runs on the PC and does two things:
 
-1. writes those samples into a file on the computer, and
+1. converts those lines into samples and writes them into a JSON file on the
+   computer, and
 2. uploads that file to the PHP API in batches.
 
 Because the accepted byte offset is stored in `data/checkpoint.json`, stopping
@@ -86,8 +87,9 @@ dashboard, which uses its own `ui/config.js` origin.
 
 ## Serial mode
 
-Default. The program detects a Pico-style USB serial device, appends each JSON
-line to `<DATA_DIR>/samples.jsonl` and a background thread uploads from it
+Default. The program detects a Pico-style USB serial device, turns each CSV
+line into a sample, appends it to `<DATA_DIR>/samples.jsonl` and a background
+thread uploads from it
 every second. If the cable is unplugged, it retries the port every 3 s; the Pico
 keeps logging to its own flash when `LOG_TO_FLASH` is enabled.
 
@@ -133,6 +135,12 @@ arrives, which compresses a long backlog into a few seconds.
 | Path (inside `DATA_DIR`) | Purpose                                       |
 | ------------------------ | --------------------------------------------- |
 | `samples.jsonl`          | Live serial capture, one JSON sample per line |
+
+A CSV line has five numbers: uptime in ms and four channel temperatures, with
+`-1000.00` for a channel that faulted. The CSV carries no fault bits, so a
+`-1000.00` column is uploaded as `null` with fault `8`; the dashboard then
+shows the channel as broken instead of 0 °C. JSON lines are accepted too, which
+is what `SOURCE = "file"` reads from the Pico's own log.
 | `checkpoint.json`        | `{"source": ..., "offset": ...}`              |
 
 Both are ignored by git. They are safe to keep: deleting the spool only loses
@@ -145,7 +153,8 @@ samples that had not been uploaded yet.
   sample keep the 10 Hz grid intact.
 - A line without a trailing newline is treated as still being written and is
   left for the next cycle.
-- Lines that are not valid sample JSON (boot banners, truncated writes) are
+- Lines that are neither a sample JSON object nor five CSV numbers (boot
+  banners, header rows, truncated writes) are
   skipped and logged.
 - A payload the server refuses outright (`400`, `413`, `422`) is dropped so a
   single bad line cannot block the queue. Other statuses (`401`, `403`, `404`,

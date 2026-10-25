@@ -5,11 +5,11 @@ the firmware never talks to the server and imports no networking module. Each
 sample is printed on USB serial and, optionally, appended to a log file on the
 Pico's own flash.
 
-``SERIAL_FORMAT = "csv"`` (default) prints ``ms,furnace1..4`` lines that Serial
-Studio plots directly and ``serial-web/index.html`` reads in the browser.
-``SERIAL_FORMAT = "json"`` prints JSON lines for ``collector/collector.py``,
-which stores them in a file and uploads that file to the PHP API in batches.
-The flash log is always JSON.
+Every sample leaves the board as one ``ms,f1,f2,f3,f4`` line — the same CSV the
+ESP32 firmwares print — so Serial Studio plots it directly,
+``serial-web/index.html`` reads it in the browser and ``collector/collector.py``
+captures it into a file and uploads that file to the PHP API in batches. The
+flash log stays JSON, which is what the collector's file mode expects.
 
 Copy config.example.py to config.py, edit it, upload this folder to the Pico
 (Thonny: save each file to the board) and run main.py.
@@ -70,11 +70,6 @@ def open_log():
     return handle, size
 
 
-def serial_format():
-    """"csv" (Serial Studio, serial-web) or "json" (collector)."""
-    return getattr(config, "SERIAL_FORMAT", "json")
-
-
 def format_csv(sample):
     """One comma-separated line: uptime, four temperatures.
 
@@ -94,16 +89,15 @@ def main():
     sampler = Sampler(sensors, config.SAMPLE_INTERVAL_MS)
 
     log, log_bytes = open_log() if config.LOG_TO_FLASH else (None, 0)
-    output = serial_format()
 
     print("# furnace monitor: 4 channels every {} ms".format(config.SAMPLE_INTERVAL_MS))
     print(
-        "# serial format: {} | log file: {}".format(
-            output, config.LOG_FILE if log else "off"
+        "# serial format: csv | log file: {}".format(
+            config.LOG_FILE if log else "off"
         )
     )
 
-    if config.SERIAL_ECHO and output == "csv":
+    if config.SERIAL_ECHO:
         # Serial Studio takes the first text row as the channel labels.
         print("ms,furnace1,furnace2,furnace3,furnace4")
 
@@ -114,7 +108,7 @@ def main():
             line = json.dumps(sample)  # the flash log is always JSON
 
             if config.SERIAL_ECHO:
-                print(format_csv(sample) if output == "csv" else line)
+                print(format_csv(sample))
 
             if log is not None:
                 try:

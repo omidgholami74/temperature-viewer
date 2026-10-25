@@ -143,6 +143,12 @@ class IngestTests(unittest.TestCase):
         values.update(overrides)
         return types.SimpleNamespace(**values)
 
+    def make(self, **overrides):
+        """An Ingest that is closed when the test ends (it holds a socket)."""
+        client = ingest.Ingest(self.config(**overrides), log=lambda *_: None)
+        self.addCleanup(client.close)
+        return client
+
     def test_split_url(self):
         self.assertEqual(
             ingest.split_url("https://apitemp.example.com"),
@@ -162,7 +168,7 @@ class IngestTests(unittest.TestCase):
                 ingest.split_url(bad)
 
     def test_batch_reaches_the_api_as_the_collector_payload(self):
-        client = ingest.Ingest(self.config(), log=lambda *_: None)
+        client = self.make()
         client.add(100, [781.25, None, float("nan"), 545.754], [0, 1, 0, 0], at_ms=1792523131000)
         client.add(200, [781.5, 660.0, 940.0, 545.0], [0, 0, 0, 0], at_ms=1792523131100)
         self.assertEqual(Recorder.received, [], "a partial batch must not be sent")
@@ -185,16 +191,13 @@ class IngestTests(unittest.TestCase):
         self.assertEqual(client.sent, 3)
 
     def test_no_at_key_without_a_clock(self):
-        client = ingest.Ingest(self.config(BATCH_SIZE=1), log=lambda *_: None)
+        client = self.make(BATCH_SIZE=1)
         client.add(100, [1, 2, 3, 4], [0, 0, 0, 0])
 
         self.assertNotIn("at", Recorder.received[0]["payload"]["samples"][0])
 
     def test_unreachable_api_keeps_the_batch_for_a_retry(self):
-        client = ingest.Ingest(
-            self.config(API_URL="http://127.0.0.1:1", BATCH_SIZE=1),
-            log=lambda *_: None,
-        )
+        client = self.make(API_URL="http://127.0.0.1:1", BATCH_SIZE=1)
         client.add(100, [1, 2, 3, 4], [0, 0, 0, 0])
 
         self.assertEqual(len(client.pending), 1)
@@ -203,7 +206,7 @@ class IngestTests(unittest.TestCase):
 
     def test_rejected_payload_is_dropped_instead_of_blocking_the_queue(self):
         Recorder.status = 422
-        client = ingest.Ingest(self.config(BATCH_SIZE=1), log=lambda *_: None)
+        client = self.make(BATCH_SIZE=1)
         client.add(100, [9999, 2, 3, 4], [0, 0, 0, 0])
 
         self.assertEqual(client.pending, [])
@@ -211,7 +214,7 @@ class IngestTests(unittest.TestCase):
 
     def test_buffer_limit_drops_the_oldest_samples(self):
         Recorder.status = 503
-        client = ingest.Ingest(self.config(BATCH_SIZE=2, BUFFER_LIMIT=4), log=lambda *_: None)
+        client = self.make(BATCH_SIZE=2, BUFFER_LIMIT=4)
 
         for value in range(10):
             client.add(value * 100, [value, value, value, value], [0, 0, 0, 0])
@@ -271,6 +274,7 @@ class RawProtocolTests(unittest.TestCase):
                 log=lambda *_: None,
             )
             client.add(100, [1.0, 2.0, 3.0, 4.0], [0, 0, 0, 0])
+            client.close()
         finally:
             thread.join(5)
             server.close()
@@ -282,12 +286,163 @@ class RawProtocolTests(unittest.TestCase):
         self.assertIn("Host: 127.0.0.1", captured["head"])
         self.assertIn("Content-Type: application/json", captured["head"])
         self.assertIn("X-Api-Key: k", captured["head"])
-        self.assertIn("Connection: close", captured["head"])
+        self.assertIn("Connection: keep-alive", captured["head"])
         self.assertIn("Content-Length: %d" % (len(captured["body"]),), captured["head"])
         self.assertEqual(
             captured["body"],
             '{"samples": [{"u": 100, "t": [1.0, 2.0, 3.0, 4.0], "f": [0, 0, 0, 0]}]}',
         )
+
+
+class ScriptedServer:
+    """A small HTTP server that keeps its connections open like a real one."""
+
+    def __init__(self, requests_per_connection=None):
+        self.requests_per_connection = requests_per_connection
+        self.connections = 0
+        self.payloads = []
+        self.stop = False
+        self.socket = socket.socket()
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.socket.bind(("127.0.0.1", 0))
+        self.socket.listen(5)
+        self.port = self.socket.getsockname()[1]
+        threading.Thread(target=self.serve, daemon=True).start()
+
+    def serve(self):
+        while not self.stop:
+            try:
+                connection, _ = self.socket.accept()
+            except OSError:
+                return
+
+            self.connections += 1
+            threading.Thread(target=self.handle, args=(connection,), daemon=True).start()
+
+    def handle(self, connection):
+        buffer = b""
+        served = 0
+
+        try:
+            while not self.stop:
+                while b"\r\n\r\n" not in buffer:
+                    chunk = connection.recv(1024)
+
+                    if not chunk:
+                        return
+
+                    buffer += chunk
+
+                head, _, buffer = buffer.partition(b"\r\n\r\n")
+                length = 0
+
+                for line in head.split(b"\r\n")[1:]:
+                    if line.lower().startswith(b"content-length:"):
+                        length = int(line.split(b":", 1)[1])
+
+                while len(buffer) < length:
+                    chunk = connection.recv(1024)
+
+                    if not chunk:
+                        return
+
+                    buffer += chunk
+
+                body, buffer = buffer[:length], buffer[length:]
+                self.payloads.append(json.loads(body.decode()))
+                served += 1
+
+                connection.sendall(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                    b"Content-Length: 11\r\nConnection: keep-alive\r\n\r\n{\"ok\": true}"
+                )
+
+                if self.requests_per_connection is not None and served >= self.requests_per_connection:
+                    return
+        except OSError:
+            return
+        finally:
+            connection.close()
+
+    def close(self):
+        self.stop = True
+
+        try:
+            self.socket.close()
+        except OSError:
+            pass
+
+
+class KeepAliveTests(unittest.TestCase):
+    """The socket is reused, so the TLS handshake is not paid per batch."""
+
+    def config(self, port):
+        return types.SimpleNamespace(
+            API_URL="http://127.0.0.1:%d" % (port,),
+            API_KEY="",
+            API_TIMEOUT_S=5,
+            BATCH_SIZE=1,
+            BUFFER_LIMIT=10,
+            TLS_VERIFY=False,
+        )
+
+    def test_batches_share_one_connection(self):
+        server = ScriptedServer()
+        client = ingest.Ingest(self.config(server.port), log=lambda *_: None)
+
+        try:
+            for step in range(3):
+                client.add(step * 100, [1.0, 2.0, 3.0, 4.0], [0, 0, 0, 0])
+
+            self.assertEqual(len(server.payloads), 3, "a batch never reached the server")
+            self.assertEqual(server.connections, 1, "every batch opened a new TCP connection")
+            self.assertEqual(client.pending, [])
+        finally:
+            client.close()
+            server.close()
+
+    def test_a_closed_idle_socket_is_redialled(self):
+        server = ScriptedServer(requests_per_connection=1)
+        client = ingest.Ingest(self.config(server.port), log=lambda *_: None)
+
+        try:
+            for step in range(3):
+                client.add(step * 100, [1.0, 2.0, 3.0, 4.0], [0, 0, 0, 0])
+
+            self.assertEqual(len(server.payloads), 3, "a batch was lost after the server hung up")
+            self.assertGreaterEqual(server.connections, 2)
+            self.assertEqual(client.pending, [])
+        finally:
+            client.close()
+            server.close()
+
+    def test_chunked_reply_is_read_completely(self):
+        left, right = socket.socketpair()
+
+        try:
+            left.settimeout(0.2)
+            # A trailer header after the last chunk must be consumed too,
+            # otherwise it corrupts the next response on the same socket.
+            right.sendall(b"5\r\nhello\r\n6\r\n world\r\n0\r\nX-Trace: 1\r\n\r\n")
+            self.assertEqual(ingest.read_chunked(left, b""), b"hello world")
+
+            with self.assertRaises(TimeoutError):
+                left.recv(16)
+        finally:
+            left.close()
+            right.close()
+
+    def test_head_parsing(self):
+        status, fields = ingest.parse_head(
+            b"HTTP/1.1 422 Unprocessable Entity\r\nContent-Length: 12\r\nConnection: close"
+        )
+
+        self.assertEqual(status, 422)
+        self.assertEqual(fields["content-length"], "12")
+        self.assertEqual(fields["connection"], "close")
+
+        with self.assertRaises(OSError):
+            ingest.parse_head(b"garbage")
 
 
 class RtdTests(unittest.TestCase):

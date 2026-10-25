@@ -22,6 +22,8 @@ except ImportError:  # a build without TLS still works over http://
 
 MAX_SAMPLES_PER_REQUEST = 600  # the API rejects a larger batch with 413
 INGEST_PATH = "/api/ingest"
+# The API answers with a short JSON object; anything this big is not a sample.
+MAX_RESPONSE_BYTES = 4096
 # A refused payload is dropped instead of retried forever: the server will
 # never accept it, and keeping it would block the queue.
 _DROP_STATUSES = (400, 413, 422)
@@ -93,7 +95,7 @@ class Ingest:
         self.key = getattr(config, "API_KEY", "") or ""
         self.timeout = float(getattr(config, "API_TIMEOUT_S", 8))
         self.verify = bool(getattr(config, "TLS_VERIFY", False))
-        batch = int(getattr(config, "BATCH_SIZE", 20))
+        batch = int(getattr(config, "BATCH_SIZE", 10))
         self.batch = max(1, min(batch, MAX_SAMPLES_PER_REQUEST))
         limit = int(getattr(config, "BUFFER_LIMIT", 600))
         self.limit = max(self.batch, min(limit, 20 * MAX_SAMPLES_PER_REQUEST))
@@ -103,6 +105,7 @@ class Ingest:
         self.failures = 0
         self.dropped = 0
         self.last_error = ""
+        self._sock = None
 
     # -- queue ------------------------------------------------------------
 
@@ -195,8 +198,19 @@ class Ingest:
         # 5xx, 401/403 and a wrong URL are retryable: the payload is kept.
         return False
 
-    def _request(self, body, headers):
-        """Send one POST over a plain socket; returns (status, body text)."""
+    def close(self):
+        """Drop the kept-alive connection (shutdown, or after an error)."""
+        sock = self._sock
+        self._sock = None
+
+        if sock is not None:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+    def _connect(self):
+        """Dial the API, with TLS when API_URL is https."""
         address = socket.getaddrinfo(self.host, self.port)[0][-1]
         sock = socket.socket()
         sock.settimeout(self.timeout)
@@ -217,62 +231,203 @@ class Ingest:
                 else:
                     sock = ssl.wrap_socket(sock, server_hostname=self.host)
                     self.log("API: TLS certificate not verified (TLS_VERIFY = False)")
-
-            lines = [
-                "POST %s HTTP/1.1" % (self.path,),
-                "Host: %s" % (self.host,),
-                "Connection: close",
-            ]
-
-            for name in headers:
-                lines.append("%s: %s" % (name, headers[name]))
-
-            lines.append("Content-Length: %d" % (len(body),))
-            lines.append("")
-            lines.append(body)
-
-            # sendall/recv are the two calls MicroPython and CPython share.
-            sock.sendall("\r\n".join(lines).encode("utf-8"))
-
-            raw = b""
-
-            while True:
-                chunk = sock.recv(256)
-
-                if not chunk:
-                    break
-
-                raw += chunk
-
-                # The status line is enough to choose a retry strategy; stop
-                # reading once the headers are complete and the body is small.
-                if b"\r\n\r\n" in raw and len(raw) > 512:
-                    break
-        finally:
+        except Exception:
             try:
                 sock.close()
             except Exception:
                 pass
+            raise
 
-        return self._parse(raw)
+        return sock
 
-    @staticmethod
-    def _parse(raw):
-        if not raw:
-            raise OSError("empty response")
+    def _request(self, body, headers):
+        """POST over the kept-alive socket; returns (status, body text).
 
-        head, _, body = raw.partition(b"\r\n\r\n")
-        status_line = head.split(b"\r\n", 1)[0].split(b" ")
+        A TCP + TLS handshake costs a few hundred milliseconds on an ESP32,
+        which is several skipped samples on the 10 Hz grid, so the socket is
+        reopened only after an error or when the server closes it. A request
+        that fails on a reused socket is retried once on a fresh one: the
+        server had almost certainly closed an idle connection.
+        """
+        reused = self._sock is not None
 
-        if len(status_line) < 2:
-            raise OSError("malformed response: %r" % (head[:40],))
+        sock = self._sock if reused else self._connect()
+        self._sock = sock
 
         try:
-            status = int(status_line[1])
-        except ValueError:
-            raise OSError("malformed status line: %r" % (status_line[:3],))
+            return self._exchange(sock, body, headers)
+        except Exception:
+            self.close()
+
+            if not reused:
+                raise
+
+        # Stale keep-alive connection: dial again and send once more.
+        sock = self._connect()
+        self._sock = sock
+
+        try:
+            return self._exchange(sock, body, headers)
+        except Exception:
+            self.close()
+            raise
+
+    def _exchange(self, sock, body, headers):
+        """Write one POST and read the whole reply so the socket stays usable."""
+        lines = [
+            "POST %s HTTP/1.1" % (self.path,),
+            "Host: %s" % (self.host,),
+            "Connection: keep-alive",
+        ]
+
+        for name in headers:
+            lines.append("%s: %s" % (name, headers[name]))
+
+        lines.append("Content-Length: %d" % (len(body),))
+        lines.append("")
+        lines.append(body)
+
+        # sendall/recv are the two calls MicroPython and CPython share.
+        sock.sendall("\r\n".join(lines).encode("utf-8"))
+
+        return self._read_response(sock)
+
+    def _read_response(self, sock):
+        """Read one complete response: status, headers and the whole body."""
+        raw = b""
+
+        while b"\r\n\r\n" not in raw:
+            chunk = sock.recv(512)
+
+            if not chunk:
+                raise OSError("empty response")
+
+            raw += chunk
+
+            if len(raw) > MAX_RESPONSE_BYTES:
+                raise OSError("response headers are too large")
+
+        head, _, body = raw.partition(b"\r\n\r\n")
+        status, fields = parse_head(head)
+
+        if "chunked" in fields.get("transfer-encoding", "").lower():
+            body = read_chunked(sock, body)
+        else:
+            length = fields.get("content-length")
+
+            if length is None:
+                # No length and no chunking: the reply ends when the socket does.
+                while True:
+                    chunk = sock.recv(512)
+
+                    if not chunk:
+                        break
+
+                    body += chunk
+
+                    if len(body) > MAX_RESPONSE_BYTES:
+                        break
+
+                self.close()
+            else:
+                try:
+                    expected = int(length)
+                except (TypeError, ValueError):
+                    raise OSError("bad Content-Length: %r" % (length,))
+
+                while len(body) < expected:
+                    chunk = sock.recv(expected - len(body))
+
+                    if not chunk:
+                        raise OSError("connection closed inside the response")
+
+                    body += chunk
+
+                body = body[:expected]
+
+        if fields.get("connection", "").lower() == "close":
+            self.close()
 
         return status, body.decode("utf-8", "ignore")
+
+
+def parse_head(head):
+    """Status code and lower-cased field names from an HTTP header block."""
+    lines = head.split(b"\r\n")
+    status_line = lines[0].split(b" ")
+
+    if len(status_line) < 2:
+        raise OSError("malformed response: %r" % (head[:40],))
+
+    try:
+        status = int(status_line[1])
+    except ValueError:
+        raise OSError("malformed status line: %r" % (status_line[:3],))
+
+    fields = {}
+
+    for line in lines[1:]:
+        name, separator, value = line.partition(b":")
+
+        if separator:
+            fields[name.strip().lower().decode("utf-8", "ignore")] = value.strip().decode(
+                "utf-8", "ignore"
+            )
+
+    return status, fields
+
+
+def read_chunked(sock, buffered):
+    """De-chunk a ``Transfer-Encoding: chunked`` body (small replies only)."""
+    body = b""
+    raw = buffered
+
+    while True:
+        while b"\r\n" not in raw:
+            chunk = sock.recv(512)
+
+            if not chunk:
+                raise OSError("connection closed inside a chunked response")
+
+            raw += chunk
+
+        line, _, raw = raw.partition(b"\r\n")
+
+        try:
+            size = int(line.split(b";")[0].strip(), 16)
+        except ValueError:
+            raise OSError("bad chunk size: %r" % (line[:20],))
+
+        if size == 0:
+            # Trailers (usually none) end with an empty line. Leaving them in the
+            # socket would corrupt the next response on the same connection.
+            while True:
+                while b"\r\n" not in raw:
+                    chunk = sock.recv(512)
+
+                    if not chunk:
+                        return body
+
+                    raw += chunk
+
+                line, _, raw = raw.partition(b"\r\n")
+
+                if not line:
+                    return body
+
+        while len(raw) < size + 2:
+            chunk = sock.recv(512)
+
+            if not chunk:
+                raise OSError("connection closed inside a chunk")
+
+            raw += chunk
+
+        body += raw[:size]
+        raw = raw[size + 2:]
+
+        if len(body) > MAX_RESPONSE_BYTES:
+            return body
 
 
 def uptime_ms_since(start_tick):

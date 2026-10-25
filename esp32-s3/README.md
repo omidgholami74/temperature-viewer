@@ -143,7 +143,7 @@ mpremote connect COM6 repl       # watch the console (Ctrl-] to leave)
 ### 4. Confirm the dashboard sees it
 
 Open the dashboard (`ui/`, production <https://temp.futurefounderco.com>). The
-cards fill within one batch (= `BATCH_SIZE` samples, 2 s by default) and the
+cards fill within one batch (= `BATCH_SIZE` samples, 1 s by default) and the
 chip switches from *Paused* to *Recording*.
 
 ## Configuration
@@ -161,7 +161,7 @@ a microcontroller.
 | `API_URL`       | `https://apitemp.futurefounderco.com` | API host; `/api/ingest` is appended       |
 | `API_KEY`       | `""`                             | Must equal `FURNACE_INGEST_KEY` on the server  |
 | `API_TIMEOUT_S` | `8`                              | Socket timeout per request                     |
-| `BATCH_SIZE`    | `20`                             | Samples per POST (max 600); 20 = 2 s of data   |
+| `BATCH_SIZE`    | `10`                             | Samples per POST (max 600); 10 = 1 s of data   |
 | `BUFFER_LIMIT`  | `600`                            | Samples kept while the API is down (60 s)      |
 | `NTP_ENABLED`   | `True`                           | Send absolute `at` timestamps                  |
 | `NTP_HOST`      | `pool.ntp.org`                   |                                                |
@@ -187,9 +187,14 @@ CA is in the bundle. `http://` also works and skips TLS entirely.
   *measured* (`ticks_ms`), so a slow upload cannot make it drift; if an upload
   takes longer than a frame, the loop resynchronises instead of burning through
   missed slots, and that gap is visible in the data.
-- **Batching.** One request carries `BATCH_SIZE` samples. The API anchors a
+- **Batching.** One request carries `BATCH_SIZE` samples (10 by default, so
+  the server has a sample about a second after it was read). The API anchors a
   batch without `at` on its arrival time and places the rest on the 0.1 s grid,
   so the dashboard timer (which counts samples) is unaffected by batching.
+- **One connection.** The TCP socket (and its TLS session) stays open between
+  batches: a handshake costs a few hundred milliseconds on this chip, which is
+  several samples of delay. The socket is dropped and redialled only after a
+  failure or when the server closes it.
 - **Outages.** A failed upload keeps the batch and retries on the next flush. A
   `400/413/422` is a refused payload and is dropped instead of blocking the
   queue; `401/403` and a wrong URL are retried while the console prints a hint.
@@ -228,6 +233,6 @@ python3 -m unittest discover -s esp32-s3/tests -v
 | `API 401` | `API_KEY` does not match `FURNACE_INGEST_KEY`. The key is kept and retried, so fix the config and restart. |
 | `API 404` | `API_URL` points at the dashboard or at a path without `/api/ingest`. |
 | `API: TLS certificate not verified` | Expected with `TLS_VERIFY = False`; the connection is encrypted but unverified. A handshake failure instead means the CA is not in the axtls bundle — use `http://` or `TLS_VERIFY = False`. |
-| Data arrives with a delay | `BATCH_SIZE` samples are buffered before each POST; lower it (for example 10) for faster updates at more requests per second. |
+| Data arrives with a delay | `BATCH_SIZE` samples are buffered before each POST; lower it (for example 5) for faster updates at more requests per second. |
 | All four channels `--.-` / `-1000` | Wiring: 3V3, GND, SCK and MISO (and MOSI on the MAX31865), one CS per board, thermocouple polarity. Run `module/check.py`-style spot checks or the serial console. |
 | Dashboard shows a second run starting | The board's `at` jumped (NTP correction) or someone pressed *Start new run*; see [backend/README.md](../backend/README.md#post-apiingest). |

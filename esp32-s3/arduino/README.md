@@ -164,9 +164,13 @@ Wiring detail for 2/3/4-wire probes is in
   with `millis()`, so a slow upload cannot make it drift; if an upload takes
   longer than a frame the loop resynchronises instead of burning through missed
   slots, and that gap shows up in the data.
-- **Batching.** `BATCH_SIZE` (default 20 = 2 s) frames per request. The API
+- **Batching.** `BATCH_SIZE` (default 10 = 1 s) frames per request. The API
   anchors a batch without `at` on arrival and places the rest on the 0.1 s grid,
   so the dashboard timer (which counts samples) is unaffected.
+- **One connection.** `HTTPClient` keeps the TCP + TLS connection open between
+  batches instead of closing it after every POST: the handshake costs a few
+  hundred milliseconds on an ESP32, which is several samples of delay. Only a
+  failed request drops the socket, so a dead connection is never reused.
 - **Timestamps.** With NTP the board sends `at` (Unix ms) per sample, so history
   stays correct across reboots and outages. Without a clock the key is omitted.
 - **Outages.** A failed upload keeps the batch and retries at the next batch; a

@@ -133,11 +133,18 @@ class Ingest {
     return false;
   }
 
-  /** POST one body; returns the HTTP status, or a negative value on failure. */
+  /**
+   * POST one body; returns the HTTP status, or a negative value on failure.
+   *
+   * The socket, HTTPClient and TLS session are kept between batches: a fresh
+   * TCP + TLS handshake costs a few hundred milliseconds on an ESP32, which is
+   * pure delay on every sample that is waiting to reach the server. Only a
+   * failed request closes the connection, so a dead socket cannot be reused.
+   */
   int post(const char* body, size_t length) {
-    HTTPClient http;
-    http.setTimeout(timeoutMs_);
-    http.setConnectTimeout(timeoutMs_);
+    http_.setTimeout(timeoutMs_);
+    http_.setConnectTimeout(timeoutMs_);
+    http_.setReuse(true);
 
     bool started = false;
 
@@ -153,25 +160,36 @@ class Ingest {
         }
       }
 
-      started = http.begin(secure_, url_);
+      secure_.setNoDelay(true);
+      started = http_.begin(secure_, url_);
     } else {
-      started = http.begin(plain_, url_);
+      plain_.setNoDelay(true);
+      started = http_.begin(plain_, url_);
     }
 
     if (!started) {
       Serial.println(F("API: HTTPClient could not start"));
+      http_.setReuse(false);
+      http_.end();
       return -1;
     }
 
-    http.addHeader(F("Content-Type"), F("application/json"));
-    http.addHeader(F("Connection"), F("close"));
+    http_.addHeader(F("Content-Type"), F("application/json"));
 
     if (apiKey_ != nullptr && apiKey_[0] != '\0') {
-      http.addHeader(F("X-Api-Key"), apiKey_);
+      http_.addHeader(F("X-Api-Key"), apiKey_);
     }
 
-    const int status = http.POST(reinterpret_cast<uint8_t*>(const_cast<char*>(body)), length);
-    http.end();
+    const int status = http_.POST(reinterpret_cast<uint8_t*>(const_cast<char*>(body)), length);
+
+    if (status < 0) {
+      // Drop the socket: the next batch dials a fresh connection instead of
+      // writing into one the server already closed.
+      http_.setReuse(false);
+    }
+
+    http_.end();
+    http_.setReuse(true);
 
     if (status < 0) {
       Serial.printf("API: request failed (%d %s)\n", status, HTTPClient::errorToString(status).c_str());
@@ -197,6 +215,7 @@ class Ingest {
   unsigned long dropped_ = 0;
   unsigned long failures_ = 0;
 
+  HTTPClient http_;  // member, not a local: it owns the kept-alive socket copy
   WiFiClient plain_;
   WiFiClientSecure secure_;
 };

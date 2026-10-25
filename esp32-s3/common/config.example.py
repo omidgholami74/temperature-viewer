@@ -17,9 +17,11 @@ API_URL = "https://apitemp.futurefounderco.com"
 API_KEY = ""
 API_TIMEOUT_S = 8
 
-# One request carries BATCH_SIZE samples (10 Hz -> 2 s of data with 20).
+# One request carries BATCH_SIZE samples: 10 at 10 Hz means the server has
+# each sample about a second after it was read. The socket is kept open between
+# batches, so a smaller batch does not cost a TLS handshake every time.
 # The API accepts at most 600 samples per request.
-BATCH_SIZE = 20
+BATCH_SIZE = 10
 # Samples kept while the API is unreachable: 600 samples are one minute at
 # 10 Hz. Beyond this the oldest samples are dropped, so a long outage cannot
 # exhaust the board's RAM.

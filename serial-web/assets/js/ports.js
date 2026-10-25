@@ -98,5 +98,5 @@ export function describeSerialSupport(nav = globalThis.navigator, scope = global
     return 'Web Serial needs a secure page: open this dashboard on http://localhost or https://, not on a LAN address over http';
   }
 
-  return 'Web Serial is not available in this browser. Use Chrome or Edge on a desktop';
+  return 'Web Serial is not available in this browser (Firefox and Safari do not implement it). Use Chrome or Edge on a desktop';
 }

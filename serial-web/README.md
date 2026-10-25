@@ -47,8 +47,12 @@ The flash log on the Pico stays JSON, so `collector/` can upload it later.
    python -m http.server 8080
    ```
 
-3. Open <http://localhost:8080> in **Chrome or Edge**.
-4. Click **Connect port** and pick the Pico (`USB Serial Device (COM5)`).
+3. Open <http://localhost:8080> in **Chrome or Edge**. Firefox and Safari do
+   not implement Web Serial at all: the page detects that, disables the button
+   and says so instead of failing on every click. Mobile browsers cannot open a
+   serial port either.
+4. Click **Connect port** and pick the board (`USB Serial Device (COM5)`, or
+   `USB-Enhanced-SERIAL CH343 (COM6)` on an ESP32-S3).
 
 The picker is a browser security requirement: a page may not open a port by
 name without the user choosing it once. Press the button again to disconnect.
@@ -158,6 +162,7 @@ history, use `collector/` and the API dashboard instead.
 | Dialog opens with no port to pick    | `PORT_FILTERS` in `assets/js/ports.js` must be `[]`; the   |
 |                                      | list hides devices whose USB ids do not match             |
 | `Web Serial is not available…`       | Chrome or Edge, and open the page from `http://localhost`  |
+| Button says `Chrome or Edge only`    | Firefox/Safari have no Web Serial; use Chrome, Edge or Opera |
 | `…needs a secure page`               | A LAN address over plain http never exposes Web Serial;    |
 |                                      | use `localhost` or serve the folder over HTTPS            |
 | `Could not open the port…`           | Close Thonny/Serial Studio/collector; replug the Pico      |

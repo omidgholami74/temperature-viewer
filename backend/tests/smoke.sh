@@ -264,6 +264,32 @@ grep -qi "^Access-Control-Allow-Origin: ${PROD_ORIGIN}" "${TMP_DIR}/preflight" \
 grep -qi '^Access-Control-Allow-Headers: .*X-Api-Key' "${TMP_DIR}/preflight" \
   || fail "preflight is missing the X-Api-Key header"
 
+# A local static server picks its own port (3000, 5500, 5173, ...), so every
+# loopback origin is a trusted development page without an allow-list entry.
+for origin in "http://localhost:5500" "http://127.0.0.1:8000" "http://localhost:3000"; do
+  status="$(request GET /api/health "" "${origin}")"
+  assert_eq "${status}" "200" "read from loopback ${origin}"
+  grep -qi "^Access-Control-Allow-Origin: ${origin}" "${TMP_DIR}/headers" \
+    || fail "${origin} is loopback and should be echoed in Access-Control-Allow-Origin"
+done
+
+# A dashboard opened straight from disk sends `Origin: null`: it may read, but
+# it must never be able to start a new run (that is the CSRF boundary).
+status="$(request GET /api/health "" "null")"
+assert_eq "${status}" "200" "read from a file:// page"
+grep -qi '^Access-Control-Allow-Origin: null' "${TMP_DIR}/headers" \
+  || fail "a file:// page should receive Access-Control-Allow-Origin: null"
+
+status="$(request POST /api/runs/reset '{}' "null")"
+assert_eq "${status}" "403" "a file:// page may not reset the run"
+
+# A page on another machine is still not trusted.
+status="$(request GET /api/health "" "http://192.168.1.50:3000")"
+assert_eq "${status}" "200" "foreign-origin read is answered but without CORS"
+if grep -qi '^Access-Control-Allow-Origin:' "${TMP_DIR}/headers"; then
+  fail "a non-loopback origin must not receive Access-Control-Allow-Origin"
+fi
+
 status="$(curl -sS -m 5 -o /dev/null -w "%{http_code}" -X OPTIONS \
   -H "Origin: http://evil.example" \
   -H "Access-Control-Request-Method: POST" \

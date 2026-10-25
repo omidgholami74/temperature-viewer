@@ -69,9 +69,20 @@ CORS preflights:
 - `POST /api/ingest` and `POST /api/runs/reset` use JSON, so the browser first
   sends `OPTIONS`; the API answers `204` with `Access-Control-Allow-Methods`
   and `Access-Control-Allow-Headers: Content-Type, X-Api-Key`.
+- **Loopback origins are trusted on any port**: `http://localhost:5500`,
+  `http://127.0.0.1:8000`, `http://localhost:5173` … all get the CORS header
+  without an allow-list entry. A local static server picks its own port, and
+  requiring an entry per port only produced a `blocked by CORS` banner on a
+  laptop that was set up correctly. Only `localhost`, `127.0.0.1` and `[::1]`
+  are covered; `http://192.168.1.50:3000` is not.
+- **`Origin: null`** (the dashboard HTML opened from disk, or a sandboxed
+  frame) may **read** — the GET responses carry
+  `Access-Control-Allow-Origin: null` — but it may not write: reset answers
+  `403`. Nothing else about the CSRF boundary changes.
 - Requests without an `Origin` header (Pico, curl, cron) are unaffected.
-- Writes (`/api/runs/reset`) require an allow-listed origin or the API's own
-  origin; any other `Origin` gets `403`. This is the CSRF boundary.
+- Writes (`/api/runs/reset`) require an allow-listed origin, a loopback origin
+  or the API's own origin; any other `Origin` gets `403`. This is the CSRF
+  boundary.
 - `FURNACE_ALLOWED_ORIGINS=*` is supported for fully trusted networks, but it
   also removes the reset CSRF protection. Do not use it on the public internet.
 

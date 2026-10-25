@@ -65,10 +65,15 @@ window.FURNACE_CONFIG = {
   reverse-proxy origin.
 - There is no trailing slash and no `/api` suffix; the client appends paths.
 
-The API must allow this origin through CORS. The backend default already
-includes `https://temp.futurefounderco.com`, `http://localhost:3000` and
-`http://127.0.0.1:3000`; override `FURNACE_ALLOWED_ORIGINS` on the API host if
-you deploy the UI elsewhere.
+The API must allow this origin through CORS. The backend default includes
+`https://temp.futurefounderco.com`, `http://localhost:3000` and
+`http://127.0.0.1:3000`, and any **loopback** page (`localhost`/`127.0.0.1`)
+is accepted on every port, so `python -m http.server 5500`, Live Server or a
+framework dev server all work without an extra entry. A page opened straight
+from disk (`file://`) can read the data but cannot start a new run. Override
+`FURNACE_ALLOWED_ORIGINS` on the API host when you deploy the UI on another
+host — a LAN address such as `http://192.168.1.50:3000` is not loopback and
+must be listed.
 
 ## Files
 

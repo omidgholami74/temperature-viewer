@@ -109,6 +109,7 @@ php backend/bin/install.php
 php -S 0.0.0.0:8080 -t backend backend/index.php
 
 # 3. UI server (second terminal), then open http://localhost:3000
+#    Any port works: loopback pages are always allowed by CORS.
 python3 -m http.server 3000 --directory ui
 
 # 4. fake furnace data (third terminal)
@@ -338,9 +339,12 @@ openssl s_client -connect apitemp.futurefounderco.com:443 \
 
 - **Step 1 returns 200 but step 2 prints nothing** — the browser origin is not
   in `FURNACE_ALLOWED_ORIGINS`. The fetch fails with a CORS error even though
-  the API is healthy. Add the exact origin (scheme included) to
-  `backend/config.php` or the server's `FURNACE_ALLOWED_ORIGINS`, for example
-  `http://temp.futurefounderco.com,https://temp.futurefounderco.com`.
+  the API is healthy. `http://temp.futurefounderco.com` and
+  `https://temp.futurefounderco.com` are two different origins, so list the
+  scheme you actually open. Locally this is rarely the cause: **any
+  `localhost`/`127.0.0.1` page on any port is allowed** without an entry, and a
+  dashboard opened from `file://` may read the data (it just cannot start a new
+  run). A LAN address such as `http://192.168.1.50:3000` does need an entry.
 - **Step 3 shows the host's default certificate** (for example
   `CN = *.web-hosting.com` instead of the subdomain) — HTTPS is not usable yet.
   Serve the dashboard over `http://` and `config.js` will call the http API,

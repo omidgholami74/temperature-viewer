@@ -107,6 +107,10 @@ const el = {
   noiseStatus: $('[data-role="noise-status"]'),
 };
 
+// Firefox, Safari and every mobile browser lack Web Serial, so the page says so
+// once instead of offering a button that can only fail.
+const SERIAL_UNSUPPORTED = describeSerialSupport();
+
 const state = {
   latest: null,
   samples: 0,
@@ -264,6 +268,14 @@ function renderSession() {
 }
 
 function updateStatus() {
+  if (SERIAL_UNSUPPORTED) {
+    el.status.dataset.state = 'offline';
+    setText(el.statusLabel, 'Unsupported browser');
+    setText(el.statusMeta, SERIAL_UNSUPPORTED);
+    setText(el.age, '—');
+    return;
+  }
+
   if (!state.session || !state.latest) {
     el.status.dataset.state = 'waiting';
     setText(el.statusLabel, state.connected ? 'Waiting' : 'Ready');
@@ -285,9 +297,17 @@ function updateStatus() {
 }
 
 function updateEmptyState() {
-  if (el.empty) {
-    el.empty.hidden = Boolean(state.latest);
+  if (!el.empty) {
+    return;
   }
+
+  if (SERIAL_UNSUPPORTED) {
+    el.empty.textContent = SERIAL_UNSUPPORTED;
+    el.empty.hidden = false;
+    return;
+  }
+
+  el.empty.hidden = Boolean(state.latest);
 }
 
 /* --- serial input ------------------------------------------------------ */
@@ -733,6 +753,12 @@ function bootstrap() {
   }
 
   chart?.setWindow(state.windowSeconds === 0 ? 60000 : state.windowSeconds * 1000);
+
+  if (SERIAL_UNSUPPORTED && el.portButton) {
+    el.portButton.disabled = true;
+    el.portButton.title = SERIAL_UNSUPPORTED;
+    setText(el.portLabel, 'Chrome or Edge only');
+  }
 
   bindEvents();
   renderSession();

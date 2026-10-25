@@ -99,7 +99,10 @@ final class Api
      * Emit CORS headers when the browser origin is allowed.
      *
      * The dashboard is normally served by a different static server than this
-     * API, so the UI origin must be listed in FURNACE_ALLOWED_ORIGINS.
+     * API, so the UI origin must be listed in FURNACE_ALLOWED_ORIGINS. Two
+     * development cases are allowed without an entry: a loopback page on any
+     * port (a static server picks its own port) and a page opened from disk
+     * (`Origin: null`), which may read but never write.
      *
      * @param array<string, mixed> $config
      */
@@ -119,7 +122,11 @@ final class Api
 
         if (in_array('*', $allowed, true)) {
             header('Access-Control-Allow-Origin: *');
-        } elseif (in_array($origin, $allowed, true)) {
+        } elseif (
+            in_array($origin, $allowed, true)
+            || self::isLoopbackOrigin($origin)
+            || $origin === 'null'
+        ) {
             header('Access-Control-Allow-Origin: ' . $origin);
             header('Vary: Origin');
         } else {
@@ -149,12 +156,15 @@ final class Api
      * True when the current request may read or write.
      *
      * Requests without an Origin header (Pico, curl, cron) are always allowed.
-     * Browser requests must either come from an allow-listed UI origin or from
-     * the same host and port as this API.
+     * Browser requests must either come from an allow-listed UI origin, from a
+     * loopback origin (localhost, 127.0.0.1, [::1] on any port: the operator's
+     * own machine, whatever port the static server picked) or from the same
+     * host and port as this API. `Origin: null` (an HTML file opened from
+     * disk, a sandboxed frame) may read when `$allowNull` is set, never write.
      *
      * @param array<string, mixed> $config
      */
-    public static function isOriginAllowed(array $config): bool
+    public static function isOriginAllowed(array $config, bool $allowNull = false): bool
     {
         $origin = (string) ($_SERVER['HTTP_ORIGIN'] ?? '');
 
@@ -168,7 +178,40 @@ final class Api
             return true;
         }
 
+        if (self::isLoopbackOrigin($origin)) {
+            return true;
+        }
+
+        if ($allowNull && $origin === 'null') {
+            return true;
+        }
+
         return self::isSameServerOrigin($origin);
+    }
+
+    /**
+     * A page served from the operator's own machine, on any port.
+     *
+     * Local development is the reason: `python -m http.server 3000`, VS Code's
+     * Live Server on 5500 and a framework dev server on 5173 are all the same
+     * trusted machine, and requiring an entry per port made the dashboard show
+     * "blocked by CORS" on a laptop that was set up correctly.
+     */
+    private static function isLoopbackOrigin(string $origin): bool
+    {
+        if ($origin === 'null') {
+            return false;
+        }
+
+        $scheme = strtolower((string) parse_url($origin, PHP_URL_SCHEME));
+
+        if ($scheme !== 'http' && $scheme !== 'https') {
+            return false;
+        }
+
+        $host = strtolower(trim((string) parse_url($origin, PHP_URL_HOST), '[]'));
+
+        return $host === 'localhost' || $host === '127.0.0.1' || $host === '::1';
     }
 
     /**

@@ -78,6 +78,7 @@ rejects most of the pickup on long probe leads. Use `60` only on a 60 Hz grid.
 ```bash
 cp ../common/config.example.py /tmp/config.py      # edit Wi-Fi + API settings
 mpremote connect COM6 \
+  cp ../boot.py :boot.py + \
   cp /tmp/config.py :config.py + \
   cp ../common/wifi.py :wifi.py + \
   cp ../common/ingest.py :ingest.py + \

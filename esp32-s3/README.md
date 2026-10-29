@@ -63,6 +63,7 @@ the API, the database and the dashboard need no change:
 ```
 esp32-s3/
 ├── README.md                 this file
+├── boot.py                   boot diagnostics: reset cause, missing files
 ├── common/
 │   ├── config.example.py     copy to config.py and edit
 │   ├── wifi.py               association, reconnect, NTP clock
@@ -115,6 +116,7 @@ For the thermocouple variant:
 
 ```bash
 mpremote connect COM6 \
+  cp esp32-s3/boot.py :boot.py + \
   cp /tmp/config.py :config.py + \
   cp esp32-s3/common/wifi.py :wifi.py + \
   cp esp32-s3/common/ingest.py :ingest.py + \
@@ -126,6 +128,7 @@ For the RTD variant, add `max31865.py` and use the other `main.py`:
 
 ```bash
 mpremote connect COM6 \
+  cp esp32-s3/boot.py :boot.py + \
   cp /tmp/config.py :config.py + \
   cp esp32-s3/common/wifi.py :wifi.py + \
   cp esp32-s3/common/ingest.py :ingest.py + \
@@ -135,15 +138,40 @@ mpremote connect COM6 \
 ```
 
 With Thonny it is the same idea: open each file and *Save to board* under the
-name after the colon (`config.py`, `wifi.py`, `ingest.py`, `main.py`). With the
-files at the board root, `main.py` runs automatically after every reset.
+name after the colon (`boot.py`, `config.py`, `wifi.py`, `ingest.py`,
+`supervisor.py`, `main.py`). With the files at the board root, `main.py` runs
+automatically after every reset and every power-up.
 
 ```bash
 mpremote connect COM6 reset      # boot the firmware
 mpremote connect COM6 repl       # watch the console (Ctrl-] to leave)
 ```
 
-### 4. Confirm the dashboard sees it
+`mpremote cp` does not reset the board, so finish an upload with `reset`.
+
+### 4. It does not start by itself?
+
+`main.py` runs on its own after every boot, so a board on a charger needs
+nothing typed. Two things stop it:
+
+- **A file is missing from the board root.** `main.py` imports `config`,
+  `wifi`, `ingest` and `supervisor`; one absent file is an `ImportError`, and
+the board then sits at a REPL prompt. `boot.py` names them:
+
+  ```
+  # boot: reset cause PWRON_RESET
+  # boot: MISSING from the board root: supervisor.py
+  # boot: main.py cannot start until those files are uploaded
+  ```
+
+- **Thonny is attached.** Thonny stops the running program when it connects,
+  so the Shell shows `>>>` and the sampling has stopped — that is the IDE, not
+the firmware. Press **F5** (*Run current script*), press RST on the board, or
+  close Thonny and run `mpremote connect COM6 reset`.
+
+Check what is really at the root with `mpremote connect COM6 ls`.
+
+### 5. Confirm the dashboard sees it
 
 Open the dashboard (`ui/`, production <https://temp.futurefounderco.com>). The
 cards fill within one batch (= `BATCH_SIZE` samples, 1 s by default) and the
@@ -172,9 +200,11 @@ power cut drops the samples that had not been POSTed yet — at most
 `BUFFER_LIMIT`, which is one minute at 10 Hz. Everything already sent is stored
 on the server.
 
-**Nothing has to be pressed.** There is no `boot.py` to write: `main.py` at the
-board root is the entry point. If the board is rebooted by the watchdog, the
-first line on the console says so the next time you plug it into a PC:
+**Nothing has to be pressed.** MicroPython runs `boot.py` and then `main.py` at
+every power-up; the shipped `boot.py` only prints the reset cause and names a
+missing file, it never starts the sampler itself. If the board was rebooted by
+the watchdog, the first line on the console says so the next time you plug it
+into a PC:
 
 ```
 # boot: reset cause WDT_RESET
@@ -303,6 +333,8 @@ python3 -m unittest discover -s esp32-s3/tests -v
 | Data arrives with a delay | `BATCH_SIZE` samples are buffered before each POST; lower it (for example 5) for faster updates at more requests per second. |
 | Serial gaps of ~1 s every few seconds | Not the upload: it runs in its own thread (`# upload runs in a background thread` at boot). A gap that size means the loop itself is slow — check the SPI wiring/power and the sensor reads. |
 | All four channels `--.-` / `-1000` | Wiring: 3V3, GND, SCK and MISO (and MOSI on the MAX31865), one CS per board, thermocouple polarity. Run `module/check.py`-style spot checks or the serial console. |
+| `# boot: MISSING from the board root: …` | That file never reached the board: upload it (see [Install](#install)) and reset. `main.py` cannot import it. |
+| Console shows `>>>` and nothing samples | Something stopped the program: a missing file (the line above names it) or Thonny attached to the board (press F5 or RST). |
 | Dashboard shows a second run starting | The board's `at` jumped (NTP correction) or someone pressed *Start new run*; see [backend/README.md](../backend/README.md#post-apiingest). |
 | `# boot: reset cause WDT_RESET` every few minutes | Something blocks the loop longer than `WATCHDOG_S`: a SPI read that never returns (wiring/power on a sensor board) or a network call. Raise `WATCHDOG_S` above `WIFI_TIMEOUT_S` if you lowered it. |
 | `# firmware stopped: …` repeating every few seconds | The session crashes at boot and the message names the cause: a file missing from the board root (`config.py`, `wifi.py`, `ingest.py`, `supervisor.py`), or an `API_URL` that `split_url` rejects. |

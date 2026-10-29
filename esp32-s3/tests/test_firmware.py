@@ -77,6 +77,10 @@ rtd = load("esp32s3_max31865", os.path.join(ROOT, "max31865", "max31865.py"))
 ingest = load("esp32s3_ingest", os.path.join(ROOT, "common", "ingest.py"))
 supervisor = load("esp32s3_supervisor", os.path.join(ROOT, "common", "supervisor.py"))
 
+# boot.py runs its diagnostics on import; the output is captured here.
+with mock.patch("builtins.print"):
+    boot = load("esp32s3_boot", os.path.join(ROOT, "boot.py"))
+
 
 class FakeSPI:
     """Records writes and replays a canned RTD register block."""
@@ -608,6 +612,20 @@ class BackgroundUploadTests(unittest.TestCase):
         finally:
             client.close()
             server.close()
+
+
+class BootTests(unittest.TestCase):
+    """boot.py is what tells the user why main.py stayed silent."""
+
+    def test_missing_lists_what_main_py_imports(self):
+        absent = boot.missing(["boot.py", "main.py", "config.py", "wifi.py", "ingest.py"])
+
+        self.assertEqual(absent, ["supervisor.py"])
+
+    def test_a_complete_board_has_nothing_missing(self):
+        self.assertEqual(boot.missing(list(boot.REQUIRED)), [])
+        # os.listdir() also returns the log files and the folders on the board.
+        self.assertEqual(boot.missing(["data", "README.md"] + list(boot.REQUIRED)), [])
 
 
 class SupervisorTests(unittest.TestCase):

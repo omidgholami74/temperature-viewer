@@ -12,7 +12,7 @@ import network
 _CLOCK_FLOOR = 1735689600
 
 
-def connect(config, log=print):
+def connect(config, log=print, watch=None):
     """Join the network and return the station interface, connected or not."""
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
@@ -37,10 +37,17 @@ def connect(config, log=print):
             log("Wi-Fi: no association after %d s; sampling continues, uploads wait"
                 % (timeout_ms // 1000,))
             return wlan
+        _feed(watch)
         time.sleep_ms(200)
 
     _report(wlan, log)
     return wlan
+
+
+def _feed(watch):
+    """Keep the watchdog happy while an association is being waited out."""
+    if watch is not None:
+        watch.feed()
 
 
 def _report(wlan, log):
@@ -51,7 +58,7 @@ def _report(wlan, log):
     log("Wi-Fi: connected, ip=%s gateway=%s" % (ip, gateway))
 
 
-def reconnect(wlan, config, log=print):
+def reconnect(wlan, config, log=print, watch=None):
     """Try to bring a dropped link back; returns True when connected."""
     if wlan.isconnected():
         return True
@@ -74,6 +81,7 @@ def reconnect(wlan, config, log=print):
         if time.ticks_diff(deadline, time.ticks_ms()) <= 0:
             log("Wi-Fi: still offline")
             return False
+        _feed(watch)
         time.sleep_ms(200)
 
     _report(wlan, log)

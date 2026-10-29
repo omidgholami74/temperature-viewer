@@ -66,7 +66,8 @@ esp32-s3/
 ├── common/
 │   ├── config.example.py     copy to config.py and edit
 │   ├── wifi.py               association, reconnect, NTP clock
-│   └── ingest.py             batch buffer + HTTP(S) POST to /api/ingest
+│   ├── ingest.py             batch buffer + HTTP(S) POST to /api/ingest
+│   └── supervisor.py         watchdog + restart, so no PC is needed
 ├── max31855/
 │   ├── main.py               firmware for 4x MAX31855
 │   └── README.md             wiring, thermocouple notes, troubleshooting
@@ -117,6 +118,7 @@ mpremote connect COM6 \
   cp /tmp/config.py :config.py + \
   cp esp32-s3/common/wifi.py :wifi.py + \
   cp esp32-s3/common/ingest.py :ingest.py + \
+  cp esp32-s3/common/supervisor.py :supervisor.py + \
   cp esp32-s3/max31855/main.py :main.py
 ```
 
@@ -127,6 +129,7 @@ mpremote connect COM6 \
   cp /tmp/config.py :config.py + \
   cp esp32-s3/common/wifi.py :wifi.py + \
   cp esp32-s3/common/ingest.py :ingest.py + \
+  cp esp32-s3/common/supervisor.py :supervisor.py + \
   cp esp32-s3/max31865/max31865.py :max31865.py + \
   cp esp32-s3/max31865/main.py :main.py
 ```
@@ -146,6 +149,57 @@ Open the dashboard (`ui/`, production <https://temp.futurefounderco.com>). The
 cards fill within one batch (= `BATCH_SIZE` samples, 1 s by default) and the
 chip switches from *Paused* to *Recording*.
 
+## Running from a charger (no computer)
+
+The board is meant to sit next to the furnace on a plain USB charger: the
+charger only supplies 5 V, everything else happens over Wi-Fi. Any 5 V supply
+with at least 500 mA works. With the files from [Install](#install) at the
+board root, MicroPython runs `main.py` on every power-up, so there is nothing
+to start and nothing to plug in.
+
+| Situation | What the firmware does on its own |
+| --------- | --------------------------------- |
+| Power-up | `main.py` starts, `wifi.py` joins the network, sampling begins at once — even while Wi-Fi is still down. |
+| Wi-Fi drops, router reboots | A rejoin is tried every `WIFI_RETRY_S`; samples keep queueing in RAM. |
+| API unreachable | The batch is kept and retried, the queue is trimmed at `BUFFER_LIMIT` so RAM cannot fill up. |
+| The sampling loop hangs (SPI, network) | The hardware watchdog reboots the board after `WATCHDOG_S`, and it starts sampling again by itself. |
+| An exception escapes the loop | `supervisor.run_forever` logs it and rebuilds the session after a backoff of 5–60 s. |
+| The upload thread dies | The loop notices within 15 s, starts it again, and falls back to inline sending if that fails. |
+| A power blip | The board reboots and continues; NTP timestamps keep the history correct. |
+
+**What a reboot costs.** The queue lives in RAM, so a watchdog reboot or a
+power cut drops the samples that had not been POSTed yet — at most
+`BUFFER_LIMIT`, which is one minute at 10 Hz. Everything already sent is stored
+on the server.
+
+**Nothing has to be pressed.** There is no `boot.py` to write: `main.py` at the
+board root is the entry point. If the board is rebooted by the watchdog, the
+first line on the console says so the next time you plug it into a PC:
+
+```
+# boot: reset cause WDT_RESET
+# firmware stopped: OSError: [Errno 116] ETIMEDOUT
+# restarting in 5 s (restart 1)
+```
+
+`PWRON_RESET` is a normal power-up. A repeating `WDT_RESET` means something in
+the loop blocks longer than `WATCHDOG_S` — see the troubleshooting table. A
+repeating `# firmware stopped:` names the crash: usually a missing file
+(`config.py`, `wifi.py`, `ingest.py`, `supervisor.py`) or a bad `API_URL`.
+
+**NTP on a phone hotspot.** Many carriers and Android hotspots drop the
+outbound UDP 123 that `ntptime` needs, so the console prints
+`NTP: sync failed: [Errno 116] ETIMEDOUT` and the board sends no `at`. The
+server then stamps each batch on arrival: the dashboard and the counter work
+normally, only a backfill after a long outage would be placed at the wrong
+time. Nothing to fix.
+
+**The serial line** is printed on UART0 (the CH343/USB-UART port). A UART keeps
+shifting bytes out with nothing connected, so it never stalls the loop; set
+`SERIAL_ECHO = False` to save the work and the few milliamps. On a board whose
+console is the native USB-Serial-JTAG instead (no CH343 chip), turn the echo
+off before running from a charger.
+
 ## Configuration
 
 Everything is a constant in `config.py`; there are no command-line arguments on
@@ -164,6 +218,7 @@ a microcontroller.
 | `BATCH_SIZE`    | `10`                             | Samples per POST (max 600); 10 = 1 s of data   |
 | `BACKGROUND_UPLOAD` | `True`                       | Send from a thread so sampling never waits     |
 | `BUFFER_LIMIT`  | `600`                            | Samples kept while the API is down (60 s)      |
+| `WATCHDOG_S`    | `30`                             | Reboot when the loop stops feeding it; `0` = off |
 | `NTP_ENABLED`   | `True`                           | Send absolute `at` timestamps                  |
 | `NTP_HOST`      | `pool.ntp.org`                   |                                                |
 | `SERIAL_ECHO`   | `True`                           | Also print the CSV line on USB serial          |
@@ -209,6 +264,11 @@ CA is in the bundle. `http://` also works and skips TLS entirely.
 - **Wi-Fi.** A dropped link is retried every `WIFI_RETRY_S`; sampling and
   buffering never stop. When the link comes back and NTP was never synced, the
   clock is fetched at that moment.
+- **Unattended.** The hardware watchdog is fed once per sample and during Wi-Fi
+  waits, so a hang reboots the board instead of freezing it; a crash inside a
+  session is logged and the session is rebuilt with a 5–60 s backoff; a dead
+  upload thread is restarted by the loop. No keyboard, no reset button and no
+  computer are needed after the first upload of the five files.
 - **One board per run.** The dashboard timer counts stored samples as 0.1 s
   each. Two boards streaming into the same run therefore make it count twice as
   fast — use one board per run (or a separate database per furnace group).
@@ -244,3 +304,6 @@ python3 -m unittest discover -s esp32-s3/tests -v
 | Serial gaps of ~1 s every few seconds | Not the upload: it runs in its own thread (`# upload runs in a background thread` at boot). A gap that size means the loop itself is slow — check the SPI wiring/power and the sensor reads. |
 | All four channels `--.-` / `-1000` | Wiring: 3V3, GND, SCK and MISO (and MOSI on the MAX31865), one CS per board, thermocouple polarity. Run `module/check.py`-style spot checks or the serial console. |
 | Dashboard shows a second run starting | The board's `at` jumped (NTP correction) or someone pressed *Start new run*; see [backend/README.md](../backend/README.md#post-apiingest). |
+| `# boot: reset cause WDT_RESET` every few minutes | Something blocks the loop longer than `WATCHDOG_S`: a SPI read that never returns (wiring/power on a sensor board) or a network call. Raise `WATCHDOG_S` above `WIFI_TIMEOUT_S` if you lowered it. |
+| `# firmware stopped: …` repeating every few seconds | The session crashes at boot and the message names the cause: a file missing from the board root (`config.py`, `wifi.py`, `ingest.py`, `supervisor.py`), or an `API_URL` that `split_url` rejects. |
+| Board reboots in a loop only when the charger is plugged in | The supply sags below 500 mA (or restarts on inrush); use a 5 V/1 A charger and a short cable. |

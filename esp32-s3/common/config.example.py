@@ -40,9 +40,20 @@ NTP_ENABLED = True
 NTP_HOST = "pool.ntp.org"
 NTP_TIMEOUT_S = 6
 
+# --- Unattended operation (a USB charger, no computer) --------------------
+# Seconds without a heartbeat before the hardware watchdog reboots the board.
+# A board on a charger has no console, so a hung SPI read or a stuck network
+# call has to recover by itself. Keep this above WIFI_TIMEOUT_S (a reconnect
+# blocks the loop) and above NTP_TIMEOUT_S. 0 disables the watchdog.
+WATCHDOG_S = 30
+
 # --- Console -------------------------------------------------------------
 # Also print the sample on USB serial (same CSV as module/), so the board can
-# be watched in Thonny, Serial Studio or serial-web while it uploads.
+# be watched in Thonny, Serial Studio or serial-web while it uploads. On a
+# charger nobody reads it: False saves a little power and keeps the log clean.
+# It goes to UART0 (the CH343 port), which never blocks when nothing listens;
+# on a board whose console is the native USB-Serial-JTAG, set it to False
+# before running without a PC.
 SERIAL_ECHO = True
 
 # --- Wi-Fi security note -------------------------------------------------

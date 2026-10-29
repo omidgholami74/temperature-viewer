@@ -244,6 +244,7 @@ class Ingest:
             self._worker = _thread.start_new_thread(self._run, ())
         except Exception as error:
             self.log("API: background upload unavailable (%s), sending inline" % (error,))
+            self.background = False
             return False
 
         self.background = True
@@ -277,6 +278,19 @@ class Ingest:
                     _sleep_ms(200)  # offline: retry slowly, keep the queue
         finally:
             self._worker = None
+
+    def alive(self):
+        """True while uploads are being handled.
+
+        Inline mode always reports True: the caller does the sending, so there
+        is no thread to supervise. In background mode a worker that died (a
+        stack overflow inside mbedtls, for example) leaves ``_worker`` at
+        ``None`` while ``background`` stays True, which is what this catches.
+        """
+        if not self.background:
+            return True
+
+        return self._worker is not None
 
     def stats(self):
         return "sent=%d pending=%d dropped=%d failures=%d" % (

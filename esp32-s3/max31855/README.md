@@ -50,6 +50,7 @@ mpremote connect COM6 \
   cp /tmp/config.py :config.py + \
   cp ../common/wifi.py :wifi.py + \
   cp ../common/ingest.py :ingest.py + \
+  cp ../common/supervisor.py :supervisor.py + \
   cp main.py :main.py
 mpremote connect COM6 repl                         # Ctrl-] to leave
 ```

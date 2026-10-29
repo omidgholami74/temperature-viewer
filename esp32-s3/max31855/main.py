@@ -8,17 +8,23 @@ and same ``ms,f1,f2,f3,f4`` line on USB serial — with two things added:
   collector in ``collector/`` is no longer needed.
 
 Copy ``common/config.example.py`` to ``config.py``, edit it, then upload
-``config.py``, ``wifi.py``, ``ingest.py`` and this ``main.py`` to the board root
-and run ``main.py``. See README.md in this folder for the wiring.
+``config.py``, ``wifi.py``, ``ingest.py``, ``supervisor.py`` and this ``main.py``
+to the board root and run ``main.py``. See README.md in this folder for the
+wiring.
+
+With those five files at the board root the firmware also runs on its own from
+a USB charger: ``main.py`` starts at every power-up, the watchdog reboots a hung
+loop and ``supervisor.run_forever`` restarts a session that crashed.
 """
 
 import time
 
 from machine import Pin, SPI
 
-from common import config
-from common import wifi
-from common.ingest import Ingest
+import config
+import supervisor
+import wifi
+from ingest import Ingest
 
 # ==========================================
 # ESP32-S3 + 4x MAX31855
@@ -154,13 +160,16 @@ def csv_value(temperature):
 # Main loop
 # ==========================================
 
-def main():
-    wlan = wifi.connect(config)
+def session(watch):
+    """One sampling session: connect, then sample until something breaks."""
+    wlan = wifi.connect(config, watch=watch)
 
     clock_ok = False
 
     if wlan.isconnected() and getattr(config, "NTP_ENABLED", True):
         clock_ok = wifi.sync_time(config)
+
+    watch.feed()
 
     ingest = Ingest(config)
 
@@ -182,6 +191,7 @@ def main():
     retry_ms = int(float(getattr(config, "WIFI_RETRY_S", 15)) * 1000)
     last_net_check = start_tick
     last_report = start_tick
+    last_health = start_tick
 
     try:
         while True:
@@ -193,6 +203,8 @@ def main():
                 temperature, fault = read_channel(cs)
                 temperatures.append(temperature)
                 faults.append(fault)
+
+            watch.feed()
 
             # Increment time: 100, 200, 300, ... (measured, not assumed, so a
             # slow upload cannot make the time column drift)
@@ -217,12 +229,23 @@ def main():
             # A dropped link is retried on its own; sampling never stops.
             if not wlan.isconnected() and time.ticks_diff(now, last_net_check) >= retry_ms:
                 last_net_check = now
-                wifi.reconnect(wlan, config)
+                wifi.reconnect(wlan, config, watch=watch)
 
                 if wlan.isconnected() and not clock_ok and getattr(config, "NTP_ENABLED", True):
                     if wifi.sync_time(config):
                         clock_ok = True
                         epoch_base_ms = int(time.time()) * 1000 - time.ticks_diff(now, start_tick)
+
+            # The uploader is a thread, so it can die while the loop runs on.
+            # On a charger nobody would start it again: the loop does.
+            if time.ticks_diff(now, last_health) >= 15000:
+                last_health = now
+
+                if not ingest.alive():
+                    print("# upload thread stopped, starting it again")
+
+                    if not ingest.start():
+                        print("# upload unavailable, sending inline")
 
             if time.ticks_diff(now, last_report) >= 60000:
                 last_report = now
@@ -243,6 +266,19 @@ def main():
     finally:
         print("# stopping, flushing %d samples" % (len(ingest.pending),))
         ingest.stop()
+
+
+def main():
+    cause = supervisor.reset_cause()
+
+    if cause is not None:
+        print("# boot: reset cause %s" % (cause,))
+
+    watch = supervisor.Watchdog(getattr(config, "WATCHDOG_S", 30))
+
+    # Nobody is watching a board that runs from a charger, so a crash restarts
+    # the session instead of leaving an idle REPL behind.
+    supervisor.run_forever(session, watch)
 
 
 main()

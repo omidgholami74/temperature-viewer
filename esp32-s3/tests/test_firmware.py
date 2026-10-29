@@ -75,6 +75,7 @@ if not hasattr(__import__("time"), "sleep_ms"):
 
 rtd = load("esp32s3_max31865", os.path.join(ROOT, "max31865", "max31865.py"))
 ingest = load("esp32s3_ingest", os.path.join(ROOT, "common", "ingest.py"))
+supervisor = load("esp32s3_supervisor", os.path.join(ROOT, "common", "supervisor.py"))
 
 
 class FakeSPI:
@@ -559,6 +560,24 @@ class BackgroundUploadTests(unittest.TestCase):
 
         self.assertEqual(sent, [2])
 
+    def test_alive_detects_a_dead_uploader(self):
+        client = self.make(BATCH_SIZE=50)
+
+        # Inline mode sends from the caller, so there is nothing to supervise.
+        self.assertTrue(client.alive())
+
+        client._send = lambda samples: True
+        self.assertTrue(client.start())
+        self.assertTrue(client.alive())
+
+        # The thread dying (a stack overflow inside mbedtls) leaves the queue
+        # unserved while background mode is still on.
+        client._worker = None
+        self.assertFalse(client.alive())
+
+        self.assertTrue(client.start(), "the uploader could not be restarted")
+        self.assertTrue(client.alive())
+
     def test_the_host_is_resolved_once(self):
         server = ScriptedServer()
         client = ingest.Ingest(
@@ -589,6 +608,96 @@ class BackgroundUploadTests(unittest.TestCase):
         finally:
             client.close()
             server.close()
+
+
+class SupervisorTests(unittest.TestCase):
+    """A board on a charger has no console, so it has to recover by itself."""
+
+    def test_reset_cause_is_named(self):
+        fake = types.SimpleNamespace(
+            WDT_RESET=8,
+            PWRON_RESET=1,
+            HARD_RESET=2,
+            reset_cause=lambda: 8,
+        )
+
+        with mock.patch.object(supervisor, "machine", fake):
+            self.assertEqual(supervisor.reset_cause(), "WDT_RESET")
+
+        fake.reset_cause = lambda: 1
+        with mock.patch.object(supervisor, "machine", fake):
+            self.assertEqual(supervisor.reset_cause(), "PWRON_RESET")
+
+    def test_reset_cause_without_hardware(self):
+        with mock.patch.object(supervisor, "machine", None):
+            self.assertIsNone(supervisor.reset_cause())
+
+    def test_watchdog_is_armed_with_the_configured_timeout(self):
+        feeds = []
+
+        class FakeWDT:
+            def __init__(self, timeout=None):
+                self.timeout = timeout
+
+            def feed(self):
+                feeds.append(time.monotonic())
+
+        with mock.patch.object(supervisor, "machine", types.SimpleNamespace(WDT=FakeWDT)):
+            watch = supervisor.Watchdog(30)
+
+        self.assertEqual(watch.wdt.timeout, 30000)
+        watch.feed()
+        watch.feed()
+        self.assertEqual(len(feeds), 2)
+
+    def test_watchdog_can_be_turned_off(self):
+        # WATCHDOG_S = 0 must leave the board alone, and feeding must be safe.
+        watch = supervisor.Watchdog(0)
+        self.assertIsNone(watch.wdt)
+        watch.feed()
+
+    def test_a_crashing_session_is_restarted(self):
+        calls = []
+        watches = []
+        watch = types.SimpleNamespace(feed=lambda: None)
+
+        def session(given):
+            calls.append(len(calls))
+            watches.append(given)
+
+            if len(calls) < 3:
+                raise OSError("sensor bus is stuck")
+
+            raise SystemExit  # ends the run, like Ctrl-C would
+
+        with self.assertRaises(SystemExit):
+            supervisor.run_forever(session, watch, delay_s=0.01, log=lambda *_: None)
+
+        self.assertEqual(len(calls), 3, "a crash stopped the firmware instead of a restart")
+        self.assertEqual(watches, [watch, watch, watch], "the watchdog was lost on restart")
+
+    def test_the_restart_delay_is_fed_to_the_watchdog(self):
+        feeds = []
+
+        class Stop(Exception):
+            pass
+
+        def feed():
+            feeds.append(1)
+
+            if len(feeds) >= 2:
+                raise Stop  # end the run once the wait has been fed
+
+        def session(_):
+            raise RuntimeError("boom")
+
+        # 0.5 s of backoff is two 250 ms steps, so the wait is fed twice.
+        with self.assertRaises(Stop):
+            supervisor.run_forever(
+                session, types.SimpleNamespace(feed=feed), delay_s=0.5, log=lambda *_: None
+            )
+
+        self.assertGreaterEqual(len(feeds), 2, "the watchdog starved during the restart wait")
 
 
 class RtdTests(unittest.TestCase):

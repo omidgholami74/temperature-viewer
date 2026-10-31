@@ -41,6 +41,16 @@ SAMPLE_INTERVAL_MS = 100
 CSV_HEADER = "ms,furnace1,furnace2,furnace3,furnace4"
 FAULT_SENTINEL = -1000.0  # CSV value for a channel that reported a fault
 
+# Fixed calibration offset per furnace, in °C, in CS_PINS order: furnace 1 is
+# CS 15, furnace 2 is CS 16, and so on. The value is added to every reading of
+# that channel — both in the CSV line and in the uploaded sample — which is
+# what corrects a probe that is consistently off (cold-junction error, a probe
+# touching the wall, a long lead). Calibrate against a reference thermometer at
+# working temperature and leave a channel at 0.0 for no correction.
+# A faulted channel is not offset: it stays -1000.00 on the serial line and
+# null in the upload, so the dashboard still shows it as broken.
+CHANNEL_OFFSETS = [0.0, 0.0, 0.0, 0.0]
+
 # SPI configuration
 spi = SPI(
     1,
@@ -199,8 +209,15 @@ def session(watch):
             faults = []
 
             # Read all four furnaces
-            for cs in chip_selects:
+            for index, cs in enumerate(chip_selects):
                 temperature, fault = read_channel(cs)
+
+                if temperature is not None:
+                    # A short list in CHANNEL_OFFSETS is treated as 0.0 rather
+                    # than an IndexError, which would restart the board.
+                    offset = CHANNEL_OFFSETS[index] if index < len(CHANNEL_OFFSETS) else 0.0
+                    temperature += offset
+
                 temperatures.append(temperature)
                 faults.append(fault)
 

@@ -86,6 +86,33 @@ ms,furnace1,furnace2,furnace3,furnace4
 - One frame per 100 ms, batched as described in the
   [ESP32-S3 README](../README.md#behaviour).
 
+## Per-furnace offset (fixed calibration)
+
+A probe rarely reads the exact temperature, and the error is usually constant:
+a cold-junction error, a probe lying against the wall of the chamber, or a long
+lead. Correct it once in [`main.py`](main.py) instead of in the dashboard:
+
+```python
+# furnace1 (CS 15), furnace2 (CS 16), furnace3 (CS 17), furnace4 (CS 18)
+CHANNEL_OFFSETS = [0.0, 0.0, 0.0, 0.0]   # °C, added to every reading
+```
+
+The offset is added to the reading before anything else sees it, so the CSV on
+the serial line, the saved sample and the dashboard all show the corrected
+value. There is no per-sample drift correction and nothing to configure on the
+server.
+
+How to fill it in:
+
+1. Run the furnace at a working temperature with the probes in place.
+2. Read the same spot with a reference thermometer.
+3. Put `reference − reading` for that channel. A channel that reads 3 °C high
+   gets `-3.0`; put `0.0` when it needs nothing.
+
+The order follows `CS_PINS` at the top of `main.py`, so if you move the pins,
+move the numbers with them. A faulted channel is never offset: it stays
+`-1000.00` on the serial line and `null` in the upload.
+
 ## Accuracy notes
 
 - The MAX31855 measures the *cold junction* internally; its accuracy is about

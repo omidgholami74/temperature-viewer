@@ -23,6 +23,8 @@ export class TemperatureChart {
     this.windowMs = DEFAULT_WINDOW_MS;
     this.spanMs = DEFAULT_WINDOW_MS;
     this.buffers = channels.map(() => []);
+    // Last good reading per channel, used to bridge faulted frames.
+    this.lastGood = channels.map(() => null);
     this.colors = channels.map((channel, index) => color(`--ch-${index + 1}`, channel.fallback));
 
     const textMuted = color('--text-3', '#6e839a');
@@ -51,7 +53,7 @@ export class TemperatureChart {
           pointHoverRadius: 3,
           pointHitRadius: 10,
           tension: 0,
-          spanGaps: false,
+          spanGaps: true,
           fill: false,
         })),
       },
@@ -190,9 +192,10 @@ export class TemperatureChart {
   replace(points) {
     this.buffers.forEach((buffer, channel) => {
       buffer.length = 0;
+      this.lastGood[channel] = null;
 
       for (const point of points) {
-        buffer.push({ x: point.t, y: point.v?.[channel] ?? null });
+        buffer.push({ x: point.t, y: this.#reading(channel, point.v?.[channel]) });
       }
     });
 
@@ -210,7 +213,7 @@ export class TemperatureChart {
       }
 
       this.buffers.forEach((buffer, channel) => {
-        buffer.push({ x: sample.t_ms, y: sample.temps?.[channel] ?? null });
+        buffer.push({ x: sample.t_ms, y: this.#reading(channel, sample.temps?.[channel]) });
       });
     }
 
@@ -228,6 +231,21 @@ export class TemperatureChart {
   setVisible(channel, visible) {
     this.chart.setDatasetVisibility(channel, visible);
     this.chart.update('none');
+  }
+
+  /**
+   * A faulted frame has no temperature, so the series holds the last good
+   * reading: the curve runs on instead of breaking at every fault.
+   */
+  #reading(channel, raw) {
+    const numeric = raw === null || raw === undefined ? Number.NaN : Number(raw);
+
+    if (Number.isFinite(numeric)) {
+      this.lastGood[channel] = numeric;
+      return numeric;
+    }
+
+    return this.lastGood[channel];
   }
 
   /** Last known value at or before a point in time, used for the 10 s delta. */

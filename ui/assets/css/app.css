@@ -417,16 +417,10 @@ main {
   opacity: 0.85;
 }
 
-.furnace-card.is-fault {
-  border-color: rgba(255, 107, 120, 0.38);
-}
-
-.furnace-card.is-fault::before {
-  background: linear-gradient(90deg, var(--danger), transparent 72%);
-}
-
-.furnace-card.is-fault .furnace-card__value {
-  color: #ffc3c8;
+/* The reading is the last good one, not an error: mute it instead of reddening
+   the card. */
+.furnace-card.is-held .furnace-card__value {
+  color: var(--text-2);
 }
 
 .furnace-card__head {
@@ -514,7 +508,7 @@ main {
 
 .furnace-card__fault {
   overflow: hidden;
-  color: var(--danger);
+  color: var(--text-3);
   font-size: 9px;
   letter-spacing: 0.04em;
   text-align: right;

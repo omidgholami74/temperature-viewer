@@ -151,6 +151,14 @@ const state = {
  * open and stops only when the run is closed.
  */
 const clock = { skewMs: 0 };
+
+/**
+ * Last temperature each channel actually read. A faulted frame carries no
+ * number, so the cards and the chart hold the last good reading instead of
+ * blanking the card and breaking the line at every fault.
+ */
+const lastGoodTemps = [null, null, null, null];
+
 const noiseFilter = new TemperatureDropFilter();
 const NOISE_STORAGE_KEY = 'furnace.noise-filter';
 
@@ -279,9 +287,18 @@ function elapsedNow(run = state.run) {
 
 function renderCards(latest) {
   el.cards.forEach((card, index) => {
-    const value = latest?.temps?.[index] ?? null;
-    const fault = latest?.faults?.[index] ?? 0;
+    const reading = latest?.temps?.[index] ?? null;
+    const fault = Number(latest?.faults?.[index] ?? 0);
     let delta = Number.NaN;
+
+    if (reading !== null && Number.isFinite(Number(reading))) {
+      lastGoodTemps[index] = Number(reading);
+    }
+
+    // A faulted or missing frame keeps the last good number on screen: the
+    // furnace temperature does not disappear because one frame failed to read.
+    const held = reading === null && lastGoodTemps[index] !== null;
+    const value = held ? lastGoodTemps[index] : reading;
 
     if (latest && value !== null) {
       const previous = chart?.sampleAt(index, latest.t_ms - 10000);
@@ -289,14 +306,13 @@ function renderCards(latest) {
     }
 
     setText(card.value, formatTemp(value));
-    card.root.classList.toggle('is-fault', Boolean(fault));
-    card.fault.hidden = !fault;
-    setText(card.fault, fault ? faultText(fault) : '');
+    card.root.classList.toggle('is-held', held);
+    // The fault reason lives in the tooltip instead of the card face.
+    card.root.title = fault ? faultText(fault) : '';
+    card.fault.hidden = !held;
+    setText(card.fault, held ? 'held' : '');
 
-    if (fault) {
-      card.trend.className = 'chip chip--fault';
-      setText(card.trend, 'Fault');
-    } else if (value === null) {
+    if (value === null) {
       card.trend.className = 'chip chip--idle';
       setText(card.trend, 'No data');
     } else {
@@ -318,8 +334,8 @@ function renderCards(latest) {
 
 function updateLegend(latest) {
   el.legendValues.forEach((node, index) => {
-    const value = latest?.temps?.[index] ?? null;
-    setText(node, value === null ? '—' : `${formatTemp(value)}°`);
+    const value = latest?.temps?.[index] ?? lastGoodTemps[index];
+    setText(node, value === null || value === undefined ? '—' : `${formatTemp(value)}°`);
   });
 }
 
@@ -458,6 +474,7 @@ function applyPayload(payload) {
     state.latest = null;
     state.rawLatest = null;
     state.filteredLatest = null;
+    lastGoodTemps.fill(null);
     resetClock();
     chart?.clear();
     noiseFilter.reset();
@@ -571,6 +588,7 @@ function switchToRun(runId) {
   state.latest = null;
   state.rawLatest = null;
   state.filteredLatest = null;
+  lastGoodTemps.fill(null);
   noiseFilter.reset();
   resetClock();
   chart?.clear();

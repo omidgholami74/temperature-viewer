@@ -22,11 +22,14 @@ This folder is deployed on its **own web server**, separate from the PHP API:
    Settings → Appearance.
 3. Four furnace cards, under the timer: name, colour, live temperature,
    10-second change, a heating / cooling / holding state, and a border in the
-   same colour as that furnace's chart line. A faulted channel shows `--.-`
-   and the decoded fault reason.
+   same colour as that furnace's chart line. A faulted channel keeps showing
+   its last good reading, marked *held* in muted type; the decoded fault reason
+   is in the card's tooltip, so one bad frame does not turn the card into an
+   error message.
 4. Chart: four linear series on one canvas, a custom legend that doubles as a
    series toggle, window presets (1 min, 10 min, 1 h, 6 h, 24 h, all) and an
-   empty state while waiting for the first sample.
+   empty state while waiting for the first sample. A faulted frame does not
+   break a series: each line holds its last good value and runs on.
 
 ![Settings and range analysis](../artifacts/settings-analysis.png)
 5. Settings dialog with three tabs:

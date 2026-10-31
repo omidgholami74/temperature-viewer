@@ -8,7 +8,7 @@
  * Bump CACHE_VERSION whenever the shell changes; the old cache is removed on
  * activate.
  */
-const CACHE_VERSION = 'furnace-v9';
+const CACHE_VERSION = 'furnace-v10';
 
 const SHELL = [
   './',

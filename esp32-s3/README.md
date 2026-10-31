@@ -280,7 +280,7 @@ CA is in the bundle. `http://` also works and skips TLS entirely.
 - **Batching.** One request carries `BATCH_SIZE` samples (10 by default, so
   the server has a sample about a second after it was read). The API anchors a
   batch without `at` on its arrival time and places the rest on the 0.1 s grid,
-  so the dashboard timer (which counts samples) is unaffected by batching.
+  so the chart and the working rate are unaffected by batching.
 - **One connection, one lookup.** The TCP socket (and its TLS session) stays
   open between batches, and the host name is resolved once instead of per
   request: a handshake plus a DNS lookup costs several hundred milliseconds on
@@ -299,9 +299,9 @@ CA is in the bundle. `http://` also works and skips TLS entirely.
   session is logged and the session is rebuilt with a 5–60 s backoff; a dead
   upload thread is restarted by the loop. No keyboard, no reset button and no
   computer are needed after the first upload of the five files.
-- **One board per run.** The dashboard timer counts stored samples as 0.1 s
-  each. Two boards streaming into the same run therefore make it count twice as
-  fast — use one board per run (or a separate database per furnace group).
+- **One board per run.** Two boards streaming into the same run interleave
+  their frames on the same 0.1 s grid and both count toward the working rate,
+  so keep one board per run (or a separate database per furnace group).
 - **Console.** The USB serial line is identical to `module/`, so Thonny, Serial
   Studio and [`serial-web/`](../serial-web/README.md) still work while the
   board uploads. Set `SERIAL_ECHO = False` to silence it.

@@ -154,12 +154,13 @@ Used by the dashboard every 250 ms.
 `samples` contains only frames newer than `since` (up to 600). `resync: true`
 tells the client to reload history instead of appending.
 
-`elapsed_ms` is the wall-clock age of the run. `active_ms` is the time the
-furnace actually produced data: ingest adds the gap between consecutive
-samples, capped at `FURNACE_MAX_SAMPLE_GAP_MS`, so a silent Pico pauses it
-instead of inflating it. The dashboard counter uses `sample_count` (one sample
-= 0.1 s), which is exact even when the collector uploads in batches;
-`elapsed_ms` drives the *Idle* stat.
+`elapsed_ms` is the wall-clock age of the run, and it is what the dashboard
+counter follows: the digits keep counting while the run is open, whatever the
+device is doing, and stop at `ended_at_ms`. `active_ms` is the time the furnace
+actually produced data: ingest adds the gap between consecutive samples, capped
+at `FURNACE_MAX_SAMPLE_GAP_MS`, so a silent Pico pauses it instead of inflating
+it. The gap between the two is the *Idle* stat, and `sample_count / active_ms`
+is the working rate.
 
 ### `GET /api/history?window=<seconds>&max_points=<n>&run=<id>`
 
@@ -269,7 +270,7 @@ The database path is never exposed.
 
 ```
 runs        one row per firing; started_at_ms is the wall-clock start,
-            active_ms is the time covered by samples (the dashboard timer)
+            active_ms is the time covered by samples (idle time and rate)
 readings    one row per 0.1 s frame: run_id, t_ms, received_at_ms, ch1..ch4, faults
 readings_1s per-second averages written by the maintenance job (long retention)
 meta        schema version and rollup checkpoint
@@ -308,9 +309,9 @@ FURNACE_DB=var/demo.sqlite php bin/seed_demo.php --hours=1
 
 The script ends the active run, creates a demo run with realistic heat-up, soak
 drift and a periodic thermocouple fault, and prints the row count. The default
-`--interval=0.1` matches the 10 Hz firmware, so the dashboard timer shows the
-real duration; `--interval=1` produces a smaller, coarser dataset for chart
-work. Never point it at production data.
+`--interval=0.1` matches the 10 Hz firmware, so the working rate reads 10 /s and
+hardly any idle time accumulates; `--interval=1` produces a smaller, coarser
+dataset for chart work. Never point it at production data.
 
 ## Deployment
 

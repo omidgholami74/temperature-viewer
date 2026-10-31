@@ -42,7 +42,7 @@ return [
 
     // Longest silence between two samples that still counts as working time.
     // At 10 Hz a normal gap is 100 ms; a longer one means the furnace was not
-    // reporting, so the dashboard timer stops instead of inventing seconds.
+    // reporting, so it becomes idle time instead of counting as recorded.
     'max_sample_gap_ms' => max(100, (int) (getenv('FURNACE_MAX_SAMPLE_GAP_MS') ?: 3000)),
 
     // Export and analysis. Ranges longer than the threshold are read from the

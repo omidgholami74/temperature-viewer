@@ -11,7 +11,7 @@ declare(strict_types=1);
  * Options:
  *   --hours=1       length of the generated run
  *   --interval=0.1  seconds between generated samples, matching the 10 Hz
- *                   firmware so the dashboard timer reads the real duration
+ *                   firmware so the working rate reads 10 /s
  *   --label=...     run label
  */
 
@@ -54,7 +54,8 @@ try {
     }
 
     // The demo is generated at a fixed interval, so its recorded time is the
-    // sum of those gaps. Leaving active_ms at 0 would show a 00:00 timer.
+    // sum of those gaps. Leaving active_ms at 0 would show all of it as idle
+    // time and no working rate.
     $activeMs = $totalSamples > 1 ? ($totalSamples - 1) * $intervalMs : 0;
 
     $insertRun = $pdo->prepare(

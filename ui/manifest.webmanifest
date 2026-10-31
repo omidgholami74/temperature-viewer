@@ -2,7 +2,7 @@
   "id": "./",
   "name": "Razi Furnace Monitor",
   "short_name": "Razi Furnace",
-  "description": "Live four-channel furnace temperatures, recorded-time timer, range analysis and CSV export.",
+  "description": "Live four-channel furnace temperatures, run timer, range analysis and CSV export.",
   "lang": "en",
   "dir": "ltr",
   "start_url": "./",

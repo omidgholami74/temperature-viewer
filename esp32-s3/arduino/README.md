@@ -166,7 +166,7 @@ Wiring detail for 2/3/4-wire probes is in
   slots, and that gap shows up in the data.
 - **Batching.** `BATCH_SIZE` (default 10 = 1 s) frames per request. The API
   anchors a batch without `at` on arrival and places the rest on the 0.1 s grid,
-  so the dashboard timer (which counts samples) is unaffected.
+  so the chart and the working rate are unaffected.
 - **One connection.** `HTTPClient` keeps the TCP + TLS connection open between
   batches instead of closing it after every POST: the handshake costs a few
   hundred milliseconds on an ESP32, which is several samples of delay. Only a
@@ -180,8 +180,8 @@ Wiring detail for 2/3/4-wire probes is in
 - **Wi-Fi.** A dropped link is re-associated in the background (no blocking
   wait), so sampling never stops; if the clock was never set it is fetched when
   the link comes back.
-- **One board per run.** The dashboard timer counts stored samples as 0.1 s
-  each, so two boards streaming into the same run make it count twice as fast.
+- **One board per run.** Two boards streaming into the same run interleave
+  their frames on the same 0.1 s grid and both count toward the working rate.
 - **Console.** The CSV line is identical to `module/` and the MicroPython
   firmware, so Thonny, Serial Studio and
   [`serial-web/`](../../../serial-web/README.md) work while the board uploads.
@@ -232,7 +232,6 @@ the sketch has **not** been exercised on a real board here.
 | All channels `-1000` / `--.-` | Wiring: 3V3, GND, SCK and MISO (and MOSI on the MAX31865), one CS per board, thermocouple polarity. |
 | RTD reads ≈ `-242 °C` on every channel | Open input: no probe, broken lead, or `MAX31865_WIRE_MODE` not matching the board jumper. |
 | Sketch does not fit | *Tools → Partition Scheme → Huge APP (3 MB No OTA)*. |
-| Dashboard timer runs twice as fast | Two boards are posting into the same run; use one board per run. |
 
 ## Safety
 

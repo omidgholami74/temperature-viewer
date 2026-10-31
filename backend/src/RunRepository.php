@@ -8,8 +8,9 @@ use PDO;
 
 /**
  * Recording sessions. elapsed_ms is the wall-clock span derived from
- * started_at_ms; active_ms is the time covered by samples and is what the
- * dashboard counter shows. Neither has a 24 hour ceiling.
+ * started_at_ms and is what the dashboard counter shows; active_ms is the time
+ * covered by samples and drives the idle time and the working rate. Neither has
+ * a 24 hour ceiling.
  */
 final class RunRepository
 {
@@ -102,8 +103,8 @@ final class RunRepository
             'started_at_ms' => $startedAt,
             'ended_at_ms' => $endedAt,
             'elapsed_ms' => max(0, $reference - $startedAt),
-            // Time covered by samples. The dashboard counter follows this, not
-            // the wall clock, so a silent device freezes the timer.
+            // Time covered by samples. The counter follows elapsed_ms instead,
+            // so this is the idle time and the working rate, not the timer.
             'active_ms' => max(0, (int) ($row['active_ms'] ?? 0)),
             'running' => $endedAt === null,
             'sample_count' => (int) $row['sample_count'],

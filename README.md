@@ -39,13 +39,13 @@ extreme, CSV export with its own date picker, and an installable PWA manifest.
   uploads that file to the API in batches.
 - Stores every sample in SQLite through a small JSON API. No framework, no
   external database server.
-- Puts the **eight-digit recorded-time timer** `HH:MM:SS:CC` at the top of the
-  screen (hundredths of a second on the right, counting `00` to `99`) plus a
+- Puts the **eight-digit run timer** `HH:MM:SS:CC` at the top of the screen
+  (hundredths of a second on the right, counting `00` to `99`) plus a
   human-readable equivalent below it.
-- The timer follows **time covered by samples**, not the wall clock. It pauses
-  while the furnace sends nothing, never jumps forward when data resumes, and
-  keeps counting past 24 and 99 hours. A separate *Idle* stat shows the time
-  the run was open without data.
+- The timer follows the **run's own clock**, not the sample count: it keeps
+  counting whether or not the furnace is sending, stops when the run is closed,
+  and keeps counting past 24 and 99 hours. A separate *Idle* stat shows the time
+  the run was open without data, so a silent furnace still shows up there.
 - Shows the four temperatures as colour-coded cards under the timer and as four
   live lines on the chart beneath them. Each card is outlined in its chart
   colour.

@@ -455,8 +455,9 @@ function handleApi(string $method, string $route, array $config): never
                 }
 
                 // Working time is the sum of the gaps between stored samples.
-                // A silence longer than maxGapMs is not counted, so the timer
-                // pauses when the furnace is off instead of following the clock.
+                // A silence longer than maxGapMs is not counted, so idle time
+                // grows when the furnace is off; the run timer itself follows
+                // the wall clock.
                 $previousT = $readings->lastT((int) $run['id']);
                 $activeMs = 0;
 

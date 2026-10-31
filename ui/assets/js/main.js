@@ -26,11 +26,6 @@ const WINDOW_STORAGE_KEY = 'furnace.window';
 const THEME_STORAGE_KEY = 'furnace.theme';
 const DEFAULT_WINDOW = 600;
 const DEFAULT_RANGE = 86400;
-// One firmware frame is 100 ms, so ten samples are one recorded second. The
-// counter is derived from the sample count instead of the upload clock: the
-// collector uploads in batches, and a clock-based counter would freeze between
-// batches and then jump.
-const SAMPLE_MS = 100;
 const MIN_THRESHOLD = 1;
 const MAX_THRESHOLD = 95;
 const PAUSED_AFTER_MS = 2500;
@@ -150,14 +145,12 @@ const state = {
 };
 
 /**
- * Sample clock: one stored sample is exactly 0.1 s of recorded time. The count
- * comes from the server, so a retried upload cannot count an interval twice,
- * and the display freezes when no new samples arrive. Between two batches the
- * last two digits run on by the part of the batch interval that has already
- * passed, which is what makes them count 00 to 99 instead of stepping by ten.
+ * Run clock: the counter follows the run's own timeline, not the number of
+ * samples that arrived. Ten samples in one batch and a silent minute both move
+ * it by the time that actually passed, so it keeps counting while the run is
+ * open and stops only when the run is closed.
  */
-const clock = { samples: 0, shown: 0, anchorAt: 0, lead: 0 };
-const MAX_LEAD_MS = 2000;
+const clock = { skewMs: 0 };
 const noiseFilter = new TemperatureDropFilter();
 const NOISE_STORAGE_KEY = 'furnace.noise-filter';
 
@@ -233,53 +226,53 @@ function trendFor(delta) {
   return { label: 'Holding', tone: 'live' };
 }
 
-/* --- recorded-time clock ------------------------------------------------ */
+/* --- run clock ---------------------------------------------------------- */
 
-/** Recorded milliseconds for a run: ten stored samples are one second. */
-function sampleTime(run) {
-  return Math.max(0, Math.round(Number(run?.sample_count) || 0)) * SAMPLE_MS;
-}
+/**
+ * Keep the run clock on the server's timeline. A laptop whose clock is minutes
+ * off would otherwise show a wrong age; the offset comes from the newest
+ * payload, so it is corrected on every poll.
+ */
+function syncClock(payload) {
+  const serverTime = Number(payload?.server_time_ms);
 
-function syncClock(run) {
-  clock.samples = Math.max(0, Math.round(Number(run?.sample_count) || 0));
-  const recorded = clock.samples * SAMPLE_MS;
-
-  // A late or retried answer must never rewind the display.
-  if (recorded <= clock.shown) {
-    return;
+  if (Number.isFinite(serverTime) && serverTime > 0) {
+    clock.skewMs = serverTime - Date.now();
   }
-
-  // The gap between two batches is how long the next batch will cover, so it is
-  // also how far the display may run ahead before that batch lands.
-  const now = performance.now();
-  const gap = clock.anchorAt > 0 ? now - clock.anchorAt : SAMPLE_MS;
-
-  clock.lead = Math.min(Math.max(gap, SAMPLE_MS), MAX_LEAD_MS);
-  clock.shown = recorded;
-  clock.anchorAt = now;
 }
 
 function resetClock() {
-  clock.samples = 0;
-  clock.shown = 0;
-  clock.anchorAt = 0;
-  clock.lead = 0;
+  clock.skewMs = 0;
+}
+
+/** Server clock, in browser milliseconds. */
+function serverNow() {
+  return Date.now() + clock.skewMs;
 }
 
 /**
- * Recorded time plus the part of the current batch interval that has already
- * passed. The last two digits run on between batches, yet the counter still
- * settles on the stored count once samples stop.
+ * Age of a run, read from its own timeline: started_at_ms up to now, or up to
+ * ended_at_ms once the run is closed. Samples play no part, so the digits keep
+ * counting while the furnace is silent and never jump when a batch lands.
  */
-function elapsedNow() {
-  if (!clock.anchorAt || sampleAge() > PAUSED_AFTER_MS) {
-    return clock.shown;
+function elapsedNow(run = state.run) {
+  if (!run) {
+    return 0;
   }
 
-  // The lead is the gap the previous batch covered, so the digits reach the
-  // next batch's value exactly as it lands instead of overshooting it.
-  const drift = Math.max(0, performance.now() - clock.anchorAt);
-  return clock.shown + Math.min(drift, clock.lead);
+  const startedAt = Number(run.started_at_ms);
+  const endedAt = run.ended_at_ms === null || run.ended_at_ms === undefined
+    ? null
+    : Number(run.ended_at_ms);
+
+  // A run from a database that predates started_at_ms can still fall back on
+  // what the server already computed.
+  if (!Number.isFinite(startedAt) || startedAt <= 0) {
+    return Math.max(0, Number(run.elapsed_ms) || 0);
+  }
+
+  const reference = endedAt !== null && Number.isFinite(endedAt) ? endedAt : serverNow();
+  return Math.max(0, reference - startedAt);
 }
 
 /* --- rendering ---------------------------------------------------------- */
@@ -357,9 +350,11 @@ function updateRunChip() {
     return;
   }
 
+  // The run is still open, so the timer keeps counting; this chip only reports
+  // whether the furnace is actually sending.
   if (sampleAge() > PAUSED_AFTER_MS) {
     el.runState.className = 'chip chip--idle';
-    setText(el.runState, 'Paused');
+    setText(el.runState, 'No data');
   } else {
     el.runState.className = 'chip chip--live';
     setText(el.runState, 'Recording');
@@ -367,10 +362,14 @@ function updateRunChip() {
 }
 
 function renderRun(run) {
-  const recorded = sampleTime(run);
-  const elapsed = Math.max(0, Number(run?.elapsed_ms) || 0);
-  const idle = Math.max(0, elapsed - recorded);
-  const rate = run && recorded > 5000 ? (Number(run.sample_count) || 0) / (recorded / 1000) : null;
+  const elapsed = elapsedNow(run);
+  const active = Math.max(0, Number(run?.active_ms) || 0);
+  // Idle is the part of the run the furnace did not cover with samples: the
+  // counter moves on, this one only grows while the device is silent.
+  const idle = Math.max(0, elapsed - active);
+  // Samples per second of recorded time, so a paused furnace lowers the rate
+  // instead of inflating it.
+  const rate = run && active > 5000 ? (Number(run.sample_count) || 0) / (active / 1000) : null;
 
   setText(el.started, run ? `Started ${formatDateTime(run.started_at_ms)}` : 'No run started');
   setText(el.samples, formatCount(run?.sample_count ?? 0));
@@ -462,14 +461,14 @@ function applyPayload(payload) {
     resetClock();
     chart?.clear();
     noiseFilter.reset();
-    syncClock(run);
+    syncClock(payload);
 
     if (run) {
       loadHistory();
     }
   } else if (run) {
     state.run = run;
-    syncClock(run);
+    syncClock(payload);
   }
 
   if (payload.resync) {
@@ -542,7 +541,7 @@ async function loadHistory({ runId = state.run?.id ?? null } = {}) {
 
     if (run) {
       state.run = run;
-      syncClock(run);
+      syncClock(payload);
       renderRun(run);
     }
 
@@ -1235,7 +1234,7 @@ async function downloadExport() {
 /* --- run control -------------------------------------------------------- */
 
 async function startNewRun() {
-  if (!window.confirm('Start a new run? The recorded timer will restart from 00:00:00:00.')) {
+  if (!window.confirm('Start a new run? The run timer will restart from 00:00:00:00.')) {
     return;
   }
 
@@ -1255,7 +1254,7 @@ async function startNewRun() {
     resetClock();
     chart?.clear();
     feed.selectRun(payload.run.id);
-    syncClock(payload.run);
+    syncClock(payload);
     renderRun(payload.run);
     renderCards(null);
     updateLegend(null);

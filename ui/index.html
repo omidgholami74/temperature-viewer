@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark light">
-  <meta name="description" content="Live four-channel furnace temperature monitoring with recorded-time counter, analysis and CSV export.">
+  <meta name="description" content="Live four-channel furnace temperature monitoring with a run timer, analysis and CSV export.">
   <title>Furnace Monitor · Razi Applied Science Foundation</title>
   <meta name="theme-color" content="#04080d" data-role="theme-color">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -55,7 +55,7 @@
       <section class="timer-card panel" aria-labelledby="timer-title">
         <header class="timer-card__head">
           <div class="section-title">
-            <p class="eyebrow">Recorded time</p>
+            <p class="eyebrow">Run time</p>
             <h2 id="timer-title">Elapsed time</h2>
           </div>
           <div class="timer-card__meta">
@@ -85,7 +85,7 @@
         </div>
 
         <p class="counter__human"><span class="counter__human-label">Equivalent</span> <span data-role="human">—</span></p>
-        <p class="timer-card__hint">One sample is 0.1 s (10 samples per second). The hundredths count 00–99 between samples and stop when the furnace sends nothing.</p>
+        <p class="timer-card__hint">The counter follows the run's own clock: it keeps counting whether or not samples arrive, and stops when the run is closed.</p>
 
         <div class="timer-card__stats">
           <span class="stat"><span class="stat__label">Samples</span><b class="stat__value" data-role="samples">0</b></span>

@@ -15,10 +15,11 @@ This folder is deployed on its **own web server**, separate from the PHP API:
 
 1. Branded app bar: the foundation logo, **Razi Applied Science Foundation**,
    the connection status and a **Settings** button (a gear on a phone).
-2. Recorded-time timer: eight digit positions `HH:MM:SS:CC`, with
-   days/hours/minutes spelled out below, plus sample count, working rate, idle
-   time and last-sample age. It pauses when samples stop; **Start new run**
-   lives in Settings → Appearance.
+2. Run timer: eight digit positions `HH:MM:SS:CC`, with days/hours/minutes
+   spelled out below, plus sample count, working rate, idle time and last-sample
+   age. It runs on the run's wall clock, so it counts straight through a silent
+   device and stops only when the run is closed; **Start new run** lives in
+   Settings → Appearance.
 3. Four furnace cards, under the timer: name, colour, live temperature,
    10-second change, a heating / cooling / holding state, and a border in the
    same colour as that furnace's chart line. A faulted channel shows `--.-`

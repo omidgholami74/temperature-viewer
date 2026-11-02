@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" width="960" height="520" role="img" aria-label="Data model: runs has many readings, readings_1s holds one-second averages, meta stores schema version and rollup checkpoint; retention moves raw rows into the rollup.">
+  <defs>
+    <linearGradient id="dmbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#08101a"/>
+      <stop offset="1" stop-color="#050a10"/>
+    </linearGradient>
+    <style>
+      .dt { font-family: Inter, "Segoe UI", system-ui, sans-serif; }
+      .dm { font-family: "SFMono-Regular", Menlo, Consolas, monospace; }
+      .dh { fill: #eaf2fb; font-size: 13px; font-weight: 600; }
+      .ds { fill: #6d8198; font-size: 10px; }
+      .dl { fill: #a6b8cb; font-size: 11px; }
+      .dk { fill: #38e0a5; font-size: 10px; }
+      .dbox { fill: rgba(15,25,38,.9); stroke: #26394e; }
+    </style>
+  </defs>
+
+  <rect width="960" height="520" fill="url(#dmbg)"/>
+  <text x="36" y="40" class="dt" fill="#eaf2fb" font-size="20" font-weight="600">Data model — SQLite</text>
+  <text x="36" y="60" class="dt ds">One writer, four tables. A run is one firing; a reading is one 0.1 s frame.</text>
+
+  <!-- runs -->
+  <rect x="36" y="88" width="264" height="184" rx="12" class="dbox"/>
+  <text x="52" y="112" class="dt dk dm">runs</text>
+  <text x="52" y="136" class="dt dl">id          INTEGER PK</text>
+  <text x="52" y="156" class="dt dl">label       TEXT</text>
+  <text x="52" y="176" class="dt dl">started_at_ms  NOT NULL</text>
+  <text x="52" y="196" class="dt dl">ended_at_ms    NULL = open</text>
+  <text x="52" y="216" class="dt dl">sample_count</text>
+  <text x="52" y="236" class="dt dl">active_ms</text>
+  <text x="52" y="258" class="dt ds">unique index: at most one open run</text>
+
+  <!-- readings -->
+  <rect x="348" y="88" width="300" height="204" rx="12" class="dbox"/>
+  <text x="364" y="112" class="dt dk dm">readings · raw</text>
+  <text x="364" y="136" class="dt dl">id            INTEGER PK</text>
+  <text x="364" y="156" class="dt dl">run_id        FK → runs.id</text>
+  <text x="364" y="176" class="dt dl">t_ms          since run start</text>
+  <text x="364" y="196" class="dt dl">received_at_ms</text>
+  <text x="364" y="216" class="dt dl">ch1 … ch4     REAL NULL</text>
+  <text x="364" y="236" class="dt dl">faults        TEXT</text>
+  <text x="364" y="262" class="dt ds">unique (run_id, t_ms) · index received</text>
+  <text x="364" y="282" class="dt ds">10 Hz → 864 000 rows/day</text>
+
+  <!-- readings_1s -->
+  <rect x="696" y="88" width="228" height="150" rx="12" class="dbox"/>
+  <text x="712" y="112" class="dt dk dm">readings_1s</text>
+  <text x="712" y="136" class="dt dl">run_id · t_ms  PK</text>
+  <text x="712" y="156" class="dt dl">ch1 … ch4</text>
+  <text x="712" y="182" class="dt ds">per-second averages</text>
+  <text x="712" y="200" class="dt ds">WITHOUT ROWID</text>
+  <text x="712" y="218" class="dt ds">86 400 rows/day</text>
+
+  <!-- meta -->
+  <rect x="696" y="262" width="228" height="120" rx="12" class="dbox"/>
+  <text x="712" y="286" class="dt dk dm">meta</text>
+  <text x="712" y="310" class="dt dl">key   TEXT PK</text>
+  <text x="712" y="330" class="dt dl">value TEXT</text>
+  <text x="712" y="356" class="dt ds">schema_version · last_rollup_ms</text>
+
+  <!-- relationships -->
+  <path d="M300 180H340" stroke="#38e0a5" stroke-width="1.5"/>
+  <text x="304" y="172" class="dt dk dm">1</text>
+  <text x="324" y="172" class="dt dk dm">N</text>
+  <path d="M648 172H688" stroke="#38e0a5" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="654" y="164" class="dt ds">rollup</text>
+
+  <!-- retention band -->
+  <rect x="36" y="320" width="888" height="80" rx="10" class="dbox"/>
+  <text x="52" y="344" class="dt dk dm">RETENTION</text>
+  <text x="52" y="366" class="dt dl">raw 48 h → maintenance aggregates 1 s buckets → raw pruned; 1 s rows kept 180 days.</text>
+  <text x="52" y="386" class="dt ds">cron: php backend/bin/maintenance.php --all every minute · 10 s overlap · checkpoint in meta</text>
+
+  <!-- formulas -->
+  <rect x="36" y="424" width="480" height="72" rx="10" class="dbox"/>
+  <text x="52" y="446" class="dt dk dm">DERIVED</text>
+  <text x="52" y="466" class="dt dl">elapsed = now − started_at_ms (or ended_at_ms)</text>
+  <text x="52" y="484" class="dt dl">idle = max(0, elapsed − active_ms) · rate = samples / active_s</text>
+
+  <rect x="536" y="424" width="388" height="72" rx="10" class="dbox"/>
+  <text x="552" y="446" class="dt dk dm">GAP CAP</text>
+  <text x="552" y="466" class="dt dl">active_ms adds min(gap, 3 s) between samples.</text>
+  <text x="552" y="484" class="dt ds">a furnace off for an hour is idle, not working</text>
+</svg>

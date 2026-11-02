@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" width="960" height="520" role="img" aria-label="Wiring: ESP32-S3 SPI bus with four MAX31855 or MAX31865 boards sharing clock and data, one chip select each, 3.3 V power and ground; Pico pin table inset.">
+  <defs>
+    <linearGradient id="wbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#08101a"/>
+      <stop offset="1" stop-color="#050a10"/>
+    </linearGradient>
+    <style>
+      .wt { font-family: Inter, "Segoe UI", system-ui, sans-serif; }
+      .wm { font-family: "SFMono-Regular", Menlo, Consolas, monospace; }
+      .wh { fill: #eaf2fb; font-size: 13px; font-weight: 600; }
+      .ws { fill: #6d8198; font-size: 11px; }
+      .wl { fill: #a6b8cb; font-size: 11px; }
+      .wk { fill: #38e0a5; font-size: 10px; }
+      .wbox { fill: rgba(15,25,38,.9); stroke: #26394e; }
+      .wire { stroke: #38e0a5; stroke-width: 1.6; fill: none; }
+      .wire2 { stroke: #49bdf0; stroke-width: 1.4; fill: none; }
+    </style>
+  </defs>
+
+  <rect width="960" height="520" fill="url(#wbg)"/>
+  <text x="36" y="40" class="wt" fill="#eaf2fb" font-size="20" font-weight="600">Wiring — one SPI bus, four furnaces</text>
+  <text x="36" y="60" class="wt ws">ESP32-S3 defaults, identical in MicroPython and Arduino. GPIO11 is MOSI on the RTD variant only.</text>
+
+  <!-- MCU -->
+  <rect x="36" y="96" width="220" height="286" rx="12" class="wbox"/>
+  <text x="54" y="122" class="wt wk wm">ESP32-S3</text>
+  <text x="54" y="146" class="wt wh">3V3</text>
+  <text x="54" y="168" class="wt wh">GND</text>
+  <text x="54" y="196" class="wt wh">GPIO14</text>
+  <text x="54" y="218" class="wt wh">GPIO12</text>
+  <text x="54" y="240" class="wt wh">GPIO11</text>
+  <text x="54" y="270" class="wt wh">GPIO15</text>
+  <text x="54" y="292" class="wt wh">GPIO16</text>
+  <text x="54" y="314" class="wt wh">GPIO17</text>
+  <text x="54" y="336" class="wt wh">GPIO18</text>
+
+  <text x="130" y="196" class="wt ws">SCK</text>
+  <text x="130" y="218" class="wt ws">MISO</text>
+  <text x="130" y="240" class="wt ws">MOSI (RTD)</text>
+  <text x="130" y="270" class="wt ws">CS 1</text>
+  <text x="130" y="292" class="wt ws">CS 2</text>
+  <text x="130" y="314" class="wt ws">CS 3</text>
+  <text x="130" y="336" class="wt ws">CS 4</text>
+
+  <!-- bus lines -->
+  <path class="wire" d="M210 164H330"/>
+  <path class="wire" d="M210 196H470"/>
+  <path class="wire2" d="M210 240H470" stroke-dasharray="5 4"/>
+
+  <!-- boards -->
+  <g>
+    <rect x="330" y="100" width="150" height="70" rx="9" class="wbox"/>
+    <text x="346" y="124" class="wt wh">Furnace 1</text>
+    <text x="346" y="142" class="wt ws">CS GPIO15 · K or RTD</text>
+    <text x="346" y="158" class="wt wk wm">T+ / T-</text>
+
+    <rect x="500" y="100" width="150" height="70" rx="9" class="wbox"/>
+    <text x="516" y="124" class="wt wh">Furnace 2</text>
+    <text x="516" y="142" class="wt ws">CS GPIO16</text>
+    <text x="516" y="158" class="wt wk wm">T+ / T-</text>
+
+    <rect x="670" y="100" width="150" height="70" rx="9" class="wbox"/>
+    <text x="686" y="124" class="wt wh">Furnace 3</text>
+    <text x="686" y="142" class="wt ws">CS GPIO17</text>
+    <text x="686" y="158" class="wt wk wm">T+ / T-</text>
+
+    <rect x="670" y="196" width="150" height="70" rx="9" class="wbox"/>
+    <text x="686" y="220" class="wt wh">Furnace 4</text>
+    <text x="686" y="238" class="wt ws">CS GPIO18</text>
+    <text x="686" y="254" class="wt wk wm">T+ / T-</text>
+  </g>
+
+  <!-- clock + mosi to all boards -->
+  <path class="wire" d="M470 196V180H330"/>
+  <path class="wire" d="M470 196V180H500" opacity=".9"/>
+  <path class="wire" d="M470 196V180H670" opacity=".9"/>
+  <path class="wire" d="M470 196V180H820" opacity=".9"/>
+  <text x="330" y="176" class="wt ws">shared SCK</text>
+
+  <path class="wire2" d="M470 240V300H820V266" opacity=".9"/>
+  <text x="600" y="296" class="wt ws">shared MOSI — MAX31865 only</text>
+
+  <!-- shared MISO from all DO -->
+  <path class="wire" d="M405 170V360H180V218" opacity=".85"/>
+  <path class="wire" d="M575 170V348H180V218" opacity=".7"/>
+  <path class="wire" d="M745 170V336H180V218" opacity=".7"/>
+  <path class="wire" d="M745 266V336H180V218" opacity=".7"/>
+  <text x="196" y="374" class="wt ws">shared MISO (DO/SDO of every board → GPIO12)</text>
+
+  <!-- CS wires -->
+  <path class="wire2" d="M210 270H318" opacity=".95"/>
+  <path class="wire2" d="M210 292H488" opacity=".8"/>
+  <path class="wire2" d="M210 314H658" opacity=".7"/>
+  <path class="wire2" d="M210 336H658" opacity=".6"/>
+
+  <!-- power -->
+  <rect x="330" y="404" width="300" height="58" rx="9" class="wbox"/>
+  <text x="346" y="426" class="wt wk wm">3V3 + GND → every board</text>
+  <text x="346" y="446" class="wt ws">0.1 µF at VIN/GND · grounds star-pointed at the MCU</text>
+
+  <!-- pico inset -->
+  <rect x="660" y="404" width="264" height="86" rx="9" class="wbox"/>
+  <text x="676" y="426" class="wt wk wm">PICO VARIANT</text>
+  <text x="676" y="446" class="wt ws">MISO GP4 · SCK GP6</text>
+  <text x="676" y="462" class="wt ws">CS GP5, GP7, GP9, GP11</text>
+  <text x="676" y="478" class="wt ws">3V3 pin 36 · GND pin 38</text>
+
+  <text x="36" y="500" class="wt ws">Keep SPI under 20–30 cm, away from heater wiring; twist each thermocouple pair and ground its shield at one end only.</text>
+</svg>

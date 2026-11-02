@@ -97,6 +97,18 @@ extreme, CSV export with its own date picker, and an installable PWA manifest.
 The ESP32-S3 firmware removes the PC from that diagram: the board itself posts
 the same 10 Hz payload to `/api/ingest` over Wi-Fi.
 
+## Documentation
+
+The component READMEs explain each piece; the [`docs/`](docs/README.md) folder
+explains how they fit:
+
+- [`docs/system-architecture.md`](docs/system-architecture.md) — layers, the three transports, deployment shapes
+- [`docs/hardware.md`](docs/hardware.md) — pin maps for both ESP32-S3 variants and the Pico, probe wiring, calibration
+- [`docs/firmware.md`](docs/firmware.md) — the 100 ms loop, upload thread, watchdog, fault codes
+- [`docs/data-model.md`](docs/data-model.md) — tables, run lifecycle, retention arithmetic
+- [`docs/testing.md`](docs/testing.md) — every suite and what it proves without hardware
+- [`MQTT/README.md`](MQTT/README.md) — the MQTT transport, bridge and design system
+
 ## Quick start (no hardware)
 
 Requirements:

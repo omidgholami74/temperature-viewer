@@ -1,5 +1,8 @@
 # Serial web monitor
 
+> Same design language and screen map: [`ui/README.md`](../ui/README.md) and
+> [docs/system-architecture.md](../docs/system-architecture.md).
+
 The same dashboard as [`ui/`](../ui) — Razi Applied Science Foundation branding,
 colour-matched card borders, recorded-time timer, cards, chart and design
 tokens, with the timer at the top and everything on one screen that never

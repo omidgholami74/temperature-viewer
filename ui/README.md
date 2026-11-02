@@ -1,5 +1,8 @@
 # Web app
 
+> Design-system rationale: [MQTT/docs/design-system.md](../MQTT/docs/design-system.md).
+> Where the API fits: [docs/system-architecture.md](../docs/system-architecture.md).
+
 A standalone static dashboard: plain HTML, CSS custom properties and ES
 modules. There is no build step and no npm install; Chart.js is vendored so the
 page works without a CDN.
@@ -25,7 +28,8 @@ This folder is deployed on its **own web server**, separate from the PHP API:
    same colour as that furnace's chart line. A faulted channel keeps showing
    its last good reading, marked *held* in muted type; the decoded fault reason
    is in the card's tooltip, so one bad frame does not turn the card into an
-   error message.
+   error message. The chart holds the same value, so a fault never breaks the
+   curve. See [docs/firmware.md](../docs/firmware.md#faults).
 4. Chart: four linear series on one canvas, a custom legend that doubles as a
    series toggle, window presets (1 min, 10 min, 1 h, 6 h, 24 h, all) and an
    empty state while waiting for the first sample. A faulted frame does not
@@ -116,15 +120,14 @@ The manifest uses `start_url: "./"` and `scope: "./"` for the same reason.
   minutes. Requests are cancelled logically with a token so stale answers are
   ignored.
 - The counter is repainted with `requestAnimationFrame`, but only digits that
-  changed are touched. It is derived from `run.sample_count`: one sample is
-  `0.1` s, so 8 620 samples read `00:14:22:00` regardless of how the collector
-  batches its uploads. The last two digits count `00`–`99` and are advanced
-  between batches by the part of the batch interval that has already passed, so
-  they move like a stopwatch instead of stepping by ten; the lead stops short
-  of the next batch, so the display never rewinds, and it settles on the stored
-  count when samples stop. The server keeps the authoritative count, so a
-  reload is exact. `elapsed_ms` is the wall-clock run span and is only used for
-  the *Idle* stat.
+  changed are touched. It follows the run's own clock, not the sample count:
+  `elapsedNow()` reads `started_at_ms` to now (or to `ended_at_ms` once the run
+  is closed), corrected by the server offset from `server_time_ms`, so it keeps
+  counting while the device is silent and never jumps when a batch lands.
+  `active_ms` is the time actually covered by samples, so *Idle* is
+  `elapsed − active_ms` and the working rate is `sample_count / (active_ms/1000)`.
+  A reload resumes at the same wall-clock age because the server owns
+  `started_at_ms`.
 - Settings → Analysis fetches `/api/summary` without a range, so it covers every
   stored sample and shows min/max/average plus the time each extreme was first
   reached. It does not wait for a 24 hour window to fill.

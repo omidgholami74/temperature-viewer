@@ -1,5 +1,8 @@
 # ESP32-S3 firmware — Wi-Fi straight to the API
 
+> Pins, probe wiring and power: [docs/hardware.md](../docs/hardware.md).
+> The 100 ms loop, watchdog and fault handling: [docs/firmware.md](../docs/firmware.md).
+
 Firmware for an **ESP32-S3** that samples four furnace channels at 10 Hz and
 uploads them **directly to the PHP API** over Wi-Fi. There is no middle layer:
 no PC, no `collector/`, no USB cable, and no file on a flash drive. The board is

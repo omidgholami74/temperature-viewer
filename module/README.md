@@ -1,5 +1,8 @@
 # Pico firmware — 4x MAX31855 at 10 Hz
 
+> Pico pin map and probe wiring: [docs/hardware.md](../docs/hardware.md).
+> How a frame reaches the database: [docs/system-architecture.md](../docs/system-architecture.md).
+
 Firmware for a **plain Raspberry Pi Pico** (no WiFi) with four MAX31855
 thermocouple amplifiers on one SPI bus, each with its own chip-select pin.
 

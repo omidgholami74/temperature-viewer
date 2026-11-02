@@ -1,0 +1,156 @@
+# Firmware
+
+Three implementations, one contract: read four channels every 100 ms and hand a
+`{u, t[4], f[4]}` frame to a transport. The differences are the toolchain, the
+sensor driver and how a frame leaves the board.
+
+![Firmware loop](images/firmware-loop.svg)
+
+## Implementations
+
+| | `esp32-s3/` MicroPython | `esp32-s3/arduino/` | `module/` Pico |
+| --- | --- | --- | --- |
+| Target | ESP32-S3, Wi-Fi | ESP32-S3 (or ESP32), Wi-Fi | Raspberry Pi Pico, USB |
+| Toolchain | Thonny / `mpremote` | Arduino IDE 2.x / `arduino-cli` | Thonny |
+| Sensor | MAX31855 or MAX31865 | MAX31855 or MAX31865 | MAX31855 |
+| Transport | HTTP batch | HTTP batch | CSV over USB (+ flash log) |
+| Buffer | 600 frames (60 s) | 60 s ring | none on the wire; flash log rotates at 1 MB |
+| Clock | NTP, `at` per batch | NTP, `at` per batch | none; collector stamps time |
+| Watchdog | hardware WDT + supervisor | task watchdog + retry loop | none (PC is expected) |
+
+## The 100 ms loop
+
+```
+slot N                      slot N+1
+  │                            │
+  ├─ read ch1..ch4 (SPI)        │     4 × 4 bytes at 1 MHz ≈ 0.2 ms
+  ├─ apply channel offset       │
+  ├─ format CSV line            │     ~0.3 ms
+  ├─ enqueue frame              │     lock + append, never blocks on network
+  ├─ serial write (if enabled)  │
+  └─ sleep until slot N+1       │     measured from the slot, not from sleep()
+```
+
+The next slot is computed from the *previous slot*, so jitter does not
+accumulate: a slow serial write delays one sample, not every following one.
+`ticks_ms()` (MicroPython) or `millis()` (Arduino) is the time column, measured —
+not derived from sample counts.
+
+A frame costs ~150 bytes queued in MicroPython; the default 600-frame buffer is
+about 90 KB, modest for an ESP32-S3 but too much for an ESP8266.
+
+## Transports
+
+### HTTP batch
+
+`ingest.py` (MicroPython) or `Uploader` (Arduino) keeps one TCP/TLS connection
+and a host-name cache, then posts `BATCH_SIZE` frames (10 = 1 s) to
+`/api/ingest`. The API anchors a batch without `at` on arrival and places the
+frames back on the 0.1 s grid by uptime, so batching does not distort the
+timeline.
+
+* `BACKGROUND_UPLOAD = True` runs the POST on a thread, so a TLS handshake
+  cannot stretch a sample gap.
+* A failed POST keeps the batch and retries on the next flush.
+* `400/413/422` are permanent: the batch is dropped instead of blocking the queue.
+* `401/403` and DNS failures retry, with a console hint.
+* Beyond `BUFFER_LIMIT` the oldest frames are dropped, so RAM cannot fill.
+
+See [`esp32-s3/README.md`](../esp32-s3/README.md#behaviour) for the full list.
+
+### MQTT batch
+
+[`MQTT/firmware/furnace_mqtt.py`](../MQTT/firmware/furnace_mqtt.py) publishes the
+same batch with QoS 1 and removes frames only when the bridge acknowledges the
+batch `seq`. The retained `state` topic plus Last Will is the presence contract.
+Details: [`MQTT/firmware/README.md`](../MQTT/firmware/README.md).
+
+### Serial / collector
+
+The Pico prints one CSV line per sample:
+
+```
+12300,781.25,-1000.00,940.00,545.75
+```
+
+`collector.py` parses it, maps uptime to wall-clock time, appends JSON lines to
+a checkpointed spool and uploads batches of 100. `-1000.00` becomes `null` with
+fault bit 8. See [`collector/README.md`](../collector/README.md).
+
+## Boot and supervision
+
+`boot.py` runs before the application and prints the reset cause and any missing
+module. A `WDT_RESET` in the banner means the application stopped feeding the
+watchdog, which is the fastest way to tell a crash from a power cut.
+
+`supervisor.py` wraps a session:
+
+```
+start → connect Wi-Fi → NTP (optional) → sampling loop
+   ▲                                          │
+   └── restart after 5–60 s backoff ◀── exception / hang
+```
+
+* The watchdog is fed once per sample and during Wi-Fi waits, so a hung loop
+  reboots the board instead of freezing it.
+* A crash inside a session is logged and the session is rebuilt with an
+  exponential backoff (5 s → 60 s).
+* A dead upload thread is detected and restarted by the loop.
+* No keyboard, reset button or computer is needed after the first upload; see
+  [`esp32-s3/README.md`](../esp32-s3/README.md#running-from-a-charger-no-computer).
+
+## Faults
+
+Each channel carries a bit mask. The firmware turns a fault into `null` plus the
+mask; the serial line keeps `-1000.00` so a broken probe never looks like 0 °C.
+
+| Bit | Meaning | Firmware source |
+| --- | --- | --- |
+| 1 | Open thermocouple | MAX31855 fault register `0x1` |
+| 2 | Short to GND | `0x2` |
+| 4 | Short to VCC | `0x4` |
+| 8 | Read error / general fault | `0x10000`, SPI failure, or `-1000` on the serial line |
+
+A faulted channel ignores its calibration offset. On the dashboard it renders
+as *held*: the last good value stays visible and the chart continues, so a
+one-frame glitch does not erase the trend. A fault that persists shows as a
+flat line plus the held marker; the fault reason is in the card tooltip.
+
+## Clock handling
+
+| Firmware | Clock | `at` |
+| --- | --- | --- |
+| ESP32-S3 MicroPython | NTP after Wi-Fi | Sent once per batch when synced |
+| Arduino | `configTime()` | Sent once per batch when synced |
+| Pico | none | Omitted; the collector maps uptime to PC time |
+
+Wall-clock time is the *newest* frame in the batch. The bridge and the API place
+earlier frames by their uptime distance, which preserves the 0.1 s grid.
+
+A reboot resets uptime to 0. The API only uses differences within a batch, and
+MQTT deduplication treats a backward jump larger than 1000 as a reboot, so a
+fresh boot is never discarded.
+
+## Calibration
+
+* MAX31855: `CHANNEL_OFFSETS = [...]` in `max31855/main.py`, one value per CS
+  pin, added before serial/upload. See
+  [`max31855/README.md`](../esp32-s3/max31855/README.md#per-furnace-offset-fixed-calibration).
+* MAX31865: `R_REF`, `R_NOMINAL`, `WIRE_MODE`, `FILTER_HZ` must match the board
+  and probe. See [`max31865/README.md`](../esp32-s3/max31865/README.md).
+* Arduino: the same options live in `config.h`; the maths is identical.
+
+## Adding a sensor
+
+A new driver only has to return, for each channel, a temperature in °C or
+`null`, plus a fault mask. Everything downstream (offsets, CSV, JSON, batching,
+storage, dashboards) works unchanged. Keep the read inside the 100 ms slot: at
+1 MHz a 4-byte transfer is ~0.2 ms, so there is room for a slightly longer
+frame, but not for a blocking network call.
+
+## Related
+
+* [Hardware](hardware.md) — pins, probe wiring, power
+* [Data model](data-model.md) — what happens to a frame after upload
+* [`esp32-s3/README.md`](../esp32-s3/README.md) — install, configuration, TLS
+* [`module/README.md`](../module/README.md) — Pico CSV protocol and flash log

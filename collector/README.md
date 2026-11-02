@@ -1,5 +1,8 @@
 # Collector — Pico samples to the API
 
+> Where this sits in the stack: [docs/system-architecture.md](../docs/system-architecture.md).
+> Timestamps and retention: [docs/data-model.md](../docs/data-model.md).
+
 The Pico is a plain, non-networked board: it prints one CSV line per sample on
 USB serial (`105,781.25,660.00,940.00,545.75`) and cannot call the API itself.
 This console program runs on the PC and does two things:

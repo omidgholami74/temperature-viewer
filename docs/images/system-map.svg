@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" width="960" height="560" role="img" aria-label="System map: four sensor channels feed an ESP32-S3 or Pico, which reaches the PHP API over HTTP, MQTT through a bridge, or USB through the collector; the API stores SQLite and both dashboards read it.">
+  <defs>
+    <linearGradient id="smbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#08101a"/>
+      <stop offset="1" stop-color="#050a10"/>
+    </linearGradient>
+    <marker id="sma" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#38e0a5"/>
+    </marker>
+    <marker id="smb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#6d8198"/>
+    </marker>
+    <style>
+      .smt { font-family: Inter, "Segoe UI", system-ui, sans-serif; }
+      .smm { font-family: "SFMono-Regular", Menlo, Consolas, monospace; }
+      .smh { fill: #eaf2fb; font-size: 13px; font-weight: 600; }
+      .sms { fill: #6d8198; font-size: 11px; }
+      .sml { fill: #a6b8cb; font-size: 11px; }
+      .smk { fill: #38e0a5; font-size: 10px; }
+      .smbox { fill: rgba(15,25,38,.9); stroke: #26394e; }
+    </style>
+  </defs>
+
+  <rect width="960" height="560" fill="url(#smbg)"/>
+  <text x="36" y="42" class="smt" fill="#eaf2fb" font-size="20" font-weight="600">Furnace Monitor — system map</text>
+  <text x="36" y="62" class="smt sms">One sample contract, three transports, one database, two dashboards.</text>
+
+  <!-- sensors -->
+  <rect x="36" y="94" width="196" height="168" rx="12" class="smbox"/>
+  <text x="54" y="118" class="smt smk smm">SENSING</text>
+  <text x="54" y="142" class="smt smh">4 channels</text>
+  <text x="54" y="166" class="smt sml">MAX31855 · K-type</text>
+  <text x="54" y="184" class="smt sml">MAX31865 · PT100</text>
+  <text x="54" y="208" class="smt sms">0.25 °C / 0.03 °C</text>
+  <text x="54" y="226" class="smt sms">fault bits 1 · 2 · 4 · 8</text>
+  <text x="54" y="248" class="smt sms">one CS pin per furnace</text>
+
+  <!-- firmware -->
+  <rect x="268" y="94" width="196" height="168" rx="12" class="smbox"/>
+  <text x="286" y="118" class="smt smk smm">FIRMWARE</text>
+  <text x="286" y="142" class="smt smh">10 Hz schedule</text>
+  <text x="286" y="166" class="smt sml">ESP32-S3 MicroPython</text>
+  <text x="286" y="184" class="smt sml">Arduino/C++</text>
+  <text x="286" y="202" class="smt sml">Pico module</text>
+  <text x="286" y="226" class="smt sms">100 ms slot, measured clock</text>
+  <text x="286" y="244" class="smt sms">bounded buffer + upload thread</text>
+
+  <!-- storage -->
+  <rect x="700" y="94" width="224" height="168" rx="12" class="smbox"/>
+  <text x="718" y="118" class="smt smk smm">STORAGE</text>
+  <text x="718" y="142" class="smt smh">PHP API + SQLite</text>
+  <text x="718" y="166" class="smt sml">POST /api/ingest</text>
+  <text x="718" y="184" class="smt sml">runs · readings · readings_1s</text>
+  <text x="718" y="208" class="smt sms">validation, run bounds, active_ms</text>
+  <text x="718" y="226" class="smt sms">raw 48 h → 1 s rollup 180 d</text>
+  <text x="718" y="248" class="smt sms">single writer, WAL</text>
+
+  <!-- transports -->
+  <g>
+    <rect x="500" y="88" width="172" height="76" rx="10" class="smbox"/>
+    <text x="516" y="112" class="smt" fill="#eaf2fb" font-size="12" font-weight="600">HTTP direct</text>
+    <text x="516" y="130" class="smt sms">POST batch of 10</text>
+    <text x="516" y="148" class="smt sms">keeps 60 s in buffer</text>
+
+    <rect x="500" y="174" width="172" height="88" rx="10" class="smbox"/>
+    <text x="516" y="198" class="smt" fill="#eaf2fb" font-size="12" font-weight="600">MQTT</text>
+    <text x="516" y="216" class="smt sms">broker + bridge</text>
+    <text x="516" y="234" class="smt sms">QoS 1, ack after store</text>
+    <text x="516" y="252" class="smt sms">queue survives API restart</text>
+
+    <rect x="500" y="272" width="172" height="76" rx="10" class="smbox"/>
+    <text x="516" y="296" class="smt" fill="#eaf2fb" font-size="12" font-weight="600">USB serial</text>
+    <text x="516" y="314" class="smt sms">collector.py spool</text>
+    <text x="516" y="332" class="smt sms">absolute `at` timestamps</text>
+  </g>
+
+  <!-- arrows sensors -> firmware -->
+  <path d="M232 178H260" stroke="#38e0a5" stroke-width="1.6" marker-end="url(#sma)"/>
+  <path d="M464 140H492" stroke="#38e0a5" stroke-width="1.6" marker-end="url(#sma)"/>
+  <path d="M464 216H492" stroke="#38e0a5" stroke-width="1.6" marker-end="url(#sma)"/>
+  <path d="M464 310H492" stroke="#38e0a5" stroke-width="1.6" marker-end="url(#sma)"/>
+  <path d="M672 128H692" stroke="#38e0a5" stroke-width="1.6" marker-end="url(#sma)"/>
+  <path d="M672 216H692" stroke="#38e0a5" stroke-width="1.6" marker-end="url(#sma)"/>
+  <path d="M672 310H692" stroke="#38e0a5" stroke-width="1.6" marker-end="url(#sma)"/>
+
+  <text x="466" y="132" class="smt smk" font-size="9">frames</text>
+  <text x="674" y="120" class="smt smk" font-size="9">JSON</text>
+
+  <!-- presentation -->
+  <rect x="36" y="330" width="460" height="150" rx="12" class="smbox"/>
+  <text x="54" y="354" class="smt smk smm">PRESENTATION · READ ONLY</text>
+  <text x="54" y="378" class="smt smh">HTTP dashboard (ui/)</text>
+  <text x="54" y="398" class="smt sms">polls /api/live every 250 ms · history, analysis, CSV export</text>
+  <text x="54" y="424" class="smt smh">MQTT dashboard</text>
+  <text x="54" y="444" class="smt sms">WebSocket subscribe · live cards, gap-free chart, fleet table</text>
+  <text x="54" y="470" class="smt sms">serial-web: same screen fed by Web Serial, no server</text>
+
+  <path d="M812 262V300H420V354" fill="none" stroke="#6d8198" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#smb)"/>
+  <text x="430" y="318" class="smt sms">GET /api/live · history · summary · export</text>
+
+  <path d="M560 216H660V400H812V262" fill="none" stroke="#49bdf0" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#smb)" opacity=".85"/>
+  <text x="600" y="392" class="smt sms">MQTT subscribe</text>
+
+  <!-- bottom band -->
+  <rect x="36" y="502" width="888" height="34" rx="9" fill="#0b141e" stroke="#2b3f55"/>
+  <text x="52" y="524" class="smt sms">The sample contract is identical on every path: {u, at?, t[4], f[4]} with null for a faulted channel.</text>
+</svg>

@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" width="960" height="520" role="img" aria-label="Firmware loop: a 100 ms slot reads four SPI channels, applies offsets, formats a frame and enqueues it; a background worker batches and uploads; the supervisor restarts the session with backoff and feeds the watchdog.">
+  <defs>
+    <linearGradient id="flbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#08101a"/>
+      <stop offset="1" stop-color="#050a10"/>
+    </linearGradient>
+    <marker id="fla" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#38e0a5"/>
+    </marker>
+    <marker id="flb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#6d8198"/>
+    </marker>
+    <style>
+      .ft { font-family: Inter, "Segoe UI", system-ui, sans-serif; }
+      .fm { font-family: "SFMono-Regular", Menlo, Consolas, monospace; }
+      .fh { fill: #eaf2fb; font-size: 13px; font-weight: 600; }
+      .fs { fill: #6d8198; font-size: 11px; }
+      .fl { fill: #a6b8cb; font-size: 11px; }
+      .fk { fill: #38e0a5; font-size: 10px; }
+      .fbox { fill: rgba(15,25,38,.9); stroke: #26394e; }
+    </style>
+  </defs>
+
+  <rect width="960" height="520" fill="url(#flbg)"/>
+  <text x="36" y="40" class="ft" fill="#eaf2fb" font-size="20" font-weight="600">Firmware — one 100 ms slot</text>
+  <text x="36" y="60" class="ft fs">The network never sits inside the sampling loop; the loop advances from the previous slot, so jitter does not accumulate.</text>
+
+  <!-- timeline -->
+  <line x1="56" y1="116" x2="904" y2="116" stroke="#22364a" stroke-width="2"/>
+  <g fill="#38e0a5">
+    <circle cx="56" cy="116" r="4"/>
+    <circle cx="340" cy="116" r="4"/>
+    <circle cx="624" cy="116" r="4"/>
+    <circle cx="904" cy="116" r="4"/>
+  </g>
+  <text x="56" y="104" class="ft fm" fill="#38e0a5" font-size="10">slot n</text>
+  <text x="340" y="104" class="ft fm" fill="#38e0a5" font-size="10">slot n+1</text>
+  <text x="624" y="104" class="ft fm" fill="#38e0a5" font-size="10">slot n+2</text>
+  <text x="860" y="104" class="ft fm" fill="#38e0a5" font-size="10">slot n+3</text>
+  <text x="170" y="140" class="ft fs">100 ms</text>
+
+  <!-- loop steps -->
+  <g>
+    <rect x="56" y="164" width="180" height="96" rx="10" class="fbox"/>
+    <text x="72" y="188" class="ft fk fm">01 · 0.2 ms</text>
+    <text x="72" y="210" class="ft fh">Read SPI</text>
+    <text x="72" y="230" class="ft fl">4 × 4 bytes at 1 MHz</text>
+    <text x="72" y="248" class="ft fs">fault flags included</text>
+
+    <rect x="268" y="164" width="180" height="96" rx="10" class="fbox"/>
+    <text x="284" y="188" class="ft fk fm">02</text>
+    <text x="284" y="210" class="ft fh">Normalise</text>
+    <text x="284" y="230" class="ft fl">−1000 → null + bit</text>
+    <text x="284" y="248" class="ft fs">+ fixed channel offset</text>
+
+    <rect x="480" y="164" width="180" height="96" rx="10" class="fbox"/>
+    <text x="496" y="188" class="ft fk fm">03 · 0.3 ms</text>
+    <text x="496" y="210" class="ft fh">Format frame</text>
+    <text x="496" y="230" class="ft fl">CSV line · JSON object</text>
+    <text x="496" y="248" class="ft fs">u, t[4], f[4]</text>
+
+    <rect x="692" y="164" width="212" height="96" rx="10" class="fbox"/>
+    <text x="708" y="188" class="ft fk fm">04</text>
+    <text x="708" y="210" class="ft fh">Enqueue</text>
+    <text x="708" y="230" class="ft fl">lock + append, never blocks</text>
+    <text x="708" y="248" class="ft fs">600 frames ≈ 60 s</text>
+  </g>
+
+  <g stroke="#38e0a5" stroke-width="1.5" marker-end="url(#fla)">
+    <path d="M236 212H260"/>
+    <path d="M448 212H472"/>
+    <path d="M660 212H684"/>
+  </g>
+
+  <!-- worker -->
+  <rect x="56" y="300" width="360" height="120" rx="10" class="fbox"/>
+  <text x="72" y="324" class="ft fk fm">BACKGROUND</text>
+  <text x="72" y="346" class="ft fh">Upload worker</text>
+  <text x="72" y="368" class="ft fl">waits for BATCH_SIZE = 10 frames</text>
+  <text x="72" y="386" class="ft fl">one TCP/TLS connection, host cached</text>
+  <text x="72" y="404" class="ft fl">HTTP batch · or MQTT QoS 1 + ack</text>
+
+  <path d="M798 260V330H424" fill="none" stroke="#38e0a5" stroke-width="1.3" marker-end="url(#fla)" stroke-dasharray="5 4"/>
+  <text x="432" y="322" class="ft fs">frames, in order</text>
+
+  <!-- supervisor -->
+  <rect x="56" y="444" width="360" height="52" rx="10" class="fbox"/>
+  <text x="72" y="466" class="ft fk fm">SUPERVISOR</text>
+  <text x="72" y="486" class="ft fl">watchdog fed per sample · restart 5–60 s</text>
+
+  <path d="M236 444V414" stroke="#6d8198" stroke-width="1.3" marker-end="url(#flb)"/>
+  <path d="M236 392V268" stroke="#6d8198" stroke-width="1.3" marker-end="url(#flb)" stroke-dasharray="4 3"/>
+  <text x="246" y="436" class="ft fs">recovers</text>
+
+  <!-- side notes -->
+  <rect x="552" y="300" width="352" height="196" rx="10" class="fbox"/>
+  <text x="568" y="324" class="ft fk fm">RULES</text>
+  <text x="568" y="348" class="ft fl">· the loop sleeps to the next slot, not for 100 ms</text>
+  <text x="568" y="368" class="ft fl">· a slow upload cannot stretch the sample gap</text>
+  <text x="568" y="388" class="ft fl">· 400/413/422 drop the batch, 401/403 retry</text>
+  <text x="568" y="408" class="ft fl">· buffer overflow drops the oldest frames</text>
+  <text x="568" y="428" class="ft fl">· a fault never becomes 0 °C</text>
+  <text x="568" y="448" class="ft fl">· no clock: omit `at`, the API anchors on arrival</text>
+  <text x="568" y="468" class="ft fl">· reboot resets uptime; runs keep their own t_ms</text>
+</svg>

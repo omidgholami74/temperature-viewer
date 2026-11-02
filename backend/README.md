@@ -1,5 +1,8 @@
 # Backend — PHP API + SQLite
 
+> Schema, run lifecycle and retention arithmetic: [docs/data-model.md](../docs/data-model.md).
+> End-to-end architecture: [docs/system-architecture.md](../docs/system-architecture.md).
+
 A dependency-free PHP 8.1+ service that stores 10 Hz furnace samples. This
 folder is **API only**: the dashboard is a separate static site (`ui/`) served
 by its own web server and calls this API cross-origin.

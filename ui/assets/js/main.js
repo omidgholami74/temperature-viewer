@@ -291,7 +291,8 @@ function renderCards(latest) {
     const fault = Number(latest?.faults?.[index] ?? 0);
     let delta = Number.NaN;
 
-    if (reading !== null && Number.isFinite(Number(reading))) {
+    // -1000 is the firmware's fault sentinel; it must never reach the card.
+    if (reading !== null && Number.isFinite(Number(reading)) && Number(reading) > -999) {
       lastGoodTemps[index] = Number(reading);
     }
 

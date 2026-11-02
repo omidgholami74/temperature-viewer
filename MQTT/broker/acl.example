@@ -1,0 +1,31 @@
+# Example ACL for production. Enable it with:
+#
+#   acl_file /mosquitto/config/acl
+#
+# in mosquitto.conf, together with:
+#
+#   allow_anonymous false
+#   password_file /mosquitto/config/passwd
+#
+# Pattern ACLs expand %c to the client id and %u to the username, so one rule
+# can cover every device without editing the file per furnace.
+
+# --- bridges ---------------------------------------------------------------
+user bridge
+topic read furnace/+/+/samples
+topic write furnace/+/+/ack
+topic write furnace/+/_bridge/status
+
+# --- browsers --------------------------------------------------------------
+# Read-only: the dashboard must never be able to forge a temperature.
+user dashboard
+topic read furnace/#
+
+# --- devices ---------------------------------------------------------------
+# A device may only publish its own samples and state. The client id is
+# furnace-<device>, so %c is not enough on its own; keep one block per device
+# (or use a per-device username) and never grant write on furnace/#.
+user kiln-1
+topic write furnace/lab/kiln-1/samples
+topic write furnace/lab/kiln-1/state
+topic read furnace/lab/kiln-1/ack

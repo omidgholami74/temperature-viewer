@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540" role="img" aria-label="Furnace MQTT architecture: devices publish to a Mosquitto broker, a bridge stores batches through the PHP API and acknowledges them, and a read-only dashboard subscribes over WebSocket.">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#08101a"/>
+      <stop offset="1" stop-color="#050a10"/>
+    </linearGradient>
+    <linearGradient id="accentline" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#38e0a5"/>
+      <stop offset="1" stop-color="#49bdf0"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#6d8198"/>
+    </marker>
+    <marker id="arrowA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#38e0a5"/>
+    </marker>
+    <style>
+      .t { font-family: Inter, "Segoe UI", system-ui, sans-serif; }
+      .mono { font-family: "SFMono-Regular", Menlo, Consolas, monospace; }
+      .h { fill: #eaf2fb; font-size: 16px; font-weight: 600; }
+      .sub { fill: #6d8198; font-size: 11px; }
+      .label { fill: #a6b8cb; font-size: 11px; }
+      .muted { fill: #6d8198; font-size: 10px; }
+      .code { fill: #38e0a5; font-size: 10px; }
+      .card { fill: rgba(15,25,38,.86); stroke: #26394e; stroke-width: 1; }
+      .cardhead { fill: none; stroke: none; }
+      .tinybox { fill: rgba(22,36,52,.9); stroke: #2f455c; }
+    </style>
+  </defs>
+
+  <rect width="960" height="540" fill="url(#bg)"/>
+  <g opacity=".5" stroke="#12202e" stroke-width="1">
+    <path d="M0 80H960M0 160H960M0 240H960M0 320H960M0 400H960M0 480H960"/>
+    <path d="M80 0V540M160 0V540M240 0V540M320 0V540M400 0V540M480 0V540M560 0V540M640 0V540M720 0V540M800 0V540M880 0V540"/>
+  </g>
+
+  <text x="36" y="46" class="t h" font-size="22">Furnace MQTT — architecture</text>
+  <text x="36" y="68" class="t sub">Transport replaced, storage unchanged · v1</text>
+  <rect x="36" y="82" width="96" height="3" rx="1.5" fill="url(#accentline)"/>
+
+  <!-- Devices -->
+  <g>
+    <rect x="36" y="120" width="230" height="270" rx="14" class="card"/>
+    <text x="56" y="148" class="t label" font-weight="600" fill="#eaf2fb">DEVICES</text>
+    <text x="56" y="166" class="t muted">ESP32-S3 · MicroPython</text>
+
+    <rect x="56" y="184" width="190" height="80" rx="10" class="tinybox"/>
+    <text x="70" y="206" class="t" fill="#eaf2fb" font-size="12" font-weight="600">kiln-1</text>
+    <text x="70" y="223" class="t muted">10 Hz · 4 × MAX31855</text>
+    <text x="70" y="239" class="t muted">buffer 3600 frames</text>
+    <text x="70" y="255" class="t code mono">seq + uptime</text>
+
+    <rect x="56" y="276" width="190" height="80" rx="10" class="tinybox"/>
+    <text x="70" y="298" class="t" fill="#eaf2fb" font-size="12" font-weight="600">kiln-2</text>
+    <text x="70" y="315" class="t muted">same contract</text>
+    <text x="70" y="331" class="t muted">retained state topic</text>
+    <text x="70" y="347" class="t code mono">Last Will = offline</text>
+
+    <text x="56" y="376" class="t muted">Acks trim the local buffer;</text>
+    <text x="56" y="390" class="t muted">unacked frames survive a reboot.</text>
+  </g>
+
+  <!-- Broker -->
+  <g>
+    <rect x="308" y="120" width="230" height="270" rx="14" class="card"/>
+    <text x="328" y="148" class="t label" font-weight="600" fill="#eaf2fb">BROKER</text>
+    <text x="328" y="166" class="t muted">Eclipse Mosquitto 2.x</text>
+
+    <rect x="328" y="184" width="190" height="42" rx="9" class="tinybox"/>
+    <text x="342" y="202" class="t" fill="#eaf2fb" font-size="12">TCP · 1883 / 8883</text>
+    <text x="342" y="217" class="t muted mono">QoS 1, sessions, queued msgs</text>
+
+    <rect x="328" y="234" width="190" height="42" rx="9" class="tinybox"/>
+    <text x="342" y="252" class="t" fill="#eaf2fb" font-size="12">WebSocket · 9001 / 9002</text>
+    <text x="342" y="267" class="t muted mono">MQTT over TLS for browsers</text>
+
+    <rect x="328" y="284" width="190" height="42" rx="9" class="tinybox"/>
+    <text x="342" y="302" class="t" fill="#eaf2fb" font-size="12">Retained topics</text>
+    <text x="342" y="317" class="t muted mono">state · bridge status</text>
+
+    <text x="328" y="350" class="t muted">Auth: one account per device,</text>
+    <text x="328" y="364" class="t muted">bridge and read-only dashboard.</text>
+    <text x="328" y="378" class="t muted">ACL: write only the own topic.</text>
+  </g>
+
+  <!-- Bridge -->
+  <g>
+    <rect x="580" y="120" width="210" height="270" rx="14" class="card"/>
+    <text x="600" y="148" class="t label" font-weight="600" fill="#eaf2fb">BRIDGE</text>
+    <text x="600" y="166" class="t muted">Python 3.11+ · paho-mqtt 2</text>
+
+    <g class="t" font-size="11" fill="#a6b8cb">
+      <text x="600" y="196">1  validate envelope + frames</text>
+      <text x="600" y="218">2  normalise −1000 → null</text>
+      <text x="600" y="240">3  deduplicate by seq</text>
+      <text x="600" y="262">4  bounded FIFO (500 batches)</text>
+      <text x="600" y="284">5  POST /api/ingest</text>
+      <text x="600" y="306">6  ack only after storage</text>
+    </g>
+
+    <rect x="600" y="324" width="170" height="46" rx="9" class="tinybox"/>
+    <text x="614" y="343" class="t" fill="#f3b45a" font-size="11">retry 1–30 s on 5xx</text>
+    <text x="614" y="358" class="t muted">drop + ack:false on 422</text>
+
+    <text x="600" y="384" class="t muted">Stateless · one per site</text>
+  </g>
+
+  <!-- API -->
+  <g>
+    <rect x="822" y="120" width="102" height="130" rx="14" class="card"/>
+    <text x="838" y="148" class="t label" font-weight="600" fill="#eaf2fb">API</text>
+    <text x="838" y="170" class="t muted" font-size="10">PHP · JSON</text>
+    <text x="838" y="190" class="t muted" font-size="10">validates,</text>
+    <text x="838" y="204" class="t muted" font-size="10">stores runs,</text>
+    <text x="838" y="218" class="t muted" font-size="10">computes</text>
+    <text x="838" y="232" class="t muted" font-size="10">active_ms</text>
+
+    <rect x="822" y="266" width="102" height="124" rx="14" class="card"/>
+    <text x="838" y="292" class="t label" font-weight="600" fill="#eaf2fb">SQLite</text>
+    <text x="838" y="314" class="t muted" font-size="10">runs</text>
+    <text x="838" y="330" class="t muted" font-size="10">readings</text>
+    <text x="838" y="346" class="t muted" font-size="10">readings_1s</text>
+    <text x="838" y="370" class="t code mono" font-size="9">source of truth</text>
+  </g>
+
+  <!-- arrows: device -> broker -->
+  <path d="M266 236H300" stroke="#38e0a5" stroke-width="1.6" marker-end="url(#arrowA)"/>
+  <text x="266" y="226" class="t mono" fill="#38e0a5" font-size="9">samples</text>
+  <path d="M300 292H266" stroke="#6d8198" stroke-width="1.4" marker-end="url(#arrow)" stroke-dasharray="4 3"/>
+  <text x="266" y="306" class="t mono" fill="#6d8198" font-size="9">ack</text>
+
+  <!-- broker -> bridge -->
+  <path d="M538 236H572" stroke="#38e0a5" stroke-width="1.6" marker-end="url(#arrowA)"/>
+  <text x="538" y="226" class="t mono" fill="#38e0a5" font-size="9">QoS 1</text>
+
+  <!-- bridge -> api -->
+  <path d="M790 214H814" stroke="#49bdf0" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="776" y="204" class="t mono" fill="#49bdf0" font-size="9">POST</text>
+
+  <!-- dashboard band -->
+  <rect x="308" y="424" width="616" height="80" rx="14" class="card"/>
+  <text x="328" y="450" class="t label" font-weight="600" fill="#eaf2fb">DASHBOARDS · READ-ONLY SUBSCRIBERS</text>
+  <text x="328" y="470" class="t muted">MQTT over WebSocket → live cards, continuous chart, device fleet and transport log.</text>
+  <text x="328" y="488" class="t muted">The API dashboard keeps polling HTTP; both views read the same database.</text>
+  <path d="M423 390V416" stroke="#49bdf0" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="432" y="408" class="t mono" fill="#49bdf0" font-size="9">subscribe furnace/#</text>
+
+  <text x="36" y="512" class="t muted">QoS 1 end to end · duplicate-safe by seq · acknowledgements only after storage</text>
+</svg>

@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" width="960" height="420" role="img" aria-label="Data flow from sampling through broker, validation, queue, API storage and acknowledgement.">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#08101a"/>
+      <stop offset="1" stop-color="#050a10"/>
+    </linearGradient>
+    <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#38e0a5"/>
+    </marker>
+    <marker id="a2b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#6d8198"/>
+    </marker>
+    <style>
+      .t2 { font-family: Inter, "Segoe UI", system-ui, sans-serif; }
+      .m2 { font-family: "SFMono-Regular", Menlo, Consolas, monospace; }
+      .h2 { fill: #eaf2fb; font-size: 15px; font-weight: 600; }
+      .s2 { fill: #6d8198; font-size: 11px; }
+      .l2 { fill: #a6b8cb; font-size: 11px; }
+      .k2 { fill: #38e0a5; font-size: 10px; }
+      .step { fill: rgba(15,25,38,.9); stroke: #26394e; }
+    </style>
+  </defs>
+
+  <rect width="960" height="420" fill="url(#bg2)"/>
+  <text x="36" y="44" class="t2 h2" font-size="21">Data flow — one batch, end to end</text>
+  <text x="36" y="66" class="t2 s2">At-least-once delivery, deduplicated at the bridge, acknowledged only after the row exists.</text>
+
+  <!-- stages -->
+  <g>
+    <rect x="36" y="104" width="150" height="150" rx="12" class="step"/>
+    <text x="54" y="130" class="t2 k2 m2">01</text>
+    <text x="54" y="152" class="t2 h2" font-size="13">Sample</text>
+    <text x="54" y="174" class="t2 l2">10 Hz, four channels</text>
+    <text x="54" y="192" class="t2 l2">fault bits captured</text>
+    <text x="54" y="216" class="t2 s2">frame =</text>
+    <text x="54" y="232" class="t2 s2 m2">[u, [t…], [f…]]</text>
+
+    <rect x="222" y="104" width="150" height="150" rx="12" class="step"/>
+    <text x="240" y="130" class="t2 k2 m2">02</text>
+    <text x="240" y="152" class="t2 h2" font-size="13">Publish</text>
+    <text x="240" y="174" class="t2 l2">batch of 10 frames</text>
+    <text x="240" y="192" class="t2 l2">QoS 1, not retained</text>
+    <text x="240" y="216" class="t2 s2">keeps frames until</text>
+    <text x="240" y="232" class="t2 s2">the ack returns</text>
+
+    <rect x="408" y="104" width="150" height="150" rx="12" class="step"/>
+    <text x="426" y="130" class="t2 k2 m2">03</text>
+    <text x="426" y="152" class="t2 h2" font-size="13">Validate</text>
+    <text x="426" y="174" class="t2 l2">topic, v1, 1–600 frames</text>
+    <text x="426" y="192" class="t2 l2">−1000 sentinel → null</text>
+    <text x="426" y="216" class="t2 s2">bad payload:</text>
+    <text x="426" y="232" class="t2 s2 m2">ack ok:false</text>
+
+    <rect x="594" y="104" width="150" height="150" rx="12" class="step"/>
+    <text x="612" y="130" class="t2 k2 m2">04</text>
+    <text x="612" y="152" class="t2 h2" font-size="13">Queue + store</text>
+    <text x="612" y="174" class="t2 l2">dedupe by seq</text>
+    <text x="612" y="192" class="t2 l2">bounded FIFO</text>
+    <text x="612" y="216" class="t2 s2 m2">POST /api/ingest</text>
+    <text x="612" y="232" class="t2 s2">2xx = stored</text>
+
+    <rect x="780" y="104" width="144" height="150" rx="12" class="step"/>
+    <text x="798" y="130" class="t2 k2 m2">05</text>
+    <text x="798" y="152" class="t2 h2" font-size="13">Acknowledge</text>
+    <text x="798" y="174" class="t2 l2">ack after the write</text>
+    <text x="798" y="192" class="t2 l2">device trims buffer</text>
+    <text x="798" y="216" class="t2 s2 m2">seq, accepted</text>
+    <text x="798" y="232" class="t2 s2">duplicate → ack again</text>
+  </g>
+
+  <!-- arrows -->
+  <g stroke="#38e0a5" stroke-width="1.6" marker-end="url(#a2)">
+    <path d="M186 179H214"/>
+    <path d="M372 179H400"/>
+    <path d="M558 179H586"/>
+    <path d="M744 179H772"/>
+  </g>
+
+  <!-- ack return path -->
+  <path d="M798 264V300H120V264" fill="none" stroke="#6d8198" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#a2b)"/>
+  <text x="400" y="318" class="t2 m2" fill="#6d8198" font-size="10">ack returns on furnace/&lt;site&gt;/&lt;device&gt;/ack</text>
+
+  <!-- dashboard branch -->
+  <rect x="408" y="342" width="336" height="48" rx="10" class="step"/>
+  <text x="426" y="363" class="t2 l2">Dashboard subscribes to the same batch in parallel</text>
+  <text x="426" y="380" class="t2 s2">read-only · cards, continuous chart, fleet table</text>
+  <path d="M483 254V334" stroke="#49bdf0" stroke-width="1.4" marker-end="url(#a2b)"/>
+
+  <text x="36" y="292" class="t2 l2">Device buffer</text>
+  <text x="36" y="310" class="t2 s2">3600 frames ≈ 10 min at 10 Hz</text>
+  <text x="36" y="328" class="t2 s2">oldest dropped, counted</text>
+</svg>

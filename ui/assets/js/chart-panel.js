@@ -240,7 +240,9 @@ export class TemperatureChart {
   #reading(channel, raw) {
     const numeric = raw === null || raw === undefined ? Number.NaN : Number(raw);
 
-    if (Number.isFinite(numeric)) {
+    // -1000 is the firmware's fault sentinel. Plotting it would dive the whole
+    // series off the axis and look like a broken line.
+    if (Number.isFinite(numeric) && numeric > -999) {
       this.lastGood[channel] = numeric;
       return numeric;
     }

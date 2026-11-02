@@ -39,6 +39,10 @@ extreme, CSV export with its own date picker, and an installable PWA manifest.
   uploads that file to the API in batches.
 - Stores every sample in SQLite through a small JSON API. No framework, no
   external database server.
+- Can carry the same samples over **MQTT** instead of HTTP: a bridge validates
+  and forwards them to the API, devices buffer until acknowledged, and a
+  standalone WebSocket dashboard shows live data. See
+  [`MQTT/README.md`](MQTT/README.md).
 - Puts the **eight-digit run timer** `HH:MM:SS:CC` at the top of the screen
   (hundredths of a second on the right, counting `00` to `99`) plus a
   human-readable equivalent below it.

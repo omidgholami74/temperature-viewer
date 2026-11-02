@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 460" width="960" height="460" role="img" aria-label="Topic tree: samples upward and ack downward per device, retained state per device, retained bridge status per site.">
+  <defs>
+    <style>
+      .t4 { font-family: Inter, "Segoe UI", system-ui, sans-serif; }
+      .m4 { font-family: "SFMono-Regular", Menlo, Consolas, monospace; }
+      .h4 { fill: #eaf2fb; font-size: 13px; font-weight: 600; }
+      .s4 { fill: #6d8198; font-size: 11px; }
+      .l4 { fill: #a6b8cb; font-size: 11px; }
+    </style>
+  </defs>
+
+  <rect width="960" height="460" fill="#070d14"/>
+  <text x="36" y="42" class="t4" fill="#eaf2fb" font-size="20" font-weight="600">Topic tree</text>
+  <text x="36" y="62" class="t4 s4">Fixed depth, lower case, one wildcard level per ACL. `_bridge` is reserved.</text>
+
+  <!-- root -->
+  <rect x="36" y="92" width="150" height="40" rx="9" fill="#11202e" stroke="#38e0a5" stroke-opacity=".5"/>
+  <text x="52" y="117" class="t4 m4" fill="#38e0a5" font-size="12">furnace/</text>
+  <text x="200" y="117" class="t4 s4">root</text>
+
+  <!-- site -->
+  <path d="M111 132V158H154" fill="none" stroke="#2b3f55"/>
+  <rect x="154" y="140" width="180" height="36" rx="8" fill="#0f1a26" stroke="#26394e"/>
+  <text x="170" y="163" class="t4 m4" fill="#eaf2fb" font-size="12">&lt;site&gt;/</text>
+  <text x="344" y="163" class="t4 s4">lab, foundry …</text>
+
+  <!-- device -->
+  <path d="M244 176V202H276" fill="none" stroke="#2b3f55"/>
+  <rect x="276" y="184" width="180" height="36" rx="8" fill="#0f1a26" stroke="#26394e"/>
+  <text x="292" y="207" class="t4 m4" fill="#eaf2fb" font-size="12">&lt;device&gt;/</text>
+  <text x="466" y="207" class="t4 s4">kiln-1, kiln-2 …</text>
+
+  <!-- leaves -->
+  <g>
+    <path d="M366 220V250H398" fill="none" stroke="#2b3f55"/>
+    <rect x="398" y="232" width="250" height="36" rx="8" fill="#0f1a26" stroke="#38e0a5" stroke-opacity=".45"/>
+    <text x="412" y="248" class="t4 m4" fill="#38e0a5" font-size="11">samples</text>
+    <text x="412" y="262" class="t4 s4">QoS 1 · no retain · device → bridge</text>
+
+    <path d="M366 256V318H398" fill="none" stroke="#2b3f55"/>
+    <rect x="398" y="300" width="250" height="36" rx="8" fill="#0f1a26" stroke="#49bdf0" stroke-opacity=".45"/>
+    <text x="412" y="316" class="t4 m4" fill="#49bdf0" font-size="11">ack</text>
+    <text x="412" y="330" class="t4 s4">QoS 1 · no retain · bridge → device</text>
+
+    <path d="M366 292V368H398" fill="none" stroke="#2b3f55"/>
+    <rect x="398" y="368" width="250" height="36" rx="8" fill="#0f1a26" stroke="#f3b45a" stroke-opacity=".45"/>
+    <text x="412" y="384" class="t4 m4" fill="#f3b45a" font-size="11">state</text>
+    <text x="412" y="398" class="t4 s4">QoS 1 · retained · Last Will</text>
+  </g>
+
+  <!-- bridge status -->
+  <path d="M244 158V430H398" fill="none" stroke="#2b3f55" stroke-dasharray="4 3"/>
+  <rect x="398" y="412" width="250" height="36" rx="8" fill="#0f1a26" stroke="#b491ff" stroke-opacity=".5"/>
+  <text x="412" y="428" class="t4 m4" fill="#b491ff" font-size="11">_bridge/status</text>
+  <text x="412" y="442" class="t4 s4">QoS 0 · retained · bridge → all</text>
+
+  <!-- annotations -->
+  <g>
+    <rect x="690" y="104" width="234" height="270" rx="12" fill="#0b141e" stroke="#26394e"/>
+    <text x="706" y="128" class="t4 h4">ACL shape</text>
+    <text x="706" y="150" class="t4 m4" fill="#a6b8cb" font-size="10">device  write samples, state</text>
+    <text x="706" y="168" class="t4 m4" fill="#a6b8cb" font-size="10">        read  own ack</text>
+    <text x="706" y="186" class="t4 m4" fill="#a6b8cb" font-size="10">bridge  read  furnace/+/+/samples</text>
+    <text x="706" y="204" class="t4 m4" fill="#a6b8cb" font-size="10">        write furnace/+/+/ack</text>
+    <text x="706" y="222" class="t4 m4" fill="#a6b8cb" font-size="10">browser read  furnace/#</text>
+
+    <text x="706" y="254" class="t4 h4">Rules</text>
+    <text x="706" y="274" class="t4 l4">· never grant write on furnace/#</text>
+    <text x="706" y="292" class="t4 l4">· one account per device</text>
+    <text x="706" y="310" class="t4 l4">· retained state is the presence</text>
+    <text x="706" y="328" class="t4 l4">  contract, not a heartbeat</text>
+    <text x="706" y="346" class="t4 l4">· `_bridge` is never a device</text>
+
+    <rect x="690" y="390" width="234" height="58" rx="10" fill="#0b141e" stroke="#26394e"/>
+    <text x="706" y="412" class="t4 h4">Wildcard subscription</text>
+    <text x="706" y="432" class="t4 m4" fill="#38e0a5" font-size="10">furnace/&lt;site&gt;/+/samples</text>
+  </g>
+
+  <text x="36" y="438" class="t4 s4">Topic depth is part of the contract: a 3- or 5-level topic is rejected by the bridge.</text>
+</svg>

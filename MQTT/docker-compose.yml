@@ -1,0 +1,56 @@
+name: furnace-mqtt
+
+# Development stack: broker + bridge + a static dashboard.
+# The PHP API is not part of this compose file; point FURNACE_MQTT_API_URL at
+# an existing backend (host.docker.internal reaches the host on Linux/macOS).
+
+services:
+  broker:
+    image: eclipse-mosquitto:2.0
+    container_name: furnace-broker
+    restart: unless-stopped
+    ports:
+      - "1883:1883"   # MQTT for devices and the bridge
+      - "9001:9001"   # MQTT over WebSocket for the dashboard
+    volumes:
+      - ./broker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - broker-data:/mosquitto/data
+      - broker-log:/mosquitto/log
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h 127.0.0.1 -t '$$SYS/broker/uptime' -C 1 -W 3 >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  bridge:
+    build: ./bridge
+    container_name: furnace-bridge
+    restart: unless-stopped
+    depends_on:
+      broker:
+        condition: service_healthy
+    environment:
+      FURNACE_MQTT_HOST: broker
+      FURNACE_MQTT_PORT: "1883"
+      FURNACE_MQTT_SITE: "${FURNACE_SITE:-lab}"
+      FURNACE_MQTT_API_URL: "${FURNACE_API_URL:-http://host.docker.internal:8000/api/ingest}"
+      FURNACE_MQTT_API_KEY: "${FURNACE_INGEST_KEY:-}"
+      FURNACE_MQTT_QUEUE_LIMIT: "500"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  dashboard:
+    image: nginx:1.27-alpine
+    container_name: furnace-mqtt-dashboard
+    restart: unless-stopped
+    depends_on:
+      - broker
+    ports:
+      - "8080:80"
+    volumes:
+      - ./dashboard:/usr/share/nginx/html:ro
+
+volumes:
+  broker-data:
+  broker-log:

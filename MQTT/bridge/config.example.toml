@@ -1,0 +1,35 @@
+# Furnace MQTT bridge configuration.
+# Copy to config.toml and keep that file out of version control.
+# Every value can also be set with FURNACE_MQTT_* environment variables
+# (see README.md); the environment wins in Docker deployments.
+
+[broker]
+host = "127.0.0.1"
+port = 1883
+# Site is the second topic level: furnace/<site>/<device>/...
+site = "lab"
+
+# TLS: point ca_file at the CA that signed the broker certificate and set
+# tls = true. For a private CA, ship that CA only.
+tls = false
+# ca_file = "/etc/ssl/certs/furnace-ca.pem"
+
+username = "bridge"
+password = "change-me"
+
+[api]
+# The existing PHP API; the bridge is a drop-in replacement for the HTTP
+# uploader in the firmware.
+url = "http://127.0.0.1:8000/api/ingest"
+key = ""
+
+[bridge]
+client_id = "furnace-bridge"
+# Batches held while the API is down. 500 batches × 600 frames is about
+# 8 hours of four-furnace data at 10 Hz per furnace; raise for longer outages.
+queue_limit = 500
+request_timeout = 10
+# Seconds between retained status publishes.
+status_interval = 15
+ack_qos = 1
+log_level = "INFO"

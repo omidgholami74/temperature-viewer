@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Furnace MQTT — Design System</title>
+  <meta name="description" content="Living style guide for the Furnace MQTT dashboard: tokens, type, components and states.">
+  <link rel="stylesheet" href="./assets/css/tokens.css">
+  <link rel="stylesheet" href="./assets/css/app.css">
+  <style>
+    .swatches { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+    .swatch { border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; background: var(--surface-2); }
+    .swatch__chip { height: 54px; background: var(--swatch); }
+    .swatch__label { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; font-size: var(--text-sm); }
+    .swatch__label code { color: var(--text-3); font-family: var(--font-mono); font-size: var(--text-xs); }
+    .stack { display: grid; gap: var(--space-4); }
+    .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+    .type-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); padding: 10px 0; border-bottom: 1px solid var(--line-faint); }
+    .type-row code { color: var(--text-3); font-family: var(--font-mono); font-size: var(--text-xs); }
+    .code { padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-2); color: var(--text-2); font-family: var(--font-mono); font-size: var(--text-sm); white-space: pre-wrap; }
+    .page-nav { display: flex; flex-wrap: wrap; gap: 8px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <svg class="brand__mark" viewBox="0 0 40 40" aria-hidden="true">
+          <rect x="1" y="1" width="38" height="38" rx="11" fill="none" stroke="currentColor" stroke-opacity=".35"/>
+          <path d="M9 27l7-15 7 15 8-15" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div>
+          <div class="brand__title">Furnace MQTT — Design System</div>
+          <div class="brand__subtitle">Living reference for tokens and components</div>
+        </div>
+      </div>
+      <nav class="page-nav" aria-label="Sections">
+        <a class="button" href="#tokens">Tokens</a>
+        <a class="button" href="#type">Type</a>
+        <a class="button" href="#components">Components</a>
+        <a class="button" href="#states">States</a>
+        <button class="button" type="button" id="theme">Theme</button>
+      </nav>
+    </header>
+
+    <main class="stack">
+      <section class="panel" id="tokens">
+        <div class="panel__head">
+          <div>
+            <span class="eyebrow">01 · Foundations</span>
+            <h2 class="panel__title">Colour</h2>
+          </div>
+          <p class="metric__meta">Dark is the default; light swaps the same roles.</p>
+        </div>
+
+        <div class="swatches">
+          <div class="swatch"><div class="swatch__chip" style="--swatch: var(--accent)"></div><div class="swatch__label"><span>Accent</span><code>--accent</code></div></div>
+          <div class="swatch"><div class="swatch__chip" style="--swatch: var(--info)"></div><div class="swatch__label"><span>Info</span><code>--info</code></div></div>
+          <div class="swatch"><div class="swatch__chip" style="--swatch: var(--warn)"></div><div class="swatch__label"><span>Warn</span><code>--warn</code></div></div>
+          <div class="swatch"><div class="swatch__chip" style="--swatch: var(--danger)"></div><div class="swatch__label"><span>Danger</span><code>--danger</code></div></div>
+          <div class="swatch"><div class="swatch__chip" style="--swatch: var(--ch-1)"></div><div class="swatch__label"><span>Channel 1</span><code>--ch-1</code></div></div>
+          <div class="swatch"><div class="swatch__chip" style="--swatch: var(--ch-2)"></div><div class="swatch__label"><span>Channel 2</span><code>--ch-2</code></div></div>
+          <div class="swatch"><div class="swatch__chip" style="--swatch: var(--ch-3)"></div><div class="swatch__label"><span>Channel 3</span><code>--ch-3</code></div></div>
+          <div class="swatch"><div class="swatch__chip" style="--swatch: var(--ch-4)"></div><div class="swatch__label"><span>Channel 4</span><code>--ch-4</code></div></div>
+        </div>
+      </section>
+
+      <section class="panel" id="type">
+        <div class="panel__head">
+          <div>
+            <span class="eyebrow">02 · Foundations</span>
+            <h2 class="panel__title">Type scale</h2>
+          </div>
+          <p class="metric__meta">Inter for prose, a mono face for every number.</p>
+        </div>
+
+        <div class="type-row"><span style="font-size: var(--text-2xl); font-weight: 600">Furnace temperature</span><code>--text-2xl</code></div>
+        <div class="type-row"><span style="font-size: var(--text-metric); font-family: var(--font-mono); font-weight: 600">1024.6 °C</span><code>--text-metric / mono</code></div>
+        <div class="type-row"><span style="font-size: var(--text-lg)">Panel title</span><code>--text-lg</code></div>
+        <div class="type-row"><span style="font-size: var(--text-md)">Body copy and table cells</span><code>--text-md</code></div>
+        <div class="type-row"><span style="font-size: var(--text-sm); color: var(--text-2)">Secondary metadata</span><code>--text-sm</code></div>
+        <div class="type-row"><span style="font-size: var(--text-xs); letter-spacing: .12em; text-transform: uppercase; color: var(--text-3)">EYEBROW LABEL</span><code>--text-xs</code></div>
+      </section>
+
+      <section class="panel" id="components">
+        <div class="panel__head">
+          <div>
+            <span class="eyebrow">03 · Components</span>
+            <h2 class="panel__title">Controls and data display</h2>
+          </div>
+        </div>
+
+        <div class="stack">
+          <div class="row">
+            <span class="chip chip--live">Live</span>
+            <span class="chip chip--delayed">Held</span>
+            <span class="chip chip--offline">Offline</span>
+            <span class="chip">Neutral</span>
+          </div>
+
+          <div class="row">
+            <button class="button" type="button">Default</button>
+            <button class="button" type="button" aria-pressed="true">Selected</button>
+            <select class="select"><option>Device selector</option></select>
+          </div>
+
+          <div class="metrics">
+            <div class="metric"><span class="metric__label">Live rate</span><b class="metric__value">10.0</b><span class="metric__meta">frames / second</span></div>
+            <div class="metric"><span class="metric__label">Frames</span><b class="metric__value">154 220</b><span class="metric__meta">since page load</span></div>
+          </div>
+
+          <div class="cards">
+            <article class="furnace-card">
+              <header class="furnace-card__head"><span class="furnace-card__name">Furnace 1</span><span class="chip chip--live">live</span></header>
+              <p class="furnace-card__value"><span>1024.6</span><span class="furnace-card__unit">°C</span></p>
+              <footer class="furnace-card__foot"><span>just now</span></footer>
+            </article>
+            <article class="furnace-card is-held">
+              <header class="furnace-card__head"><span class="furnace-card__name">Furnace 2</span><span class="chip chip--delayed">held</span></header>
+              <p class="furnace-card__value"><span>998.2</span><span class="furnace-card__unit">°C</span></p>
+              <footer class="furnace-card__foot"><span>4.2 s ago</span></footer>
+            </article>
+          </div>
+
+          <div class="code">furnace/lab/kiln-1/samples   {"v":1,"seq":42,"at":1730000000000,"frames":[[12000,[1024.6,998.2,1010.4,1002.1],[0,0,0,0]]]}
+furnace/lab/kiln-1/ack      {"v":1,"seq":42,"ok":true,"accepted":1,"error":null}</div>
+        </div>
+      </section>
+
+      <section class="panel" id="states">
+        <div class="panel__head">
+          <div>
+            <span class="eyebrow">04 · Behaviour</span>
+            <h2 class="panel__title">State rules</h2>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>State</th><th>Trigger</th><th>Treatment</th></tr></thead>
+            <tbody>
+              <tr><td class="table__mono">live</td><td>Frame newer than 2.5 s</td><td>Accent chip, full-contrast value</td></tr>
+              <tr><td class="table__mono">held</td><td>No reading for 2.5 s</td><td>Muted value, <em>held</em> marker, warn chip</td></tr>
+              <tr><td class="table__mono">offline</td><td>Device state says offline or nothing received</td><td>Danger chip, dashes, no fabricated numbers</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    document.getElementById('theme').addEventListener('click', () => {
+      const root = document.documentElement;
+      root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    });
+  </script>
+</body>
+</html>

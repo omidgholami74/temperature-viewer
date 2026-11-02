@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Furnace MQTT Monitor</title>
+  <meta name="description" content="Live four-channel furnace telemetry over MQTT with a continuous, gap-free chart.">
+  <meta name="theme-color" content="#04080c">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b131d'/%3E%3Cpath d='M7 22l6-12 6 12 6-12' fill='none' stroke='%2338e0a5' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./assets/css/tokens.css">
+  <link rel="stylesheet" href="./assets/css/app.css">
+</head>
+<body>
+  <a class="sr-only" href="#main">Skip to content</a>
+
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <svg class="brand__mark" viewBox="0 0 40 40" aria-hidden="true">
+          <rect x="1" y="1" width="38" height="38" rx="11" fill="none" stroke="currentColor" stroke-opacity=".35"/>
+          <path d="M9 27l7-15 7 15 8-15" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div>
+          <div class="brand__title">Furnace MQTT Monitor</div>
+          <div class="brand__subtitle">Razi Applied Science Foundation · live telemetry over MQTT</div>
+        </div>
+      </div>
+
+      <div class="topbar__tools">
+        <span class="chip chip--delayed" data-role="connection">Connecting</span>
+        <label class="sr-only" for="device">Device</label>
+        <select class="select" id="device" data-role="device" disabled>
+          <option>No device yet</option>
+        </select>
+        <button class="button button--icon" type="button" data-role="theme" aria-label="Toggle colour theme" title="Toggle colour theme">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="metrics" aria-label="Broker summary">
+        <div class="metric">
+          <span class="metric__label">Frames received</span>
+          <b class="metric__value" data-role="frames">0</b>
+          <span class="metric__meta" data-role="frames-meta">waiting for the broker</span>
+        </div>
+        <div class="metric">
+          <span class="metric__label">Live rate</span>
+          <b class="metric__value" data-role="rate">0.0</b>
+          <span class="metric__meta">frames / second</span>
+        </div>
+        <div class="metric">
+          <span class="metric__label">Stored by bridge</span>
+          <b class="metric__value" data-role="stored">0</b>
+          <span class="metric__meta" data-role="stored-meta">not connected</span>
+        </div>
+        <div class="metric">
+          <span class="metric__label">Dropped / duplicate</span>
+          <b class="metric__value" data-role="loss">0 / 0</b>
+          <span class="metric__meta">bridge counters</span>
+        </div>
+      </section>
+
+      <section class="cards" aria-label="Furnace temperatures">
+        <article class="furnace-card" data-channel="0">
+          <header class="furnace-card__head">
+            <span class="furnace-card__name">Furnace 1</span>
+            <span class="chip" data-role="state">offline</span>
+          </header>
+          <p class="furnace-card__value"><span data-role="value">--.-</span><span class="furnace-card__unit">°C</span></p>
+          <footer class="furnace-card__foot">
+            <span data-role="age">no reading</span>
+          </footer>
+        </article>
+
+        <article class="furnace-card" data-channel="1">
+          <header class="furnace-card__head">
+            <span class="furnace-card__name">Furnace 2</span>
+            <span class="chip" data-role="state">offline</span>
+          </header>
+          <p class="furnace-card__value"><span data-role="value">--.-</span><span class="furnace-card__unit">°C</span></p>
+          <footer class="furnace-card__foot">
+            <span data-role="age">no reading</span>
+          </footer>
+        </article>
+
+        <article class="furnace-card" data-channel="2">
+          <header class="furnace-card__head">
+            <span class="furnace-card__name">Furnace 3</span>
+            <span class="chip" data-role="state">offline</span>
+          </header>
+          <p class="furnace-card__value"><span data-role="value">--.-</span><span class="furnace-card__unit">°C</span></p>
+          <footer class="furnace-card__foot">
+            <span data-role="age">no reading</span>
+          </footer>
+        </article>
+
+        <article class="furnace-card" data-channel="3">
+          <header class="furnace-card__head">
+            <span class="furnace-card__name">Furnace 4</span>
+            <span class="chip" data-role="state">offline</span>
+          </header>
+          <p class="furnace-card__value"><span data-role="value">--.-</span><span class="furnace-card__unit">°C</span></p>
+          <footer class="furnace-card__foot">
+            <span data-role="age">no reading</span>
+          </footer>
+        </article>
+      </section>
+
+      <section class="panel" aria-labelledby="chart-title">
+        <div class="panel__head">
+          <div>
+            <span class="eyebrow">Live chart</span>
+            <h2 class="panel__title" id="chart-title">Channel temperatures</h2>
+          </div>
+          <div class="legend" data-role="legend"></div>
+        </div>
+
+        <div class="chart-frame">
+          <canvas id="chart" role="img" aria-label="Live temperature chart for four furnaces"></canvas>
+          <div class="empty" data-role="empty">
+            <strong>Waiting for the first frame</strong>
+            <span>Publish to <code>furnace/&lt;site&gt;/&lt;device&gt;/samples</code></span>
+          </div>
+          <div class="chart-tooltip" data-role="tooltip" hidden></div>
+        </div>
+      </section>
+
+      <div class="grid-two">
+        <section class="panel" aria-labelledby="devices-title">
+          <div class="panel__head">
+            <div>
+              <span class="eyebrow">Fleet</span>
+              <h2 class="panel__title" id="devices-title">Devices</h2>
+            </div>
+            <span class="chip" data-role="device-count">0 online</span>
+          </div>
+
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">Device</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Frames</th>
+                  <th scope="col">Last seen</th>
+                  <th scope="col">Faults</th>
+                </tr>
+              </thead>
+              <tbody data-role="devices"></tbody>
+            </table>
+          </div>
+          <p class="metric__meta" style="margin-top: 12px" data-role="devices-empty">No device has published yet.</p>
+        </section>
+
+        <section class="panel" aria-labelledby="log-title">
+          <div class="panel__head">
+            <div>
+              <span class="eyebrow">Transport</span>
+              <h2 class="panel__title" id="log-title">Recent messages</h2>
+            </div>
+            <span class="chip" data-role="broker">broker</span>
+          </div>
+          <ul class="log" data-role="log"></ul>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="./assets/js/mqtt.min.js"></script>
+  <script src="./assets/config.js"></script>
+  <script src="./assets/js/app.js"></script>
+</body>
+</html>

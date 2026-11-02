@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 600" width="960" height="600" role="img" aria-label="Design system board: colour roles, type scale, spacing, chips, metric and furnace card states.">
+  <defs>
+    <linearGradient id="dbbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0a121c"/>
+      <stop offset="1" stop-color="#050a10"/>
+    </linearGradient>
+    <style>
+      .td { font-family: Inter, "Segoe UI", system-ui, sans-serif; }
+      .md { font-family: "SFMono-Regular", Menlo, Consolas, monospace; }
+      .hd { fill: #eaf2fb; font-size: 13px; font-weight: 600; }
+      .sd { fill: #6d8198; font-size: 10px; }
+      .ld { fill: #a6b8cb; font-size: 11px; }
+    </style>
+  </defs>
+
+  <rect width="960" height="600" fill="url(#dbbg)"/>
+  <text x="36" y="44" class="td" fill="#eaf2fb" font-size="21" font-weight="600">Furnace MQTT — design board</text>
+  <text x="36" y="66" class="td sd" font-size="11">Colour roles, type ramp, spacing and the three card states. Source of truth: dashboard/assets/css/tokens.css</text>
+
+  <!-- colour -->
+  <text x="36" y="104" class="td sd" font-size="10" letter-spacing="2">COLOUR ROLES</text>
+  <g>
+    <rect x="36" y="116" width="88" height="54" rx="8" fill="#38e0a5"/>
+    <text x="36" y="186" class="td ld">accent</text>
+    <text x="36" y="200" class="td md sd">#38e0a5</text>
+
+    <rect x="136" y="116" width="88" height="54" rx="8" fill="#49bdf0"/>
+    <text x="136" y="186" class="td ld">info</text>
+    <text x="136" y="200" class="td md sd">#49bdf0</text>
+
+    <rect x="236" y="116" width="88" height="54" rx="8" fill="#f3b45a"/>
+    <text x="236" y="186" class="td ld">warn</text>
+    <text x="236" y="200" class="td md sd">#f3b45a</text>
+
+    <rect x="336" y="116" width="88" height="54" rx="8" fill="#ff6b78"/>
+    <text x="336" y="186" class="td ld">danger</text>
+    <text x="336" y="200" class="td md sd">#ff6b78</text>
+
+    <rect x="436" y="116" width="88" height="54" rx="8" fill="#38e0a5" opacity=".9"/>
+    <rect x="446" y="116" width="88" height="54" rx="8" fill="#49bdf0" opacity=".9"/>
+    <rect x="456" y="116" width="88" height="54" rx="8" fill="#f3b45a" opacity=".9"/>
+    <rect x="466" y="116" width="66" height="54" rx="8" fill="#b491ff" opacity=".9"/>
+    <text x="436" y="186" class="td ld">channels 1–4</text>
+    <text x="436" y="200" class="td sd">series identity</text>
+
+    <rect x="576" y="116" width="348" height="54" rx="8" fill="#0d1722" stroke="#26394e"/>
+    <text x="592" y="137" class="td ld">Surfaces are translucent; lines are 12 % ink.</text>
+    <text x="592" y="157" class="td sd">Text: #eaf2fb / #a6b8cb / #6d8198 · AA on every panel.</text>
+  </g>
+
+  <!-- type -->
+  <text x="36" y="238" class="td sd" font-size="10" letter-spacing="2">TYPE RAMP</text>
+  <g>
+    <text x="36" y="272" class="td" fill="#eaf2fb" font-size="26" font-weight="600">1024.6 °C</text>
+    <text x="230" y="268" class="td md sd">metric · 26–38px · mono</text>
+
+    <text x="36" y="302" class="td" fill="#eaf2fb" font-size="16" font-weight="600">Panel title</text>
+    <text x="230" y="300" class="td md sd">lg · 17px · sans 600</text>
+
+    <text x="36" y="330" class="td" fill="#a6b8cb" font-size="13">Body and table cells</text>
+    <text x="230" y="328" class="td md sd">md · 14px</text>
+
+    <text x="36" y="356" class="td" fill="#6d8198" font-size="11" letter-spacing="1.6">EYEBROW · CHIP · AXIS</text>
+    <text x="230" y="354" class="td md sd">xs · 10px · 0.12em tracking</text>
+
+    <text x="478" y="268" class="td ld">Every number uses tabular figures.</text>
+    <text x="478" y="288" class="td ld">Sans for prose, mono for data:</text>
+    <text x="478" y="308" class="td md" fill="#38e0a5" font-size="11">0123456789 · 12:04:31.20</text>
+  </g>
+
+  <!-- spacing -->
+  <text x="36" y="390" class="td sd" font-size="10" letter-spacing="2">SPACING · 4PX BASE</text>
+  <g>
+    <rect x="36" y="402" width="4" height="18" fill="#38e0a5"/>
+    <rect x="52" y="398" width="8" height="22" fill="#38e0a5" opacity=".9"/>
+    <rect x="72" y="394" width="12" height="26" fill="#38e0a5" opacity=".8"/>
+    <rect x="96" y="390" width="16" height="30" fill="#38e0a5" opacity=".7"/>
+    <rect x="124" y="386" width="20" height="34" fill="#38e0a5" opacity=".6"/>
+    <rect x="156" y="382" width="24" height="38" fill="#38e0a5" opacity=".5"/>
+    <rect x="192" y="378" width="32" height="42" fill="#38e0a5" opacity=".4"/>
+    <rect x="236" y="374" width="40" height="46" fill="#38e0a5" opacity=".3"/>
+    <text x="36" y="440" class="td sd">4 · 8 · 12 · 16 · 20 · 24 · 32 · 40</text>
+
+    <text x="330" y="402" class="td sd" font-size="10" letter-spacing="2">RADIUS</text>
+    <rect x="330" y="412" width="46" height="26" rx="8" fill="#101b28" stroke="#26394e"/>
+    <rect x="386" y="412" width="46" height="26" rx="12" fill="#101b28" stroke="#26394e"/>
+    <rect x="442" y="412" width="46" height="26" rx="18" fill="#101b28" stroke="#26394e"/>
+    <rect x="498" y="412" width="46" height="26" rx="999" fill="#101b28" stroke="#26394e"/>
+    <text x="330" y="456" class="td sd">8 · 12 · 18 · pill</text>
+
+    <text x="590" y="402" class="td sd" font-size="10" letter-spacing="2">FOCUS</text>
+    <rect x="590" y="412" width="120" height="30" rx="8" fill="#0f1a26" stroke="#38e0a5" stroke-width="2"/>
+    <text x="720" y="432" class="td sd">2px accent, 2px offset</text>
+  </g>
+
+  <!-- components -->
+  <text x="36" y="496" class="td sd" font-size="10" letter-spacing="2">STATES · LIVE / HELD / OFFLINE</text>
+  <g>
+    <rect x="36" y="508" width="210" height="70" rx="12" fill="rgba(15,25,38,.9)" stroke="#26394e"/>
+    <rect x="36" y="508" width="210" height="2" fill="#38e0a5"/>
+    <circle cx="56" cy="528" r="4" fill="#38e0a5"/>
+    <text x="68" y="532" class="td hd">Furnace 1</text>
+    <rect x="176" y="518" width="54" height="18" rx="9" fill="rgba(56,224,165,.12)" stroke="rgba(56,224,165,.35)"/>
+    <text x="186" y="531" class="td" fill="#38e0a5" font-size="9">LIVE</text>
+    <text x="52" y="566" class="td md" fill="#eaf2fb" font-size="20" font-weight="600">1024.6 °C</text>
+
+    <rect x="262" y="508" width="210" height="70" rx="12" fill="rgba(15,25,38,.9)" stroke="#26394e"/>
+    <rect x="262" y="508" width="210" height="2" fill="#49bdf0"/>
+    <circle cx="282" cy="528" r="4" fill="#49bdf0"/>
+    <text x="294" y="532" class="td hd">Furnace 2</text>
+    <rect x="402" y="518" width="54" height="18" rx="9" fill="rgba(243,180,90,.14)" stroke="rgba(243,180,90,.35)"/>
+    <text x="412" y="531" class="td" fill="#f3b45a" font-size="9">HELD</text>
+    <text x="278" y="566" class="td md" fill="#a6b8cb" font-size="20" font-weight="600">998.2 °C</text>
+
+    <rect x="488" y="508" width="210" height="70" rx="12" fill="rgba(15,25,38,.9)" stroke="#26394e"/>
+    <rect x="488" y="508" width="210" height="2" fill="#f3b45a"/>
+    <circle cx="508" cy="528" r="4" fill="#f3b45a"/>
+    <text x="520" y="532" class="td hd">Furnace 3</text>
+    <rect x="628" y="518" width="56" height="18" rx="9" fill="rgba(255,107,120,.12)" stroke="rgba(255,107,120,.32)"/>
+    <text x="638" y="531" class="td" fill="#ff6b78" font-size="9">OFFLINE</text>
+    <text x="504" y="566" class="td md" fill="#eaf2fb" font-size="20" font-weight="600">--.- °C</text>
+
+    <rect x="714" y="508" width="210" height="70" rx="12" fill="rgba(15,25,38,.9)" stroke="#26394e"/>
+    <text x="732" y="530" class="td ld">Held = last good value, muted</text>
+    <text x="732" y="548" class="td sd">Chart holds it too, so the line</text>
+    <text x="732" y="564" class="td sd">never breaks. Offline = dashes.</text>
+  </g>
+</svg>

@@ -1,0 +1,132 @@
+/* =========================================================================
+   Furnace MQTT — design tokens
+   The single source of truth for colour, type, space, radius, elevation and
+   motion. Nothing in app.css hard-codes a value that belongs here.
+   ========================================================================= */
+
+:root {
+  color-scheme: dark;
+
+  /* Neutral surfaces, darkest to lightest. Panels are translucent so the
+     ambient page gradient shows through. */
+  --bg-0: #04080c;
+  --bg-1: #070d14;
+  --surface-1: rgba(13, 22, 33, 0.78);
+  --surface-2: rgba(18, 30, 44, 0.86);
+  --surface-3: #16273a;
+  --surface-solid: #0b131d;
+
+  /* Lines */
+  --line: rgba(146, 173, 202, 0.12);
+  --line-strong: rgba(146, 173, 202, 0.22);
+  --line-faint: rgba(146, 173, 202, 0.06);
+
+  /* Text */
+  --text-1: #eaf2fb;
+  --text-2: #a6b8cb;
+  --text-3: #6d8198;
+
+  /* Brand + semantic */
+  --accent: #38e0a5;
+  --accent-soft: rgba(56, 224, 165, 0.12);
+  --accent-line: rgba(56, 224, 165, 0.34);
+  --info: #49bdf0;
+  --info-soft: rgba(73, 189, 240, 0.12);
+  --warn: #f3b45a;
+  --warn-soft: rgba(243, 180, 90, 0.14);
+  --danger: #ff6b78;
+  --danger-soft: rgba(255, 107, 120, 0.12);
+
+  /* Data series — also used for card borders and legend dots */
+  --ch-1: #38e0a5;
+  --ch-2: #49bdf0;
+  --ch-3: #f3b45a;
+  --ch-4: #b491ff;
+
+  /* Typography */
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SFMono-Regular", ui-monospace, "JetBrains Mono", "Roboto Mono", Menlo, Consolas, monospace;
+
+  --text-xs: 10px;
+  --text-sm: 12px;
+  --text-md: 14px;
+  --text-lg: 17px;
+  --text-xl: clamp(20px, 1.8vw, 24px);
+  --text-2xl: clamp(24px, 2.4vw, 30px);
+  --text-metric: clamp(26px, 3vw, 38px);
+
+  /* 4 px spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-pill: 999px;
+
+  --shadow-panel:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 28px 60px -40px rgba(0, 0, 0, 0.95);
+  --shadow-raised: 0 18px 32px -24px rgba(0, 0, 0, 0.9);
+  --glow-accent: 0 0 0 1px var(--accent-line), 0 0 32px -10px rgba(56, 224, 165, 0.45);
+
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --duration: 170ms;
+
+  --grid-size: 72px;
+  --page-bg:
+    radial-gradient(1100px 620px at 12% -12%, rgba(56, 224, 165, 0.09), transparent 60%),
+    radial-gradient(900px 520px at 96% -6%, rgba(73, 189, 240, 0.08), transparent 56%),
+    linear-gradient(180deg, #070d14 0%, #050a10 50%, #04080c 100%);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-0: #eef3f9;
+  --bg-1: #f6f9fd;
+  --surface-1: rgba(255, 255, 255, 0.86);
+  --surface-2: rgba(255, 255, 255, 0.94);
+  --surface-3: #e9f0f8;
+  --surface-solid: #ffffff;
+
+  --line: rgba(24, 48, 74, 0.12);
+  --line-strong: rgba(24, 48, 74, 0.2);
+  --line-faint: rgba(24, 48, 74, 0.06);
+
+  --text-1: #122033;
+  --text-2: #42576c;
+  --text-3: #6d8299;
+
+  --accent: #0f9f70;
+  --accent-soft: rgba(15, 159, 112, 0.12);
+  --accent-line: rgba(15, 159, 112, 0.32);
+  --info: #127cc0;
+  --info-soft: rgba(18, 124, 192, 0.12);
+  --warn: #a9660a;
+  --warn-soft: rgba(169, 102, 10, 0.14);
+  --danger: #d62d44;
+  --danger-soft: rgba(214, 45, 68, 0.1);
+
+  --ch-1: #0e9c6e;
+  --ch-2: #147fc2;
+  --ch-3: #b06d0b;
+  --ch-4: #7a4fd0;
+
+  --shadow-panel:
+    inset 0 1px 0 #ffffff,
+    0 24px 50px -38px rgba(20, 45, 72, 0.4);
+  --shadow-raised: 0 18px 32px -26px rgba(20, 45, 72, 0.45);
+  --glow-accent: 0 0 0 1px var(--accent-line), 0 0 26px -12px rgba(15, 159, 112, 0.4);
+
+  --page-bg:
+    radial-gradient(1000px 560px at 8% -14%, rgba(15, 159, 112, 0.1), transparent 60%),
+    radial-gradient(880px 520px at 98% -6%, rgba(18, 128, 196, 0.09), transparent 58%),
+    linear-gradient(180deg, #f7fafd 0%, #eef3f9 55%, #e9eff7 100%);
+}

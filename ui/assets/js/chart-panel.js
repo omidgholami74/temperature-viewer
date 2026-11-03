@@ -1,7 +1,10 @@
 import { formatAxisTick, formatTemp, formatTimestamp } from './format.js';
 
-const MIN_WINDOW_MS = 60_000;
-const DEFAULT_WINDOW_MS = 600_000;
+const MIN_WINDOW_MS = 60000;
+const DEFAULT_WINDOW_MS = 600000;
+// A hard ceiling independent of the visible window. "All" can otherwise grow
+// the live buffers without bound on a board that runs for days.
+const MAX_POINTS = 2400;
 
 /**
  * Four line series on a linear time axis.
@@ -181,7 +184,7 @@ export class TemperatureChart {
   /** Set the visible time window in milliseconds. */
   setWindow(windowMs, { render = true } = {}) {
     this.windowMs = Math.max(1, Number(windowMs) || DEFAULT_WINDOW_MS);
-    this.#trim();
+    this.trim();
 
     if (render) {
       this.render();
@@ -195,11 +198,11 @@ export class TemperatureChart {
       this.lastGood[channel] = null;
 
       for (const point of points) {
-        buffer.push({ x: point.t, y: this.#reading(channel, point.v?.[channel]) });
+        buffer.push({ x: point.t, y: this.reading(channel, point.v?.[channel]) });
       }
     });
 
-    this.#trim();
+    this.trim();
     this.render();
   }
 
@@ -213,11 +216,12 @@ export class TemperatureChart {
       }
 
       this.buffers.forEach((buffer, channel) => {
-        buffer.push({ x: sample.t_ms, y: this.#reading(channel, sample.temps?.[channel]) });
+        buffer.push({ x: sample.t_ms, y: this.reading(channel, sample.temps?.[channel]) });
       });
     }
 
-    this.#trim();
+    this.trim();
+    this.cap();
     this.render();
   }
 
@@ -237,7 +241,7 @@ export class TemperatureChart {
    * A faulted frame has no temperature, so the series holds the last good
    * reading: the curve runs on instead of breaking at every fault.
    */
-  #reading(channel, raw) {
+  reading(channel, raw) {
     const numeric = raw === null || raw === undefined ? Number.NaN : Number(raw);
 
     // -1000 is the firmware's fault sentinel. Plotting it would dive the whole
@@ -294,7 +298,7 @@ export class TemperatureChart {
     this.chart.update('none');
   }
 
-  #trim() {
+  trim() {
     const latest = this.buffers[0].length
       ? this.buffers[0][this.buffers[0].length - 1].x
       : 0;
@@ -313,6 +317,38 @@ export class TemperatureChart {
 
       if (drop > 0) {
         buffer.splice(0, drop);
+      }
+    }
+  }
+
+  /**
+   * Keep the oldest-to-newest shape while bounding memory. A one-in-N
+   * decimation is enough for a long window and keeps the newest point exact;
+   * the periodic history reload replaces it with server-side buckets anyway.
+   */
+  cap() {
+    for (const buffer of this.buffers) {
+      if (buffer.length <= MAX_POINTS) {
+        continue;
+      }
+
+      const stride = Math.ceil(buffer.length / MAX_POINTS);
+      const reduced = [];
+
+      for (let index = 0; index < buffer.length; index += stride) {
+        reduced.push(buffer[index]);
+      }
+
+      const newest = buffer[buffer.length - 1];
+
+      if (reduced[reduced.length - 1] !== newest) {
+        reduced.push(newest);
+      }
+
+      buffer.length = 0;
+
+      for (const point of reduced) {
+        buffer.push(point);
       }
     }
   }

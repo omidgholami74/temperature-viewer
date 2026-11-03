@@ -418,7 +418,7 @@ function failureText() {
 function updateStatus() {
   const payload = state.lastPayload;
 
-  if (!payload || !state.latest) {
+  if (!payload) {
     const failed = state.failures > 0;
     el.status.dataset.state = failed ? 'offline' : 'waiting';
     setText(el.statusLabel, failed ? 'Backend offline' : 'Connecting');
@@ -426,20 +426,33 @@ function updateStatus() {
     // it failed: wrong scheme, missing CORS header or no answer at all.
     setText(el.statusMeta, failed ? failureText() : 'API not reached yet');
     setText(el.age, '—');
+  } else if (!state.latest) {
+    const failed = state.failures > 0;
+    el.status.dataset.state = failed ? 'offline' : 'waiting';
+    setText(el.statusLabel, failed ? 'Backend offline' : 'Waiting for samples');
+    setText(
+      el.statusMeta,
+      failed ? failureText() : payload.run ? 'API connected · no sample yet' : 'API connected · no active run',
+    );
+    setText(el.age, '—');
   } else {
     const age = sampleAge();
-    const tone = state.failures > 0 || age > 15000
+    const apiDown = state.failures > 0;
+    const tone = apiDown || age > 15000
       ? 'offline'
       : age > 2500
         ? 'delayed'
         : 'live';
+    const label = apiDown
+      ? 'API offline'
+      : age > 15000
+        ? 'No samples'
+        : age > 2500
+          ? 'Delayed'
+          : 'Live';
 
     el.status.dataset.state = tone;
-
-    setText(
-      el.statusLabel,
-      tone === 'live' ? 'Live' : tone === 'delayed' ? 'Delayed' : 'No signal',
-    );
+    setText(el.statusLabel, label);
     setText(el.statusMeta, `last sample ${formatAge(age)}`);
     setText(el.age, formatAge(age));
   }
@@ -452,7 +465,10 @@ function updateStatus() {
 
 function updateEmptyState() {
   if (el.empty) {
-    el.empty.hidden = Boolean(state.latest) && Boolean(chart);
+    // A run can be active before its first sample is stored, and a chart that
+    // failed to construct must keep its error visible rather than looking like
+    // a live but empty plot.
+    el.empty.hidden = Boolean(chart) && chart.pointCount > 0;
   }
 }
 
@@ -506,7 +522,7 @@ function applyPayload(payload) {
       temps: noiseFilter.process(sample.temps),
     }));
     chart?.appendSamples(filteredSamples);
-    state.filteredLatest = filteredSamples.at(-1) ?? state.filteredLatest;
+    state.filteredLatest = filteredSamples[filteredSamples.length - 1] ?? state.filteredLatest;
   }
 
   if (payload.latest) {
@@ -765,11 +781,18 @@ async function loadDashboardSettings() {
   }
 }
 
-lightQuery.addEventListener('change', () => {
+function handleThemeChange() {
   if (state.theme === 'system') {
     applyTheme('system', { persist: false });
   }
-});
+}
+
+// Safari before 14 only has the deprecated addListener form.
+if (typeof lightQuery.addEventListener === 'function') {
+  lightQuery.addEventListener('change', handleThemeChange);
+} else if (typeof lightQuery.addListener === 'function') {
+  lightQuery.addListener(handleThemeChange);
+}
 
 /* --- settings dialog ---------------------------------------------------- */
 
@@ -1303,7 +1326,7 @@ async function startNewRun() {
 
 function registerWorker() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch((error) => {
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch((error) => {
       // Live data still works without a worker; say nothing on screen.
       console.warn('[sw]', error.message);
     });

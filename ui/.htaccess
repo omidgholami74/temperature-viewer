@@ -1,0 +1,17 @@
+# Cache policy for the static dashboard.
+#
+# A deployed fix must reach the browser on the next visit, not after a stale
+# service-worker or index.html copy expires. API responses are not served from
+# this directory, so they are unaffected.
+<IfModule mod_headers.c>
+    <FilesMatch "^(sw|index|admin|config)\.(js|html)$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+    </FilesMatch>
+
+    Header set X-Content-Type-Options "nosniff"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# Do not add an HTTPS redirect here until AutoSSL covers both furnace
+# hostnames; see ../docs/https.md before changing this file.

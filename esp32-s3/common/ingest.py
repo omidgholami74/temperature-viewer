@@ -199,7 +199,13 @@ class Ingest:
         return overflow
 
     def flush(self):
-        """Send everything queued. Returns True when the queue is empty."""
+        """Send everything queued. Returns True when the queue is empty.
+
+        The batch is detached before the network call. If the upload fails it is
+        put back at the front, so a slow or failed request can never leave a
+        stale copy in the queue or drop newer samples through a list slice
+        race with the sampling thread.
+        """
         if not self.pending:
             return True
 
@@ -207,15 +213,17 @@ class Ingest:
             with self._guard():
                 chunk = self.pending[:MAX_SAMPLES_PER_REQUEST]
 
-            if not chunk:
-                break
+                if not chunk:
+                    break
+
+                del self.pending[:len(chunk)]
 
             if not self._send(chunk):
-                break
+                with self._guard():
+                    self.pending = chunk + self.pending
+                    self._trim()
 
-            with self._guard():
-                self.pending = self.pending[len(chunk):]
-                self._trim()
+                break
 
         return not self.pending
 

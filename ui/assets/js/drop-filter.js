@@ -8,36 +8,36 @@
 export class TemperatureDropFilter {
   constructor({ enabled = true, threshold = 60, baseline = [] } = {}) {
     this.enabled = Boolean(enabled);
-    this.threshold = this.#threshold(threshold);
-    this.previous = Array.from({ length: 4 }, (_, index) => this.#number(baseline[index]));
+    this.threshold = this.clampThreshold(threshold);
+    this.previous = Array.from({ length: 4 }, (_, index) => this.toNumber(baseline[index]));
     this.pending = [false, false, false, false];
   }
 
-  #threshold(value) {
+  clampThreshold(value) {
     const number = Number(value);
     return Number.isFinite(number) ? Math.min(95, Math.max(5, number)) : 60;
   }
 
-  #number(value) {
+  toNumber(value) {
     const number = Number(value);
     return value !== null && value !== undefined && Number.isFinite(number) ? number : null;
   }
 
   configure({ enabled = this.enabled, threshold = this.threshold } = {}) {
     this.enabled = Boolean(enabled);
-    this.threshold = this.#threshold(threshold);
+    this.threshold = this.clampThreshold(threshold);
     this.pending.fill(false);
   }
 
   reset(baseline = []) {
-    this.previous = Array.from({ length: 4 }, (_, index) => this.#number(baseline[index]));
+    this.previous = Array.from({ length: 4 }, (_, index) => this.toNumber(baseline[index]));
     this.pending.fill(false);
   }
 
   process(values = []) {
     const pendingAtStart = [...this.pending];
     return Array.from({ length: 4 }, (_, index) => {
-      const current = this.#number(values[index]);
+      const current = this.toNumber(values[index]);
       const previous = this.previous[index];
 
       if (current === null) {

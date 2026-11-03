@@ -306,7 +306,10 @@ phones keep the old HTML.
 4. **TLS** — an HTTPS page cannot call an HTTP API (mixed content), and an HTTPS
    API needs a certificate whose name matches `apitemp.futurefounderco.com`.
    Until both hosts have one, open the dashboard over `http://`; `config.js`
-   then uses the http API automatically.
+   then uses the http API automatically. The certificate must cover both
+   hostnames, not the host's shared `*.web-hosting.com` certificate. See
+   [docs/https.md](docs/https.md) for the cPanel AutoSSL steps and a
+   no-`-k` verification command.
 5. **Cron** — run `php backend/bin/maintenance.php --all` once a minute on the
    API host for rollups and retention.
 

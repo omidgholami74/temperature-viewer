@@ -244,6 +244,16 @@ class IngestTests(unittest.TestCase):
 
         self.assertNotIn("at", Recorder.received[0]["payload"]["samples"][0])
 
+    def test_flush_sends_configured_batches_not_the_whole_backlog(self):
+        client = self.make(BATCH_SIZE=3, BUFFER_LIMIT=20)
+
+        for step in range(10):
+            client.add(step * 100, [1, 2, 3, 4], [0, 0, 0, 0])
+
+        self.assertTrue(client.flush())
+        self.assertEqual([len(item["payload"]["samples"]) for item in Recorder.received], [3, 3, 3, 1])
+        self.assertEqual(client.pending, [])
+
     def test_unreachable_api_keeps_the_batch_for_a_retry(self):
         client = self.make(API_URL="http://127.0.0.1:1", BATCH_SIZE=1)
         client.add(100, [1, 2, 3, 4], [0, 0, 0, 0])
@@ -251,6 +261,26 @@ class IngestTests(unittest.TestCase):
         self.assertEqual(len(client.pending), 1)
         self.assertEqual(client.failures, 1)
         self.assertTrue(client.last_error)
+
+    def test_memory_error_trims_the_oldest_backlog(self):
+        client = self.make(BATCH_SIZE=10, BUFFER_LIMIT=100)
+
+        def out_of_memory(samples):
+            client.failures += 1
+            client.last_error = "[Errno 12] ENOMEM"
+            client._low_memory = True
+            client._retry_delay_ms = ingest.MEMORY_RETRY_MS
+            return False
+
+        client._send = out_of_memory
+
+        for step in range(90):
+            client.add(step * 100, [1, 2, 3, 4], [0, 0, 0, 0])
+
+        self.assertFalse(client.flush())
+        self.assertLessEqual(len(client.pending), ingest.MEMORY_LOW_WATER_SAMPLES)
+        self.assertGreater(client.dropped, 0)
+        self.assertEqual(client._retry_delay_ms, ingest.MEMORY_RETRY_MS)
 
     def test_rejected_payload_is_dropped_instead_of_blocking_the_queue(self):
         Recorder.status = 422

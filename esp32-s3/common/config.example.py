@@ -28,7 +28,9 @@ BATCH_SIZE = 10
 BACKGROUND_UPLOAD = True
 # Samples kept while the API is unreachable: 600 samples are one minute at
 # 10 Hz. Beyond this the oldest samples are dropped, so a long outage cannot
-# exhaust the board's RAM.
+# exhaust the board's RAM. If the heap is genuinely short (for example while
+# mbedTLS opens a connection), the firmware trims further to a small low-water
+# mark so the uploader can recover instead of failing with ENOMEM.
 BUFFER_LIMIT = 600
 
 # --- Time ----------------------------------------------------------------

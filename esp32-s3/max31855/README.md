@@ -90,9 +90,16 @@ ms,furnace1,furnace2,furnace3
   the median of the valid frames is kept, and an EMA
   (`NOISE_EMA_ALPHA = 0.35`) smooths the result. A single corrupt SPI frame —
   the usual cause of a sudden ±6 °C spike — is discarded instead of averaged
-  in, and values outside −270…1800 °C are treated as spikes. Tune
-  `NOISE_SAMPLES`, `NOISE_GAP_US` and `NOISE_EMA_ALPHA` at the top of
-  [`main.py`](main.py); five reads still fit the 100 ms slot.
+  in, and values outside −270…1800 °C are treated as spikes. At least three of
+  the five frames must be valid, so one lucky floating-bus frame cannot make a
+  disconnected furnace look alive. Tune `NOISE_SAMPLES`, `NOISE_GAP_US` and
+  `NOISE_EMA_ALPHA` at the top of [`main.py`](main.py); five reads still fit
+  the 100 ms slot.
+- **Frame validation.** MISO is pulled up while no MAX31855 is selected, so a
+  disconnected module normally reads `0xFFFFFFFF`. Frames with either reserved
+  bit set, or an internal cold-junction temperature outside −45…130 °C, are
+  rejected as read errors (`fault` 8) instead of being uploaded as plausible
+  furnace temperatures.
 - One frame per 100 ms, batched as described in the
   [ESP32-S3 README](../README.md#behaviour).
 
@@ -148,4 +155,5 @@ move the numbers with them. A faulted channel is never offset: it stays
 | `f` = 1 (open) in the CSV | Open thermocouple or a probe with an internal break — check with a multimeter (it should read close to 0 Ω). |
 | Temperature drops when the furnace heats | Reversed thermocouple polarity. |
 | Reading is constant 0 °C | `CS` stuck low or MISO shared with another device; check the soldered header. |
+| A disconnected channel still reads a plausible temperature | The MAX31855 is not selected, but floating MISO noise resembles a frame; the firmware pulls MISO up and requires three valid frames, so check the CS wire and module power first. |
 | Data goes stale on the dashboard | Wi-Fi dropped; the console prints retries and the buffer holds the last `BUFFER_LIMIT` samples. |

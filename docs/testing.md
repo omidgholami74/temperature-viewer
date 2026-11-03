@@ -12,14 +12,14 @@ retention, formatting), not every getter.
 | Backend smoke | `PHP_BIN=php bash backend/tests/smoke.sh` | Ingest, incremental live data, history, gap-capped `active_ms`, bounds, analysis, CSV exports, validation errors, CORS preflight, origin-checked reset, ingest key, maintenance |
 | Dashboard units | `node --test tests/` | Timer digits and axis/number formatting, API failure diagnostics, serial port parsing |
 | Fullstack single-origin | `bash fullstack/tests/smoke.sh` | One-origin dashboard, same-origin config, ingest/live/history, static assets and path traversal |
-| ESP32-S3 MicroPython | `python3 -m unittest discover -s esp32-s3/tests -v` | HTTP ingest client against a local server, RTD maths against IEC 60751 values, OTA manifest/staging/rollback, heartbeat commands, Wi-Fi override and the bundle publisher |
+| ESP32-S3 MicroPython | `python3 -m unittest discover -s esp32-s3/tests -v` | HTTP ingest client against a local server, RTD maths against IEC 60751 values, MAX31855 frame validation/quorum, OTA manifest/staging/rollback, heartbeat commands, Wi-Fi override and the bundle publisher |
 | Arduino/C++ | `g++ -std=c++17 …` via `esp32-s3/arduino/tests/run.sh` | MAX31855/MAX31865 decoding, CDC curve, JSON body |
 | Collector | `python3 -m unittest discover -s collector/tests -v` | CSV/JSON line parsing, checkpoint resume including the Windows rename fallback |
 | MQTT bridge | `python3 -m unittest discover -s MQTT/bridge/tests -v` | Topic grammar, payload validation, sentinel normalisation, dedupe, reboot detection, bounded queue, retry classification, acks, status |
 | MQTT transport | `python3 -m unittest discover -s MQTT/firmware/tests -v` | Batch encoding, retained will, QoS 1 publish, ack trimming, buffer overflow, reconnect bookkeeping |
 
 Counts at the time of writing: 33 bridge tests, 11 transport tests, 22
-dashboard/serial tests, 65 ESP32-S3 firmware tests and the collector suite. The
+dashboard/serial tests, 78 ESP32-S3 firmware tests and the collector suite. The
 backend smoke test needs PHP and `curl`; the Arduino suite needs `g++`.
 
 ## What each suite actually covers
@@ -46,14 +46,16 @@ Pure functions, no DOM: `formatDigits` carries past 99 hours and hundredths,
 `failureText` names CORS/timeout/unreachable, and the serial port parser
 handles the shapes browsers return.
 
-### ESP32-S3 (`esp32-s3/tests/test_firmware.py`)
+### ESP32-S3 (`esp32-s3/tests/test_firmware.py`, `test_max31855.py`)
 
 Runs the real `ingest.py` against a local HTTP server: batching, retry after a
 failure, dropping a `422`, `X-Api-Key`, and that a failed request keeps the
 queue intact. The RTD conversion is compared with published IEC 60751 points.
 Heartbeat tests cover Wi-Fi/OTA/restart and the live settings command, including
 the settings file on disk, rejection of an invalid payload and the unchanged
-snapshot after that rejection.
+snapshot after that rejection. The MAX31855 tests exercise the datasheet frame,
+reserved/internal-temperature validation, a floating bus and the five-read
+majority quorum that prevents a disconnected channel from looking alive.
 
 ### Collector (`collector/tests/`)
 

@@ -16,6 +16,11 @@ import socket
 import time
 
 try:
+    import gc
+except ImportError:  # CPython and normal MicroPython builds both have gc
+    gc = None
+
+try:
     import ssl
 except ImportError:  # a build without TLS still works over http://
     ssl = None
@@ -33,6 +38,14 @@ MAX_RESPONSE_BYTES = 4096
 # never accept it, and keeping it would block the queue.
 _DROP_STATUSES = (400, 413, 422)
 
+# Keep enough heap for a TLS handshake even when the queue is long. The
+# MicroPython GC has no compaction, so a 600-sample queue plus mbedtls buffers
+# can otherwise fail with ENOMEM. The queue is trimmed to the low-water mark
+# only when the heap is genuinely short.
+MEMORY_RESERVE_BYTES = 32 * 1024
+MEMORY_LOW_WATER_SAMPLES = 60
+MEMORY_RETRY_MS = 2000
+
 
 def _sleep_ms(milliseconds):
     """MicroPython has sleep_ms, CPython (the host tests) only has sleep."""
@@ -49,6 +62,32 @@ def _ticks_ms():
     return int(time.monotonic() * 1000)
 
 
+def _free_bytes():
+    """Free heap reported by MicroPython, or None on a build without it."""
+    if gc is None or not hasattr(gc, "mem_free"):
+        return None
+
+    try:
+        return int(gc.mem_free())
+    except Exception:
+        return None
+
+
+def _collect():
+    """Collect before a TLS allocation; fragmentation is the real problem."""
+    if gc is None:
+        return
+
+    try:
+        gc.collect()
+    except Exception:
+        pass
+
+
+def _is_memory_error(error):
+    return isinstance(error, MemoryError) or "ENOMEM" in str(error)
+
+
 class _NoLock:
     """Stand-in for a lock on builds without ``_thread``."""
 
@@ -60,6 +99,10 @@ class _NoLock:
 
 
 _NO_LOCK = _NoLock()
+
+# Only one TLS session at a time. The uploader and heartbeat otherwise open two
+# mbedtls contexts at once, which is a large peak allocation on a small heap.
+NETWORK_LOCK = _thread.allocate_lock() if _thread is not None else _NO_LOCK
 
 
 def split_url(url):
@@ -151,6 +194,9 @@ class Ingest:
         self._worker = None
         self._stop = False
         self._last_trim_log = 0
+        self._last_memory_log = 0
+        self._low_memory = False
+        self._retry_delay_ms = 200
 
     # -- queue ------------------------------------------------------------
 
@@ -172,6 +218,7 @@ class Ingest:
         with self._guard():
             self.pending.append(sample)
             self._trim()
+            self._trim_memory()
             full = len(self.pending) >= self.batch
 
         # Inline mode: the caller sends, exactly as before.
@@ -198,6 +245,49 @@ class Ingest:
 
         return overflow
 
+    def _low_water(self):
+        """Queue size that leaves room for a TLS handshake."""
+        target = max(self.batch * 2, MEMORY_LOW_WATER_SAMPLES)
+        return max(self.batch, min(self.limit, target))
+
+    def _trim_to(self, maximum, reason):
+        """Drop oldest samples down to ``maximum`` (queue lock held)."""
+        overflow = len(self.pending) - maximum
+
+        if overflow <= 0:
+            return 0
+
+        self.pending = self.pending[overflow:]
+        self.dropped += overflow
+        _collect()
+        now = _ticks_ms()
+
+        if now - self._last_memory_log >= 1000:
+            self._last_memory_log = now
+            self.log("API: %s, dropped the %d oldest samples" % (reason, overflow))
+
+        return overflow
+
+    def _trim_memory(self):
+        """Free queue space before a low-memory TLS allocation fails."""
+        # Do not run a collection on every 100 ms sample when the queue is
+        # already small: that would slow the sampling loop for no benefit.
+        if len(self.pending) <= self._low_water():
+            return 0
+
+        free = _free_bytes()
+
+        if free is None or free >= MEMORY_RESERVE_BYTES:
+            return 0
+
+        _collect()
+        free = _free_bytes()
+
+        if free is not None and free >= MEMORY_RESERVE_BYTES:
+            return 0
+
+        return self._trim_to(self._low_water(), "low memory")
+
     def flush(self):
         """Send everything queued. Returns True when the queue is empty.
 
@@ -211,7 +301,10 @@ class Ingest:
 
         while True:
             with self._guard():
-                chunk = self.pending[:MAX_SAMPLES_PER_REQUEST]
+                # Respect BATCH_SIZE here. Sending the whole queue after an
+                # outage creates a huge JSON string and a second TLS buffer at
+                # exactly the moment the heap is already short.
+                chunk = self.pending[:self.batch]
 
                 if not chunk:
                     break
@@ -222,6 +315,11 @@ class Ingest:
                 with self._guard():
                     self.pending = chunk + self.pending
                     self._trim()
+
+                    if self._low_memory:
+                        self._trim_to(self._low_water(), "memory pressure")
+
+                    _collect()
 
                 break
 
@@ -283,7 +381,12 @@ class Ingest:
                 self.flush()
 
                 if self.pending:
-                    _sleep_ms(200)  # offline: retry slowly, keep the queue
+                    delay = self._retry_delay_ms
+
+                    if self._low_memory:
+                        delay = max(delay, MEMORY_RETRY_MS)
+
+                    _sleep_ms(delay)  # offline: retry slowly, keep the queue
         finally:
             self._worker = None
 
@@ -312,7 +415,6 @@ class Ingest:
 
     def _send(self, samples):
         """True when the samples are done with (stored or refused for good)."""
-        body = json.dumps({"samples": samples})
         headers = {
             "Content-Type": "application/json",
             "User-Agent": "esp32-s3-furnace/1.0",
@@ -324,15 +426,31 @@ class Ingest:
         lock = self._send_lock if self._send_lock is not None else _NO_LOCK
 
         try:
+            # Build the JSON inside the guard: a MemoryError while encoding is
+            # retryable just like ENOMEM from mbedtls, instead of killing the
+            # uploader thread.
+            body = json.dumps({"samples": samples})
+
             # One request at a time on the shared socket, even when stop()
-            # flushes while the worker is still finishing a send.
+            # flushes while the worker is still finishing a send. The global
+            # lock also keeps the heartbeat from opening a second TLS context.
             with lock:
-                status, payload = self._request(body, headers)
+                with NETWORK_LOCK:
+                    status, payload = self._request(body, headers)
         except Exception as error:  # OSError, ssl errors, DNS failures
             self.failures += 1
             self.last_error = str(error)
+            self._low_memory = _is_memory_error(error)
+            self._retry_delay_ms = MEMORY_RETRY_MS if self._low_memory else 200
+
+            if self._low_memory:
+                _collect()
+
             self.log("API: %d samples not sent: %s" % (len(samples), error))
             return False
+
+        self._low_memory = False
+        self._retry_delay_ms = 200
 
         if status == 200:
             self.sent += len(samples)
@@ -377,6 +495,7 @@ class Ingest:
 
     def _connect(self):
         """Dial the API, with TLS when API_URL is https."""
+        _collect()
         address = self._remote()
         sock = socket.socket()
         sock.settimeout(self.timeout)

@@ -33,9 +33,10 @@ slot N                      slot N+1
 ```
 
 The MicroPython MAX31855 build spends most of the slot on its noise filter:
-five reads per channel at 500 kHz, a median per channel, then an EMA across
-samples (≈76 ms for three furnaces). The MAX31865 and Arduino builds take one
-reading per channel and rely on the probe's own filtering.
+five reads per channel at 500 kHz, per-frame validation (reserved bits and the
+internal cold-junction range), a majority quorum, a median per channel, then an
+EMA across samples (≈76 ms for three furnaces). The MAX31865 and Arduino builds
+take one reading per channel and rely on the probe's own filtering.
 
 The next slot is computed from the *previous slot*, so jitter does not
 accumulate: a slow serial write delays one sample, not every following one.
@@ -61,6 +62,9 @@ timeline.
 * `400/413/422` are permanent: the batch is dropped instead of blocking the queue.
 * `401/403` and DNS failures retry, with a console hint.
 * Beyond `BUFFER_LIMIT` the oldest frames are dropped, so RAM cannot fill.
+* Each request is capped at `BATCH_SIZE`; a long backlog is sent in several
+  requests instead of one huge JSON/TLS allocation. Under heap pressure the
+  queue is trimmed further and only one TLS session is opened at a time.
 
 See [`esp32-s3/README.md`](../esp32-s3/README.md#behaviour) for the full list.
 

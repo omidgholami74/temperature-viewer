@@ -27,6 +27,11 @@ import json
 import time
 
 try:
+    import gc
+except ImportError:
+    gc = None
+
+try:
     import socket
 except ImportError:  # the host tests never open a socket
     socket = None
@@ -64,6 +69,17 @@ def _ticks_ms():
         return time.ticks_ms()
 
     return int(time.monotonic() * 1000)
+
+
+def _collect():
+    """Release TLS/socket garbage before the next allocation."""
+    if gc is None:
+        return
+
+    try:
+        gc.collect()
+    except Exception:
+        pass
 
 
 def _join(root, *parts):
@@ -142,6 +158,16 @@ class DeviceLink:
         return "%s/api/device/%s" % (self.prefix, kind)
 
     def _post(self, path, payload):
+        """Send one heartbeat/ack, sharing the TLS memory with the uploader."""
+        lock = getattr(ingest, "NETWORK_LOCK", None)
+
+        if lock is None:
+            return self._post_network(path, payload)
+
+        with lock:
+            return self._post_network(path, payload)
+
+    def _post_network(self, path, payload):
         if not hasattr(ingest, "parse_head"):
             raise OSError("this firmware build cannot speak HTTP")
 
@@ -200,6 +226,8 @@ class DeviceLink:
                 sock.close()
             except Exception:
                 pass
+
+            _collect()
 
         head, _, reply = raw.partition(b"\r\n\r\n")
         status, fields = ingest.parse_head(head)
@@ -452,6 +480,7 @@ class DeviceLink:
                 except Exception as error:
                     self.last_error = str(error)
                     self.log("# device: heartbeat failed: %s" % (error,))
+                    _collect()
                     self._wait(RETRY_S)
                     continue
 

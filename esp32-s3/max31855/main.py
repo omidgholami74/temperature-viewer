@@ -80,6 +80,13 @@ NOISE_EMA_ALPHA = 0.35      # 1.0 = no smoothing, 0.25-0.4 = smooth but responsi
 TEMP_MIN_C = -270.0
 TEMP_MAX_C = 1800.0
 
+# A MAX31855 also reports its own cold-junction temperature. A disconnected
+# module leaves MISO floating, and noise can otherwise look like a valid
+# thermocouple frame. These limits reject frames that cannot come from a real
+# chip; the internal sensor is specified for -40..125 degC.
+INTERNAL_MIN_C = -45.0
+INTERNAL_MAX_C = 130.0
+
 # Default calibration offset per furnace, in °C, in CS_PINS order: furnace 1
 # is CS 15, furnace 2 is CS 16, and so on. These values are only the fallback
 # and the first-boot defaults: the admin panel stores an offset per channel in
@@ -109,6 +116,11 @@ runtime = settings_module.Settings(
 # 500 kHz instead of 1 MHz: the MAX31855 tolerates 5 MHz, but a slower clock
 # rings far less on long unshielded SCK/MISO wires, which is a common source of
 # the spikes this filter removes.
+# Pull MISO high while no MAX31855 is selected. A disconnected module then
+# reads as 0xFFFFFFFF (fault bits) instead of random floating-bus data that can
+# look like a plausible temperature.
+miso = Pin(MISO_PIN, Pin.IN, Pin.PULL_UP)
+
 spi = SPI(
     1,
     baudrate=500000,
@@ -117,8 +129,12 @@ spi = SPI(
     bits=8,
     firstbit=SPI.MSB,
     sck=Pin(SCK_PIN),
-    miso=Pin(MISO_PIN),
+    miso=miso,
 )
+
+# The SPI driver may reset the MISO pad pull while configuring the bus; apply
+# the pull-up again after init so it also holds between transactions.
+miso.init(Pin.IN, Pin.PULL_UP)
 
 # Initialize chip-select pins
 chip_selects = [
@@ -162,7 +178,26 @@ def _decode(raw):
 
     Fault bits match the API: 1 open thermocouple, 2 short to GND,
     4 short to VCC, 8 read error.
+
+    A MAX31855 frame has two reserved zero bits (D17 and D3) and a 12-bit
+    signed internal-temperature field. A missing module leaves MISO floating,
+    so without these checks random bus data could become a believable furnace
+    temperature. Frames with reserved bits set or an impossible internal
+    temperature are treated as read failures.
     """
+
+    if raw & 0x20000 or raw & 0x8:  # reserved D17 / D3 must be zero
+        return None, 8
+
+    internal_raw = (raw >> 4) & 0x0FFF
+
+    if internal_raw & 0x800:
+        internal_raw -= 0x1000
+
+    internal_c = internal_raw * 0.0625
+
+    if internal_c < INTERNAL_MIN_C or internal_c > INTERNAL_MAX_C:
+        return None, 8
 
     fault = 0
 
@@ -239,10 +274,11 @@ def read_channel(cs, samples=None, gap_us=None):
     1 open thermocouple, 2 short to GND, 4 short to VCC, 8 read error.
 
     Strategy: take ``samples`` frames spaced by ``gap_us``, drop any frame that
-    reports a fault or an out-of-range value, and return the median of the
-    rest. A channel is only reported as faulted when every read failed, so one
-    bad transfer does not blank a working probe. Both arguments default to the
-    module constants and are supplied from the live settings by the loop.
+    reports a fault, invalid reserved/internal bits, or an out-of-range value,
+    and return the median of the rest. A channel needs a majority of valid
+    frames: accepting one lucky frame from a floating MISO line is how a
+    disconnected furnace can look alive. Both arguments default to the module
+    constants and are supplied from the live settings by the loop.
     """
 
     count = NOISE_SAMPLES if samples is None else int(samples)
@@ -267,7 +303,9 @@ def read_channel(cs, samples=None, gap_us=None):
         if i != count - 1:
             time.sleep_us(spacing)
 
-    if not readings:
+    needed = max(1, (count // 2) + 1)
+
+    if len(readings) < needed:
         return None, fault_bits or 8
 
     return _median(readings), 0
@@ -502,4 +540,5 @@ def main():
     supervisor.run_forever(session, watch)
 
 
-main()
+if __name__ == "__main__":
+    main()

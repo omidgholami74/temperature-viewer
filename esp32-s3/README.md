@@ -95,7 +95,8 @@ esp32-s3/
 ├── tools/
 │   └── publish.py            build an OTA bundle for the API
 └── tests/
-    └── test_firmware.py      HTTP client, OTA bundle, RTD maths — no board
+    ├── test_firmware.py      HTTP client, OTA bundle, RTD maths — no board
+    └── test_max31855.py      frame validation and majority reads
 ```
 
 ## Install
@@ -228,7 +229,9 @@ the admin panel.
 **What a reboot costs.** The queue lives in RAM, so a watchdog reboot or a
 power cut drops the samples that had not been POSTed yet — at most
 `BUFFER_LIMIT`, which is one minute at 10 Hz. Everything already sent is stored
-on the server.
+on the server. Under genuine heap pressure the firmware may trim to a smaller
+low-water mark to keep the TLS uploader alive; the console logs the number
+dropped.
 
 **Nothing has to be pressed.** MicroPython runs `boot.py` and then `main.py` at
 every power-up; the shipped `boot.py` only prints the reset cause and names a
@@ -434,9 +437,11 @@ python3 -m unittest discover -s esp32-s3/tests -v
 | `API 401` | `API_KEY` does not match `FURNACE_INGEST_KEY`. The key is kept and retried, so fix the config and restart. |
 | `API 404` | `API_URL` points at the dashboard or at a path without `/api/ingest`. |
 | `API: TLS certificate not verified` | Expected with `TLS_VERIFY = False`; the connection is encrypted but unverified. A handshake failure instead means the CA is not in the axtls bundle — use `http://` or `TLS_VERIFY = False`. |
+| `API: … ENOMEM` / `heartbeat failed: ENOMEM` | The heap is short while mbedTLS opens a connection. The firmware now sends only `BATCH_SIZE` samples per request, runs one TLS session at a time and trims the oldest queued samples under memory pressure. If it repeats, use `http://` for a test, lower `BUFFER_LIMIT`, or reduce `BATCH_SIZE`. |
 | Data arrives with a delay | `BATCH_SIZE` samples are buffered before each POST; lower it (for example 5) for faster updates at more requests per second. |
 | Serial gaps of ~1 s every few seconds | Not the upload: it runs in its own thread (`# upload runs in a background thread` at boot). A gap that size means the loop itself is slow — check the SPI wiring/power and the sensor reads. |
 | All four channels `--.-` / `-1000` | Wiring: 3V3, GND, SCK and MISO (and MOSI on the MAX31865), one CS per board, thermocouple polarity. Run `module/check.py`-style spot checks or the serial console. |
+| A disconnected channel still reads a plausible temperature | The MAX31855 is not being selected and floating MISO noise looks like a frame. The MAX31855 build pulls MISO up, validates reserved/internal bits and requires three of five good frames; check that channel's CS, 3V3 and GND wiring and replace the module if it persists. |
 | `# boot: MISSING from the board root: …` | That file never reached the board: upload it (see [Install](#install)) and reset. `main.py` cannot import it. |
 | Console shows `>>>` and nothing samples | Something stopped the program: a missing file (the line above names it) or Thonny attached to the board (press F5 or RST). |
 | `# OTA: no bundle published for 'max31855' yet` | Nothing was copied to `FURNACE_FIRMWARE_DIR` on the API host; run `tools/publish.py` and deploy the folder. |

@@ -149,6 +149,8 @@ class DeviceLink:
         self.prefix = "" if path in ("", "/") else path.rstrip("/")
         self.acks = 0
         self.last_error = ""
+        self._resolved = None
+        self._connect_failures = 0
         self._worker = None
         self._stop = False
 
@@ -156,6 +158,18 @@ class DeviceLink:
 
     def _address(self, kind):
         return "%s/api/device/%s" % (self.prefix, kind)
+
+    def _remote(self):
+        """Cache the heartbeat address; DNS on every beat is slow and fragile."""
+        if self._resolved is None:
+            self._resolved = socket.getaddrinfo(self.host, self.port)[0][-1]
+
+        return self._resolved
+
+    def reset_network(self):
+        """Forget a stale address after Wi-Fi comes back or a stall."""
+        self._resolved = None
+        self._connect_failures = 0
 
     def _post(self, path, payload):
         """Send one heartbeat/ack, sharing the TLS memory with the uploader."""
@@ -187,11 +201,19 @@ class DeviceLink:
         if socket is None:
             raise OSError("this firmware build has no socket module")
 
-        address = socket.getaddrinfo(self.host, self.port)[0][-1]
-        sock = socket.socket()
-        sock.settimeout(self.timeout)
+        sock = None
+        raw = b""
 
         try:
+            address = self._remote()
+            sock = socket.socket()
+            sock.settimeout(self.timeout)
+
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            except Exception:
+                pass
+
             sock.connect(address)
 
             if self.use_tls:
@@ -207,9 +229,10 @@ class DeviceLink:
                 else:
                     sock = ssl.wrap_socket(sock, server_hostname=self.host)
 
+            # Keep the read bounded even when the TLS implementation did not
+            # inherit the plain socket timeout.
+            sock.settimeout(self.timeout)
             sock.sendall(("\r\n".join(lines) + "\r\n\r\n" + body).encode("utf-8"))
-
-            raw = b""
 
             while True:
                 chunk = sock.recv(512)
@@ -221,11 +244,21 @@ class DeviceLink:
 
                 if len(raw) > MAX_REPLY_BYTES:
                     raise OSError("heartbeat reply is too large")
+        except Exception:
+            self._connect_failures += 1
+
+            if self._connect_failures >= 3:
+                self._resolved = None
+
+            raise
+        else:
+            self._connect_failures = 0
         finally:
-            try:
-                sock.close()
-            except Exception:
-                pass
+            if sock is not None:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
 
             _collect()
 

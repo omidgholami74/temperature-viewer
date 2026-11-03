@@ -52,19 +52,26 @@ about 90 KB, modest for an ESP32-S3 but too much for an ESP8266.
 
 `ingest.py` (MicroPython) or `Uploader` (Arduino) keeps one TCP/TLS connection
 and a host-name cache, then posts `BATCH_SIZE` frames (10 = 1 s) to
-`/api/ingest`. The API anchors a batch without `at` on arrival and places the
-frames back on the 0.1 s grid by uptime, so batching does not distort the
-timeline.
+`/api/ingest`. The socket is deliberately short-lived (30 s by default) so a
+server or access point that forgets an idle connection cannot leave the board
+writing into a half-open socket. The API anchors a batch without `at` on arrival
+and places the frames back on the 0.1 s grid by uptime, so batching does not
+distort the timeline.
 
 * `BACKGROUND_UPLOAD = True` runs the POST on a thread, so a TLS handshake
   cannot stretch a sample gap.
 * A failed POST keeps the batch and retries on the next flush.
 * `400/413/422` are permanent: the batch is dropped instead of blocking the queue.
-* `401/403` and DNS failures retry, with a console hint.
+* `401/403` and DNS failures retry with a bounded exponential backoff, with a
+  console hint.
 * Beyond `BUFFER_LIMIT` the oldest frames are dropped, so RAM cannot fill.
 * Each request is capped at `BATCH_SIZE`; a long backlog is sent in several
   requests instead of one huge JSON/TLS allocation. Under heap pressure the
   queue is trimmed further and only one TLS session is opened at a time.
+* The keep-alive socket is retired after `API_KEEPALIVE_S` (30 s), on a failed
+  exchange, or when the server closes it. Every socket operation has a timeout;
+  a worker that stops making progress has its socket reset, and a minute without
+  a successful upload forces a Wi-Fi re-association.
 
 See [`esp32-s3/README.md`](../esp32-s3/README.md#behaviour) for the full list.
 

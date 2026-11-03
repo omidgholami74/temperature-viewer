@@ -46,6 +46,15 @@ MEMORY_RESERVE_BYTES = 32 * 1024
 MEMORY_LOW_WATER_SAMPLES = 60
 MEMORY_RETRY_MS = 2000
 
+# A TCP connection that the server has already forgotten can look writable for
+# a short while and then block on the first read. Retire the socket before the
+# server's idle timeout, and bound every socket operation so a half-open link
+# cannot freeze the uploader forever.
+KEEPALIVE_MAX_S = 30
+RETRY_MIN_MS = 250
+RETRY_MAX_MS = 5000
+STALL_MIN_MS = 20000
+
 
 def _sleep_ms(milliseconds):
     """MicroPython has sleep_ms, CPython (the host tests) only has sleep."""
@@ -60,6 +69,17 @@ def _ticks_ms():
         return time.ticks_ms()
 
     return int(time.monotonic() * 1000)
+
+
+def _elapsed_ms(start):
+    """Milliseconds since a ticks value, safe across the ticks_ms wrap."""
+    if not start:
+        return 0
+
+    if hasattr(time, "ticks_diff"):
+        return time.ticks_diff(_ticks_ms(), start)
+
+    return _ticks_ms() - start
 
 
 def _free_bytes():
@@ -170,6 +190,11 @@ class Ingest:
         self.use_tls = use_tls
         self.key = getattr(config, "API_KEY", "") or ""
         self.timeout = float(getattr(config, "API_TIMEOUT_S", 8))
+        try:
+            keepalive_s = float(getattr(config, "API_KEEPALIVE_S", KEEPALIVE_MAX_S))
+        except (TypeError, ValueError):
+            keepalive_s = KEEPALIVE_MAX_S
+        self.keepalive_ms = max(0, min(int(keepalive_s * 1000), 300000))
         self.verify = bool(getattr(config, "TLS_VERIFY", False))
         batch = int(getattr(config, "BATCH_SIZE", 10))
         self.batch = max(1, min(batch, MAX_SAMPLES_PER_REQUEST))
@@ -196,7 +221,17 @@ class Ingest:
         self._last_trim_log = 0
         self._last_memory_log = 0
         self._low_memory = False
-        self._retry_delay_ms = 200
+        self._retry_delay_ms = RETRY_MIN_MS
+        self._sock_started_ms = 0
+        self._connect_failures = 0
+        self._last_progress_ms = _ticks_ms()
+        self._last_attempt_ms = 0
+        self._last_success_ms = 0
+        self._last_network_reset_ms = 0
+        # A stuck recv/getaddrinfo would otherwise leave the worker thread
+        # alive forever while no sample leaves the board. The main loop uses
+        # this deadline to close the socket and, if needed, reset Wi-Fi.
+        self._stall_ms = max(STALL_MIN_MS, int(self.timeout * 1000) * 3)
 
     # -- queue ------------------------------------------------------------
 
@@ -311,7 +346,10 @@ class Ingest:
 
                 del self.pending[:len(chunk)]
 
+            # A long backlog is many consecutive requests; update the health
+            # deadline after every one, not only when flush() returns.
             if not self._send(chunk):
+                self._last_progress_ms = _ticks_ms()
                 with self._guard():
                     self.pending = chunk + self.pending
                     self._trim()
@@ -323,6 +361,8 @@ class Ingest:
 
                 break
 
+            self._last_progress_ms = _ticks_ms()
+
         return not self.pending
 
     # -- background uploader ----------------------------------------------
@@ -330,7 +370,13 @@ class Ingest:
     def start(self):
         """Upload from a thread so sampling never waits. False = send inline."""
         if self._worker is not None:
+            if self.stalled():
+                self.log("API: uploader stalled, resetting its connection")
+                self.reset_network()
+
             return True
+
+        self.close()
 
         if _thread is None or not self.use_background:
             return False
@@ -374,11 +420,28 @@ class Ingest:
         """Worker body: drain the queue, pace retries, never busy-spin."""
         try:
             while not self._stop:
+                self._last_progress_ms = _ticks_ms()
+
                 if not self.pending:
                     _sleep_ms(20)
                     continue
 
-                self.flush()
+                try:
+                    self.flush()
+                except Exception as error:
+                    # A failure while requeueing or encoding must not kill the
+                    # only uploader; keep the thread alive and retry.
+                    self.failures += 1
+                    self.last_error = str(error)
+                    self._low_memory = _is_memory_error(error)
+                    self._retry_delay_ms = MEMORY_RETRY_MS if self._low_memory else min(
+                        self._retry_delay_ms * 2,
+                        RETRY_MAX_MS,
+                    )
+                    _collect()
+                    self.log("API: uploader error: %s" % (error,))
+
+                self._last_progress_ms = _ticks_ms()
 
                 if self.pending:
                     delay = self._retry_delay_ms
@@ -390,18 +453,56 @@ class Ingest:
         finally:
             self._worker = None
 
+    def stalled(self):
+        """True when the worker exists but has made no progress in a while."""
+        if not self.background or self._worker is None or not self.pending:
+            return False
+
+        return _elapsed_ms(self._last_progress_ms) > self._stall_ms
+
+    def needs_network_reset(self):
+        """True when a long run of failures warrants a Wi-Fi re-association."""
+        if not self.background or not self.pending:
+            return False
+
+        last = self._last_success_ms or self._last_attempt_ms
+
+        if not last:
+            return False
+
+        if _elapsed_ms(last) < 60000:
+            return False
+
+        if self._last_network_reset_ms and _elapsed_ms(self._last_network_reset_ms) < 60000:
+            return False
+
+        return True
+
+    def reset_network(self):
+        """Drop the socket and DNS cache after a link change or a stall."""
+        self.close()
+        self._resolved = None
+        self._connect_failures = 0
+        self._last_progress_ms = _ticks_ms()
+        self._last_network_reset_ms = _ticks_ms()
+
     def alive(self):
         """True while uploads are being handled.
 
         Inline mode always reports True: the caller does the sending, so there
         is no thread to supervise. In background mode a worker that died (a
         stack overflow inside mbedtls, for example) leaves ``_worker`` at
-        ``None`` while ``background`` stays True, which is what this catches.
+        ``None`` while ``background`` stays True. A worker that is blocked on a
+        dead socket still has a worker object, so the progress deadline catches
+        that case too.
         """
         if not self.background:
             return True
 
-        return self._worker is not None
+        if self._worker is None:
+            return False
+
+        return not self.stalled()
 
     def stats(self):
         return "sent=%d pending=%d dropped=%d failures=%d" % (
@@ -425,6 +526,8 @@ class Ingest:
 
         lock = self._send_lock if self._send_lock is not None else _NO_LOCK
 
+        self._last_attempt_ms = _ticks_ms()
+
         try:
             # Build the JSON inside the guard: a MemoryError while encoding is
             # retryable just like ENOMEM from mbedtls, instead of killing the
@@ -441,7 +544,10 @@ class Ingest:
             self.failures += 1
             self.last_error = str(error)
             self._low_memory = _is_memory_error(error)
-            self._retry_delay_ms = MEMORY_RETRY_MS if self._low_memory else 200
+            self._retry_delay_ms = MEMORY_RETRY_MS if self._low_memory else min(
+                max(RETRY_MIN_MS, self._retry_delay_ms * 2),
+                RETRY_MAX_MS,
+            )
 
             if self._low_memory:
                 _collect()
@@ -450,12 +556,13 @@ class Ingest:
             return False
 
         self._low_memory = False
-        self._retry_delay_ms = 200
 
         if status == 200:
             self.sent += len(samples)
             self.failures = 0
             self.last_error = ""
+            self._last_success_ms = _ticks_ms()
+            self._retry_delay_ms = RETRY_MIN_MS
             return True
 
         self.failures += 1
@@ -465,6 +572,7 @@ class Ingest:
         if status in _DROP_STATUSES:
             # The server understood the request and rejected its content.
             self.dropped += len(samples)
+            self._retry_delay_ms = RETRY_MIN_MS
             return True
 
         if status in (401, 403):
@@ -473,18 +581,29 @@ class Ingest:
             self.log("API: check API_URL (%s) — the endpoint is missing" % (self.path,))
 
         # 5xx, 401/403 and a wrong URL are retryable: the payload is kept.
+        self._retry_delay_ms = min(max(RETRY_MIN_MS, self._retry_delay_ms * 2), RETRY_MAX_MS)
         return False
 
     def close(self):
         """Drop the kept-alive connection (shutdown, or after an error)."""
         sock = self._sock
         self._sock = None
+        self._sock_started_ms = 0
 
         if sock is not None:
             try:
                 sock.close()
             except Exception:
                 pass
+
+    def _keepalive_expired(self):
+        if self._sock is None:
+            return False
+
+        if self.keepalive_ms <= 0:
+            return True
+
+        return bool(self._sock_started_ms) and _elapsed_ms(self._sock_started_ms) >= self.keepalive_ms
 
     def _remote(self):
         """The cached server address; a DNS lookup per batch is too slow here."""
@@ -501,6 +620,13 @@ class Ingest:
         sock.settimeout(self.timeout)
 
         try:
+            # A dead peer is detected by the read timeout; TCP keepalive also
+            # clears a half-open connection that no longer carries data.
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            except Exception:
+                pass
+
             sock.connect(address)
 
             if self.use_tls:
@@ -516,15 +642,26 @@ class Ingest:
                 else:
                     sock = ssl.wrap_socket(sock, server_hostname=self.host)
                     self.log("API: TLS certificate not verified (TLS_VERIFY = False)")
+
+            # Some MicroPython ssl builds do not inherit the plain socket
+            # timeout. Apply it after wrapping so recv cannot hang forever.
+            sock.settimeout(self.timeout)
         except Exception:
-            # The network changed (DHCP, DNS): resolve again on the next try.
-            self._resolved = None
+            # Do not throw the DNS result away after one failed dial: a stale
+            # keep-alive or a busy server is common. After three failures the
+            # address is probably stale (DHCP), so resolve again.
+            self._connect_failures += 1
+
+            if self._connect_failures >= 3:
+                self._resolved = None
+
             try:
                 sock.close()
             except Exception:
                 pass
             raise
 
+        self._connect_failures = 0
         return sock
 
     def _request(self, body, headers):
@@ -536,10 +673,16 @@ class Ingest:
         that fails on a reused socket is retried once on a fresh one: the
         server had almost certainly closed an idle connection.
         """
+        if self._keepalive_expired():
+            self.close()
+
         reused = self._sock is not None
 
         sock = self._sock if reused else self._connect()
         self._sock = sock
+
+        if not reused:
+            self._sock_started_ms = _ticks_ms()
 
         try:
             return self._exchange(sock, body, headers)
@@ -552,6 +695,7 @@ class Ingest:
         # Stale keep-alive connection: dial again and send once more.
         sock = self._connect()
         self._sock = sock
+        self._sock_started_ms = _ticks_ms()
 
         try:
             return self._exchange(sock, body, headers)

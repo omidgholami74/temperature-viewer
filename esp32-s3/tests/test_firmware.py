@@ -375,8 +375,9 @@ class RawProtocolTests(unittest.TestCase):
 class ScriptedServer:
     """A small HTTP server that keeps its connections open like a real one."""
 
-    def __init__(self, requests_per_connection=None):
+    def __init__(self, requests_per_connection=None, reply=True):
         self.requests_per_connection = requests_per_connection
+        self.reply = reply
         self.connections = 0
         self.payloads = []
         self.stop = False
@@ -430,6 +431,11 @@ class ScriptedServer:
                 self.payloads.append(json.loads(body.decode()))
                 served += 1
 
+                if not self.reply:
+                    # Simulate a peer that accepts the request but never answers.
+                    time.sleep(2)
+                    return
+
                 connection.sendall(
                     b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
                     b"Content-Length: 11\r\nConnection: keep-alive\r\n\r\n{\"ok\": true}"
@@ -454,15 +460,17 @@ class ScriptedServer:
 class KeepAliveTests(unittest.TestCase):
     """The socket is reused, so the TLS handshake is not paid per batch."""
 
-    def config(self, port):
-        return types.SimpleNamespace(
-            API_URL="http://127.0.0.1:%d" % (port,),
-            API_KEY="",
-            API_TIMEOUT_S=5,
-            BATCH_SIZE=1,
-            BUFFER_LIMIT=10,
-            TLS_VERIFY=False,
-        )
+    def config(self, port, **overrides):
+        values = {
+            "API_URL": "http://127.0.0.1:%d" % (port,),
+            "API_KEY": "",
+            "API_TIMEOUT_S": 5,
+            "BATCH_SIZE": 1,
+            "BUFFER_LIMIT": 10,
+            "TLS_VERIFY": False,
+        }
+        values.update(overrides)
+        return types.SimpleNamespace(**values)
 
     def test_batches_share_one_connection(self):
         server = ScriptedServer()
@@ -490,6 +498,45 @@ class KeepAliveTests(unittest.TestCase):
             self.assertEqual(len(server.payloads), 3, "a batch was lost after the server hung up")
             self.assertGreaterEqual(server.connections, 2)
             self.assertEqual(client.pending, [])
+        finally:
+            client.close()
+            server.close()
+
+    def test_a_keepalive_socket_is_retired_before_the_server_times_it_out(self):
+        server = ScriptedServer()
+        client = ingest.Ingest(
+            self.config(server.port, API_KEEPALIVE_S=0.05),
+            log=lambda *_: None,
+        )
+
+        try:
+            for step in range(2):
+                client.add(step * 100, [1.0, 2.0, 3.0, 4.0], [0, 0, 0, 0])
+
+                if step == 0:
+                    time.sleep(0.06)
+
+            self.assertEqual(len(server.payloads), 2)
+            self.assertGreaterEqual(server.connections, 2, "the expired socket was reused")
+            self.assertEqual(client.pending, [])
+        finally:
+            client.close()
+            server.close()
+
+    def test_a_silent_server_times_out_and_keeps_the_batch(self):
+        server = ScriptedServer(reply=False)
+        client = ingest.Ingest(
+            self.config(server.port, API_TIMEOUT_S=0.2),
+            log=lambda *_: None,
+        )
+
+        try:
+            started = time.monotonic()
+            client.add(100, [1.0, 2.0, 3.0, 4.0], [0, 0, 0, 0])
+            elapsed = time.monotonic() - started
+
+            self.assertLess(elapsed, 1.0, "a silent response blocked the uploader")
+            self.assertEqual(len(client.pending), 1, "the unsent batch was lost")
         finally:
             client.close()
             server.close()
@@ -634,6 +681,22 @@ class BackgroundUploadTests(unittest.TestCase):
         client.add(100, [1, 2, 3, 4], [0, 0, 0, 0])
 
         self.assertEqual(sent, [2])
+
+    def test_alive_detects_a_stalled_uploader_and_reset_clears_it(self):
+        client = self.make(BATCH_SIZE=50)
+        client.background = True
+        client._worker = object()
+        client.pending = [{"u": 0, "t": [1, 2, 3, 4], "f": [0, 0, 0, 0]}]
+        client._last_progress_ms = ingest._ticks_ms() - 100000
+
+        self.assertTrue(client.stalled())
+        self.assertFalse(client.alive())
+
+        client.reset_network()
+        self.assertFalse(client.stalled())
+        self.assertTrue(client.alive())
+
+        client._worker = None
 
     def test_alive_detects_a_dead_uploader(self):
         client = self.make(BATCH_SIZE=50)

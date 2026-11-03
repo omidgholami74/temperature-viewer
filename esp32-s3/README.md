@@ -335,6 +335,7 @@ a microcontroller.
 | `API_URL`       | `https://apitemp.futurefounderco.com` | API host; `/api/ingest` is appended       |
 | `API_KEY`       | `""`                             | Must equal `FURNACE_INGEST_KEY` on the server  |
 | `API_TIMEOUT_S` | `8`                              | Socket timeout per request                     |
+| `API_KEEPALIVE_S` | `30`                           | Reuse one TCP/TLS connection for at most this long; `0` = new socket per request |
 | `BATCH_SIZE`    | `10`                             | Samples per POST (max 600); 10 = 1 s of data   |
 | `BACKGROUND_UPLOAD` | `True`                       | Send from a thread so sampling never waits     |
 | `BUFFER_LIMIT`  | `600`                            | Samples kept while the API is down (60 s)      |
@@ -391,21 +392,28 @@ CA is in the bundle. `http://` also works and skips TLS entirely.
 - **One connection, one lookup.** The TCP socket (and its TLS session) stays
   open between batches, and the host name is resolved once instead of per
   request: a handshake plus a DNS lookup costs several hundred milliseconds on
-  this chip. The socket is dropped and redialled only after a failure or when
-  the server closes it; a failed dial also clears the cached address so a new
-  DHCP lease is picked up.
-- **Outages.** A failed upload keeps the batch and retries on the next flush. A
-  `400/413/422` is a refused payload and is dropped instead of blocking the
-  queue; `401/403` and a wrong URL are retried while the console prints a hint.
-  Beyond `BUFFER_LIMIT` the oldest samples are dropped, so RAM cannot fill up.
+  this chip. The socket is retired after `API_KEEPALIVE_S` (30 s by default),
+  after a failure, or when the server closes it. A failed dial keeps the cached
+  address for two retries, then resolves it again so a DHCP change is picked up
+  without a DNS lookup on every request.
+- **Outages.** A failed upload keeps the batch and retries with a bounded
+  exponential backoff (250 ms to 5 s). A `400/413/422` is a refused payload and
+  is dropped instead of blocking the queue; `401/403` and a wrong URL are
+  retried while the console prints a hint. Beyond `BUFFER_LIMIT` the oldest
+  samples are dropped, so RAM cannot fill up.
+- **Half-open links.** Every socket read is bounded by `API_TIMEOUT_S`; the
+  uploader records progress and the loop closes a stalled worker's socket. If
+  uploads have not succeeded for 60 s, the board force-reassociates Wi-Fi even
+  when `isconnected()` still says connected. This recovers the AP/DHCP session
+  that otherwise leaves a board looking online but silent.
 - **Wi-Fi.** A dropped link is retried every `WIFI_RETRY_S`; sampling and
   buffering never stop. When the link comes back and NTP was never synced, the
   clock is fetched at that moment.
 - **Unattended.** The hardware watchdog is fed once per sample and during Wi-Fi
   waits, so a hang reboots the board instead of freezing it; a crash inside a
-  session is logged and the session is rebuilt with a 5–60 s backoff; a dead
-  upload thread is restarted by the loop. No keyboard, no reset button and no
-  computer are needed after the first upload of the five files.
+  session is logged and the session is rebuilt with a 5–60 s backoff; a dead or
+  stalled upload/heartbeat thread is restarted by the loop. No keyboard, no reset
+  button and no computer are needed after the first upload of the five files.
 - **One board per run.** Two boards streaming into the same run interleave
   their frames on the same 0.1 s grid and both count toward the working rate,
   so keep one board per run (or a separate database per furnace group).
@@ -438,6 +446,7 @@ python3 -m unittest discover -s esp32-s3/tests -v
 | `API 404` | `API_URL` points at the dashboard or at a path without `/api/ingest`. |
 | `API: TLS certificate not verified` | Expected with `TLS_VERIFY = False`; the connection is encrypted but unverified. A handshake failure instead means the CA is not in the axtls bundle — use `http://` or `TLS_VERIFY = False`. |
 | `API: … ENOMEM` / `heartbeat failed: ENOMEM` | The heap is short while mbedTLS opens a connection. The firmware now sends only `BATCH_SIZE` samples per request, runs one TLS session at a time and trims the oldest queued samples under memory pressure. If it repeats, use `http://` for a test, lower `BUFFER_LIMIT`, or reduce `BATCH_SIZE`. |
+| Board reports online but no new samples arrive | The Wi-Fi association can be half-open. The firmware retires keep-alive sockets after 30 s, bounds every read with `API_TIMEOUT_S`, and force-reassociates Wi-Fi after 60 s without a successful upload; watch for `# network: uploads stalled, resetting Wi-Fi` and `# API: check …` on the console. |
 | Data arrives with a delay | `BATCH_SIZE` samples are buffered before each POST; lower it (for example 5) for faster updates at more requests per second. |
 | Serial gaps of ~1 s every few seconds | Not the upload: it runs in its own thread (`# upload runs in a background thread` at boot). A gap that size means the loop itself is slow — check the SPI wiring/power and the sensor reads. |
 | All four channels `--.-` / `-1000` | Wiring: 3V3, GND, SCK and MISO (and MOSI on the MAX31865), one CS per board, thermocouple polarity. Run `module/check.py`-style spot checks or the serial console. |

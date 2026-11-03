@@ -64,6 +64,13 @@ def connect(config, log=print, watch=None):
     except (ValueError, OSError):
         pass  # older firmware builds have no hostname option
 
+    # Modem sleep can park the radio between packets; a furnace monitor is
+    # mains-powered, so prioritise timely uploads over the last few mA.
+    try:
+        wlan.config(pm=getattr(network.WLAN, "PM_NONE", 0))
+    except Exception:
+        pass
+
     if wlan.isconnected():
         _report(wlan, log)
         return wlan
@@ -101,14 +108,24 @@ def _report(wlan, log):
     log("Wi-Fi: connected, ip=%s gateway=%s" % (ip, gateway))
 
 
-def reconnect(wlan, config, log=print, watch=None):
-    """Try to bring a dropped link back; returns True when connected."""
-    if wlan.isconnected():
+def reconnect(wlan, config, log=print, watch=None, force=False):
+    """Try to bring a dropped link back; returns True when connected.
+
+    ``force`` also re-associates a link that still reports connected but has
+    stopped delivering traffic. That is the only recovery from a half-open
+    DHCP/AP session without rebooting the whole board.
+    """
+    if wlan.isconnected() and not force:
         return True
 
     try:
         wlan.disconnect()
     except (OSError, RuntimeError):
+        pass
+
+    try:
+        wlan.config(pm=getattr(network.WLAN, "PM_NONE", 0))
+    except Exception:
         pass
 
     try:

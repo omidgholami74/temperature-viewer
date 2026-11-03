@@ -459,15 +459,29 @@ def session(watch):
 
             now = time.ticks_ms()
 
-            # A dropped link is retried on its own; sampling never stops.
-            if not wlan.isconnected() and time.ticks_diff(now, last_net_check) >= retry_ms:
-                last_net_check = now
-                wifi.reconnect(wlan, config, watch=watch)
+            # A dropped link is retried on its own; sampling never stops. If
+            # Wi-Fi still claims to be associated but uploads have failed for a
+            # minute, force a fresh association rather than trusting a half-open
+            # DHCP/AP session forever.
+            stalled_network = ingest.needs_network_reset()
 
-                if wlan.isconnected() and not clock_ok and getattr(config, "NTP_ENABLED", True):
-                    if wifi.sync_time(config):
-                        clock_ok = True
-                        epoch_base_ms = int(time.time()) * 1000 - time.ticks_diff(now, start_tick)
+            if (not wlan.isconnected() or stalled_network) and time.ticks_diff(now, last_net_check) >= retry_ms:
+                last_net_check = now
+
+                if stalled_network:
+                    print("# network: uploads stalled, resetting Wi-Fi")
+                    ingest.reset_network()
+
+                if wifi.reconnect(wlan, config, watch=watch, force=stalled_network):
+                    ingest.reset_network()
+
+                    if link is not None:
+                        link.reset_network()
+
+                    if not clock_ok and getattr(config, "NTP_ENABLED", True):
+                        if wifi.sync_time(config):
+                            clock_ok = True
+                            epoch_base_ms = int(time.time()) * 1000 - time.ticks_diff(now, start_tick)
 
             # The uploader is a thread, so it can die while the loop runs on.
             # On a charger nobody would start it again: the loop does.
@@ -475,7 +489,8 @@ def session(watch):
                 last_health = now
 
                 if not ingest.alive():
-                    print("# upload thread stopped, starting it again")
+                    print("# upload thread stopped or stalled, resetting it")
+                    ingest.reset_network()
 
                     if not ingest.start():
                         print("# upload unavailable, sending inline")

@@ -16,6 +16,10 @@ API_URL = "https://apitemp.futurefounderco.com"
 # Must equal FURNACE_INGEST_KEY on the server; empty when the API is open.
 API_KEY = ""
 API_TIMEOUT_S = 8
+# Reuse one TCP/TLS connection for at most this long. Retiring it before the
+# server's idle timeout avoids a half-open keep-alive socket after a Wi-Fi
+# hiccup; 30 s still amortises the handshake across ~30 batches.
+API_KEEPALIVE_S = 30
 
 # One request carries BATCH_SIZE samples: 10 at 10 Hz means the server has
 # each sample about a second after it was read. The socket is kept open between

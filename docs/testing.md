@@ -19,7 +19,7 @@ retention, formatting), not every getter.
 | MQTT transport | `python3 -m unittest discover -s MQTT/firmware/tests -v` | Batch encoding, retained will, QoS 1 publish, ack trimming, buffer overflow, reconnect bookkeeping |
 
 Counts at the time of writing: 33 bridge tests, 11 transport tests, 22
-dashboard/serial tests, 78 ESP32-S3 firmware tests and the collector suite. The
+dashboard/serial tests, 81 ESP32-S3 firmware tests and the collector suite. The
 backend smoke test needs PHP and `curl`; the Arduino suite needs `g++`.
 
 ## What each suite actually covers
@@ -49,8 +49,9 @@ handles the shapes browsers return.
 ### ESP32-S3 (`esp32-s3/tests/test_firmware.py`, `test_max31855.py`)
 
 Runs the real `ingest.py` against a local HTTP server: batching, retry after a
-failure, dropping a `422`, `X-Api-Key`, and that a failed request keeps the
-queue intact. The RTD conversion is compared with published IEC 60751 points.
+failure, dropping a `422`, `X-Api-Key`, keep-alive expiry, a silent server
+timeout, and that a failed request keeps the queue intact. The RTD conversion is
+compared with published IEC 60751 points.
 Heartbeat tests cover Wi-Fi/OTA/restart and the live settings command, including
 the settings file on disk, rejection of an invalid payload and the unchanged
 snapshot after that rejection. The MAX31855 tests exercise the datasheet frame,

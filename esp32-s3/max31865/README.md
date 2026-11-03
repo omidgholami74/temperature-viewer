@@ -1,4 +1,4 @@
-# MAX31865 variant — 4x PT100/PT1000 RTD on an ESP32-S3
+# MAX31865 variant — up to 4x PT100/PT1000 RTD on an ESP32-S3
 
 Same firmware shape as the thermocouple variant, but for **resistance
 thermometers**: platinum RTDs (PT100 or PT1000) read through MAX31865 boards.
@@ -26,7 +26,7 @@ ESP32-S3 ──SPI──┬── MAX31865 #1 (CS 15) ── PT100 probe 1
 | GPIO15       | CS              | `CS` of furnace 1         |
 | GPIO16       | CS              | `CS` of furnace 2         |
 | GPIO17       | CS              | `CS` of furnace 3         |
-| GPIO18       | CS              | `CS` of furnace 4         |
+| GPIO18       | CS              | `CS` of furnace 4 (optional) |
 | —            | IRQ (optional)  | `DRDY` — leave unconnected |
 
 The defaults are the constants at the top of [`main.py`](main.py):
@@ -35,8 +35,13 @@ The defaults are the constants at the top of [`main.py`](main.py):
 SCK_PIN = 14
 MOSI_PIN = 11
 MISO_PIN = 12
-CS_PINS = [15, 16, 17, 18]
+CS_GPIO_PINS = [15, 16, 17, 18]
+FURNACE_CHANNELS = 3   # set to 4 only when the fourth MAX31865 is installed
 ```
+
+The first `FURNACE_CHANNELS` pins in `CS_GPIO_PINS` are read. The remaining
+API slots are sent as `null` with fault `0`, so an uninstalled furnace is not
+reported as a broken probe.
 
 GPIO11/12/13/14 are the ESP32-S3's default SPI2 (FSPI) pins, which is why this
 variant uses them; servo or LED pins on a dev board may clash — move the

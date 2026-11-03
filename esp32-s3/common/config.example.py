@@ -8,6 +8,10 @@ WIFI_HOSTNAME = "furnace-esp32"   # shown by the router's client list
 WIFI_TIMEOUT_S = 20               # give up waiting for an association after this
 WIFI_RETRY_S = 15                 # re-association attempt interval at runtime
 
+# Number of installed furnace probes. MAX31855 builds normally use 3;
+# MAX31865 builds default to 3 as well and accept up to 4.
+FURNACE_CHANNELS = 3
+
 # --- API (the board talks to the PHP API directly) -----------------------
 # No PC in the middle: the firmware POSTs to /api/ingest itself.
 # Use the API host, not the dashboard host. "/api/ingest" is appended, but the

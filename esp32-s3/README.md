@@ -332,6 +332,7 @@ a microcontroller.
 | `WIFI_HOSTNAME` | `furnace-esp32`                  | Name in the router's client list               |
 | `WIFI_TIMEOUT_S`| `20`                             | Association timeout at boot                    |
 | `WIFI_RETRY_S`  | `15`                             | Reconnect attempt interval while offline       |
+| `FURNACE_CHANNELS` | `3`                           | Installed probes; MAX31865 accepts 3 or 4      |
 | `API_URL`       | `https://apitemp.futurefounderco.com` | API host; `/api/ingest` is appended       |
 | `API_URL` note  |                                  | `API_URL` may be the host or the complete `/api/ingest` URL |
 | `API_KEY`       | `""`                             | Must equal `FURNACE_INGEST_KEY` on the server  |

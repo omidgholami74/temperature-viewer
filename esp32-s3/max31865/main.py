@@ -48,10 +48,18 @@ SCK_PIN = 14
 MOSI_PIN = 11
 MISO_PIN = 12
 
-# Chip Select pins for four furnaces
-CS_PINS = [15, 16, 17, 18]
+# Chip Select pins for up to four furnaces. FURNACE_CHANNELS is the number
+# actually installed; the default is three, so an empty fourth slot is never
+# read as a phantom probe. Set FURNACE_CHANNELS = 4 in config.py for four.
+CS_GPIO_PINS = [15, 16, 17, 18]
+FURNACE_CHANNELS = max(
+    1,
+    min(int(getattr(config, "FURNACE_CHANNELS", 3)), len(CS_GPIO_PINS)),
+)
+CS_PINS = CS_GPIO_PINS[:FURNACE_CHANNELS]
 
 SAMPLE_INTERVAL_MS = 100
+API_CHANNELS = 4
 
 # --- probe settings ------------------------------------------------------
 # R_REF is the reference resistor on the breakout: 430 ohm for a PT100,
@@ -61,7 +69,7 @@ R_NOMINAL = 100.0   # PT100 = 100.0, PT1000 = 1000.0
 WIRE_MODE = 3       # 2, 3 or 4
 FILTER_HZ = 50      # Iran's mains frequency: keep the 50 Hz notch enabled
 
-CSV_HEADER = "ms,furnace1,furnace2,furnace3,furnace4"
+CSV_HEADER = "ms," + ",".join("furnace%d" % (number,) for number in range(1, len(CS_PINS) + 1))
 FAULT_SENTINEL = -1000.0
 
 # Live settings: frame interval, heartbeat and per-channel enabled/offset.
@@ -218,18 +226,19 @@ def session(watch):
 
             elapsed_time = time.ticks_diff(time.ticks_ms(), start_tick)
 
-            # Time_ms, Furnace1, Furnace2, Furnace3, Furnace4
+            # Time_ms, Furnace1, Furnace2, Furnace3 (fourth slot is empty)
             if echo:
-                print("{},{:.2f},{:.2f},{:.2f},{:.2f}".format(
-                    elapsed_time,
-                    csv_value(temperatures[0]),
-                    csv_value(temperatures[1]),
-                    csv_value(temperatures[2]),
-                    csv_value(temperatures[3]),
+                print(",".join(
+                    [str(elapsed_time)] + ["%.2f" % csv_value(value) for value in temperatures]
                 ))
 
             at_ms = None if epoch_base_ms is None else epoch_base_ms + elapsed_time
-            ingest.add(elapsed_time, temperatures, faults, at_ms)
+
+            # The API wire format is four channels wide. An uninstalled
+            # furnace is null with no fault, never a phantom temperature.
+            payload_t = temperatures + [None] * (API_CHANNELS - len(temperatures))
+            payload_f = faults + [0] * (API_CHANNELS - len(faults))
+            ingest.add(elapsed_time, payload_t, payload_f, at_ms)
 
             now = time.ticks_ms()
 

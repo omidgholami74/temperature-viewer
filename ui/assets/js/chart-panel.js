@@ -198,7 +198,7 @@ export class TemperatureChart {
       this.lastGood[channel] = null;
 
       for (const point of points) {
-        buffer.push({ x: point.t, y: this.reading(channel, point.v?.[channel]) });
+        buffer.push({ x: point.t, y: this.reading(channel, point.v?.[channel], 0) });
       }
     });
 
@@ -216,7 +216,7 @@ export class TemperatureChart {
       }
 
       this.buffers.forEach((buffer, channel) => {
-        buffer.push({ x: sample.t_ms, y: this.reading(channel, sample.temps?.[channel]) });
+        buffer.push({ x: sample.t_ms, y: this.reading(channel, sample.temps?.[channel], sample.faults?.[channel]) });
       });
     }
 
@@ -239,9 +239,10 @@ export class TemperatureChart {
 
   /**
    * A faulted frame has no temperature, so the series holds the last good
-   * reading: the curve runs on instead of breaking at every fault.
+   * reading: the curve runs on instead of breaking at every fault. A null with
+   * no fault is an empty channel, not a failed probe, and must stay empty.
    */
-  reading(channel, raw) {
+  reading(channel, raw, fault = 0) {
     const numeric = raw === null || raw === undefined ? Number.NaN : Number(raw);
 
     // -1000 is the firmware's fault sentinel. Plotting it would dive the whole
@@ -251,7 +252,12 @@ export class TemperatureChart {
       return numeric;
     }
 
-    return this.lastGood[channel];
+    if (Number(fault) !== 0) {
+      return this.lastGood[channel];
+    }
+
+    this.lastGood[channel] = null;
+    return null;
   }
 
   /** Last known value at or before a point in time, used for the 10 s delta. */

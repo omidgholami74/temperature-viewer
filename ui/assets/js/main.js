@@ -1,5 +1,5 @@
 import { API_LABEL, api, probeApi } from './api.js';
-import { TemperatureChart } from './chart-panel.js';
+import { TemperatureChart } from './chart-panel.js?v=10';
 import { LiveFeed } from './feed.js';
 import { TemperatureDropFilter } from './drop-filter.js';
 import {
@@ -299,9 +299,14 @@ function renderCards(latest) {
       lastGoodTemps[index] = Number(reading);
     }
 
-    // A faulted or missing frame keeps the last good number on screen: the
-    // furnace temperature does not disappear because one frame failed to read.
-    const held = reading === null && lastGoodTemps[index] !== null;
+    // A faulted frame keeps the last good number on screen. A null with no
+    // fault is an uninstalled/disabled channel, so clear it instead of holding
+    // a phantom reading forever.
+    if (reading === null && fault === 0) {
+      lastGoodTemps[index] = null;
+    }
+
+    const held = reading === null && fault !== 0 && lastGoodTemps[index] !== null;
     const value = held ? lastGoodTemps[index] : reading;
 
     if (latest && value !== null) {
@@ -338,7 +343,9 @@ function renderCards(latest) {
 
 function updateLegend(latest) {
   el.legendValues.forEach((node, index) => {
-    const value = latest?.temps?.[index] ?? lastGoodTemps[index];
+    const reading = latest?.temps?.[index] ?? null;
+    const fault = Number(latest?.faults?.[index] ?? 0);
+    const value = reading ?? (fault ? lastGoodTemps[index] : null);
     setText(node, value === null || value === undefined ? '—' : `${formatTemp(value)}°`);
   });
 }

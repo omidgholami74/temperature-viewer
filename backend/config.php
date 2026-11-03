@@ -30,6 +30,12 @@ return [
     // Leave empty to disable authentication (trusted local network only).
     'ingest_key' => (string) (getenv('FURNACE_INGEST_KEY') ?: ''),
 
+    // Firmware bundles for ESP32-S3 OTA updates. publish.py writes
+    // <dir>/<channel>/manifest.json plus the .py files. Keep it outside the
+    // web root: backend/var is denied by .htaccess, and this API serves the
+    // files only after the ingest key check.
+    'firmware_dir' => (string) (getenv('FURNACE_FIRMWARE_DIR') ?: __DIR__ . '/var/firmware'),
+
     // High resolution samples are kept for this many hours, then only the
     // one-second rollup is retained. Run bin/maintenance.php from cron.
     'raw_retention_hours' => max(1, (int) (getenv('FURNACE_RAW_RETENTION_HOURS') ?: 48)),

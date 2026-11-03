@@ -14,8 +14,9 @@ Wiring (see README.md):
     3V3  and GND  on every board
 
 Copy ``common/config.example.py`` to ``config.py``, edit it, then upload
-``config.py``, ``wifi.py``, ``ingest.py``, ``supervisor.py``, ``max31865.py`` and
-this ``main.py`` to the board root and run ``main.py``.
+``config.py``, ``wifi.py``, ``ingest.py``, ``supervisor.py``, ``ota.py``,
+``max31865.py`` and this ``main.py`` to the board root and run ``main.py``.
+``ota.py`` checks the API for a newer bundle in the background.
 
 With those six files at the board root the firmware also runs on its own from a
 USB charger: ``main.py`` starts at every power-up, the watchdog reboots a hung
@@ -31,6 +32,11 @@ import supervisor
 import wifi
 from ingest import Ingest
 from max31865 import MAX31865
+
+try:
+    import ota
+except ImportError:  # a board flashed before OTA existed still samples
+    ota = None
 
 # ==========================================
 # ESP32-S3 + 4x MAX31865
@@ -112,6 +118,22 @@ def session(watch):
     # and the sampling loop must stay on the 100 ms grid while it happens.
     if ingest.start():
         print("# upload runs in a background thread")
+
+    updater = None
+
+    if ota is not None:
+        try:
+            updater = ota.Updater(config)
+        except Exception as error:
+            print("# OTA: disabled: %s" % (error,))
+
+        if updater is not None:
+            if updater.start():
+                print("# OTA: %s, checking every %d s" % (
+                    updater.channel, updater.check_s))
+            else:
+                print("# OTA: waiting for the next boot")
+
     echo = bool(getattr(config, "SERIAL_ECHO", True))
 
     if not clock_ok:
@@ -127,6 +149,7 @@ def session(watch):
     last_net_check = start_tick
     last_report = start_tick
     last_health = start_tick
+    confirmed = False
 
     try:
         while True:
@@ -178,6 +201,22 @@ def session(watch):
                     if not ingest.start():
                         print("# upload unavailable, sending inline")
 
+                if updater is not None and not updater.alive():
+                    print("# OTA thread stopped, starting it again")
+                    updater.start()
+
+            if updater is not None and updater.ready:
+                print("# OTA: %s staged, restarting" % (updater.ready,))
+                ingest.stop()
+                updater.stop()
+                ota.reboot()
+
+            if not confirmed and time.ticks_diff(now, start_tick) >= 60000:
+                confirmed = True
+
+                if ota is not None:
+                    ota.confirm()
+
             if time.ticks_diff(now, last_report) >= 60000:
                 last_report = now
                 print("# %s" % (ingest.stats(),))
@@ -194,6 +233,9 @@ def session(watch):
     finally:
         print("# stopping, flushing %d samples" % (len(ingest.pending),))
         ingest.stop()
+
+        if updater is not None:
+            updater.stop()
 
 
 def main():

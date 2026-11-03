@@ -1,24 +1,24 @@
-# MAX31855 variant — 4x K-type thermocouple on an ESP32-S3
+# MAX31855 variant — 3x K-type thermocouple on an ESP32-S3
 
 This is the ESP32-S3 port of the original sketch in
 [`module/`](../../module): same pins (`SCK 14`, `MISO 12`, `CS 15/16/17/18`),
-same `read_temperature()`, same `ms,f1,f2,f3,f4` line on USB serial — plus
-Wi-Fi and a direct upload to the API.
+same `read_temperature()`, same `ms,f1,f2,f3` line on USB serial — plus Wi-Fi, a
+direct upload to the API and OTA updates. Three furnaces, not four: slot four of
+the API frame is sent empty, so adding a fourth probe is one line in `CS_PINS`.
 
 ```
 ESP32-S3 ──SPI──┬── MAX31855 #1 (CS 15) ── K-type probe 1
                 ├── MAX31855 #2 (CS 16) ── K-type probe 2
-                ├── MAX31855 #3 (CS 17) ── K-type probe 3
-                └── MAX31855 #4 (CS 18) ── K-type probe 4
+                └── MAX31855 #3 (CS 17) ── K-type probe 3
         └── Wi-Fi ── POST /api/ingest ── dashboard
 ```
 
 ## Wiring
 
-The four amplifiers share one SPI bus. **The MAX31855 is read-only: it has no
+The three amplifiers share one SPI bus. **The MAX31855 is read-only: it has no
 MOSI/SDI pin**, so GPIO11 stays free on this variant.
 
-| ESP32-S3 pin | Signal | MAX31855 board (all four)      |
+| ESP32-S3 pin | Signal | MAX31855 board (all three)     |
 | ------------ | ------ | ------------------------------ |
 | 3V3          | 3V3    | `VIN` / `VCC` / `3V3`          |
 | GND          | GND    | `GND`                          |
@@ -27,7 +27,6 @@ MOSI/SDI pin**, so GPIO11 stays free on this variant.
 | GPIO15       | CS     | `CS` of furnace 1              |
 | GPIO16       | CS     | `CS` of furnace 2              |
 | GPIO17       | CS     | `CS` of furnace 3              |
-| GPIO18       | CS     | `CS` of furnace 4              |
 | —            | —      | `DO` of every board joins GPIO12 |
 
 Per board, one probe: **K-type thermocouple, `T+` to `T+` and `T-` to `T-`.**
@@ -39,8 +38,9 @@ Reversed polarity reads a falling temperature when the furnace heats up.
   elements; a 1 MHz clock is slow enough that wiring is rarely the problem.
 - Use a separate twisted pair per probe, grounded at one end only, to avoid a
   ground loop through the thermocouple sheath.
-- GPIO15–GPIO18 are free on a bare ESP32-S3 module; if your board wires them to
-  flash/PSRAM or to an RGB LED, move `CS_PINS` in `main.py`.
+- GPIO15–GPIO17 are free on a bare ESP32-S3 module; if your board wires them to
+  flash/PSRAM or to an RGB LED, move `CS_PINS` in `main.py`. GPIO18 is unused
+  and stays free for a fourth probe later.
 
 ## Install
 
@@ -52,6 +52,7 @@ mpremote connect COM6 \
   cp ../common/wifi.py :wifi.py + \
   cp ../common/ingest.py :ingest.py + \
   cp ../common/supervisor.py :supervisor.py + \
+  cp ../common/ota.py :ota.py + \
   cp main.py :main.py
 mpremote connect COM6 repl                         # Ctrl-] to leave
 ```
@@ -61,9 +62,9 @@ The console should show:
 ```
 Wi-Fi: connected, ip=192.168.1.42 gateway=192.168.1.1
 NTP: clock set to 2026-10-25 06:12:04 UTC
-ms,furnace1,furnace2,furnace3,furnace4
-312,781.25,660.00,940.00,545.75
-413,781.50,660.25,940.25,545.50
+ms,furnace1,furnace2,furnace3
+312,781.25,660.00,940.00
+413,781.50,660.25,940.25
 ```
 
 ## How it works
@@ -93,8 +94,8 @@ a cold-junction error, a probe lying against the wall of the chamber, or a long
 lead. Correct it once in [`main.py`](main.py) instead of in the dashboard:
 
 ```python
-# furnace1 (CS 15), furnace2 (CS 16), furnace3 (CS 17), furnace4 (CS 18)
-CHANNEL_OFFSETS = [0.0, 0.0, 0.0, 0.0]   # °C, added to every reading
+# furnace1 (CS 15), furnace2 (CS 16), furnace3 (CS 17)
+CHANNEL_OFFSETS = [0.0, 0.0, 0.0]   # °C, added to every reading
 ```
 
 The offset is added to the reading before anything else sees it, so the CSV on

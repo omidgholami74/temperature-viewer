@@ -1,7 +1,8 @@
 # Firmware
 
-Three implementations, one contract: read four channels every 100 ms and hand a
-`{u, t[4], f[4]}` frame to a transport. The differences are the toolchain, the
+Three implementations, one contract: read the installed channels every 100 ms
+and hand a `{u, t[4], f[4]}` frame to a transport. Unused slots are `null` with
+fault `0`, never a fabricated temperature. The differences are the toolchain, the
 sensor driver and how a frame leaves the board.
 
 ![Firmware loop](images/firmware-loop.svg)
@@ -12,7 +13,7 @@ sensor driver and how a frame leaves the board.
 | --- | --- | --- | --- |
 | Target | ESP32-S3, Wi-Fi | ESP32-S3 (or ESP32), Wi-Fi | Raspberry Pi Pico, USB |
 | Toolchain | Thonny / `mpremote` | Arduino IDE 2.x / `arduino-cli` | Thonny |
-| Sensor | MAX31855 or MAX31865 | MAX31855 or MAX31865 | MAX31855 |
+| Sensor | 3× MAX31855 or 4× MAX31865 | MAX31855 or MAX31865 | MAX31855 |
 | Transport | HTTP batch | HTTP batch | CSV over USB (+ flash log) |
 | Buffer | 600 frames (60 s) | 60 s ring | none on the wire; flash log rotates at 1 MB |
 | Clock | NTP, `at` per batch | NTP, `at` per batch | none; collector stamps time |
@@ -23,7 +24,7 @@ sensor driver and how a frame leaves the board.
 ```
 slot N                      slot N+1
   │                            │
-  ├─ read ch1..ch4 (SPI)        │     4 × 4 bytes at 1 MHz ≈ 0.2 ms
+  ├─ read the probes (SPI)      │     3–4 × 4 bytes at 1 MHz ≈ 0.2 ms
   ├─ apply channel offset       │
   ├─ format CSV line            │     ~0.3 ms
   ├─ enqueue frame              │     lock + append, never blocks on network
@@ -76,6 +77,45 @@ The Pico prints one CSV line per sample:
 `collector.py` parses it, maps uptime to wall-clock time, appends JSON lines to
 a checkpointed spool and uploads batches of 100. `-1000.00` becomes `null` with
 fault bit 8. See [`collector/README.md`](../collector/README.md).
+
+## Remote updates
+
+The MicroPython board updates itself from the API; the Arduino build still needs
+a USB flash. A bundle is a manifest plus plain `.py` files:
+
+```
+main.py ── check ──▶ GET /api/firmware/manifest?channel=max31855
+                        │ version differs
+                        ▼
+              GET /api/firmware/file?name=main.py   (one per changed file)
+                        │ verify size + sha256 + compile
+                        ▼
+                  /ota/stage  ── pending.json ──▶ reboot
+                        │
+boot.py ──── apply ─────┴─▶ backup replaced files ──▶ reboot into new code
+                        │
+main.py ── 60 s healthy ──▶ confirm: delete /ota/backup
+                        │
+              crash ×3 before confirm ──▶ restore /ota/backup
+```
+
+Rules that make this safe to run unattended:
+
+* Only names listed in the manifest are written, and only into the board root.
+* Each file is checked against its SHA-256 and compiled before it replaces
+  anything; a truncated download never reaches `main.py`.
+* `config.py` is never part of a bundle, so an update cannot break the Wi-Fi or
+  the API key.
+* The previous file set is kept until the new firmware has run for a minute;
+  three unconfirmed boots restore it automatically.
+* Sampling is not paused for the check: the download runs in its own thread, and
+  the reboot waits until the sample queue has been flushed.
+* A `404` (nothing published yet) is logged once and retried at the next
+  interval.
+
+Publishing is one command per release; see
+[`esp32-s3/README.md`](../esp32-s3/README.md#remote-updates-ota) for the bundle
+layout and the console lines.
 
 ## Boot and supervision
 

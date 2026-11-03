@@ -12,10 +12,12 @@ import json
 import os
 import socket
 import sys
+import tempfile
 import threading
 import time
 import types
 import unittest
+import urllib.parse
 from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -76,6 +78,10 @@ if not hasattr(__import__("time"), "sleep_ms"):
 rtd = load("esp32s3_max31865", os.path.join(ROOT, "max31865", "max31865.py"))
 ingest = load("esp32s3_ingest", os.path.join(ROOT, "common", "ingest.py"))
 supervisor = load("esp32s3_supervisor", os.path.join(ROOT, "common", "supervisor.py"))
+
+# ota.py imports the firmware's own ``ingest`` module by that short name.
+sys.modules.setdefault("ingest", ingest)
+ota = load("esp32s3_ota", os.path.join(ROOT, "common", "ota.py"))
 
 # boot.py runs its diagnostics on import; the output is captured here.
 with mock.patch("builtins.print"):
@@ -786,6 +792,353 @@ class RtdTests(unittest.TestCase):
         four_wire = rtd.MAX31865(spi, cs=18, wire_mode=4, filter_hz=60)
         four_wire.begin()
         self.assertEqual(spi.writes[-1][1], 0x80 | 0x40)
+
+
+class OtaManifestTests(unittest.TestCase):
+    """The manifest is the contract; half of it must never be applied."""
+
+    def entry(self, **overrides):
+        values = {"name": "main.py", "size": 12, "sha256": "a" * 64}
+        values.update(overrides)
+        return values
+
+    def test_a_complete_manifest_is_accepted(self):
+        manifest = ota.parse_manifest(
+            {"version": "20261103-120000", "files": [self.entry()]}
+        )
+
+        self.assertEqual(manifest["version"], "20261103-120000")
+        self.assertEqual(manifest["files"], [{"name": "main.py", "size": 12, "sha256": "a" * 64}])
+
+    def test_unsafe_file_names_are_rejected(self):
+        for name in ("../config.py", "/etc/passwd", "a/b.py", "", ".hidden", "x" * 65):
+            with self.assertRaises(ValueError, msg=name):
+                ota.parse_manifest({"version": "v1", "files": [self.entry(name=name)]})
+
+    def test_a_truncated_file_list_is_rejected(self):
+        for files in (
+            [],
+            None,
+            [self.entry(sha256="abc")],
+            [self.entry(size=999999)],
+            [self.entry(size=-1)],
+            ["main.py"],
+        ):
+            with self.assertRaises(ValueError):
+                ota.parse_manifest({"version": "v1", "files": files})
+
+    def test_a_manifest_without_a_version_is_rejected(self):
+        with self.assertRaises(ValueError):
+            ota.parse_manifest({"files": [self.entry()]})
+
+    def test_bundle_channels_are_lower_case_names(self):
+        self.assertTrue(ota.valid_channel("max31855"))
+        self.assertTrue(ota.valid_channel("max31865"))
+        self.assertFalse(ota.valid_channel("Max31855"))
+        self.assertFalse(ota.valid_channel("../x"))
+        self.assertFalse(ota.valid_channel("-"))
+
+
+class OtaBundleTests(unittest.TestCase):
+    """Staging, applying, confirming and rolling back on a real directory."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="furnace-ota-")
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.root, ignore_errors=True))
+        os.makedirs(os.path.join(self.root, "ota", "stage"))
+        os.makedirs(os.path.join(self.root, "ota", "backup"))
+
+    def path(self, *parts):
+        return os.path.join(self.root, *parts)
+
+    def write(self, path, text):
+        with open(path, "wb") as handle:
+            handle.write(text.encode() if isinstance(text, str) else text)
+
+    def read(self, path):
+        with open(path, "rb") as handle:
+            return handle.read().decode()
+
+    def stage(self, version, files):
+        entries = []
+
+        for name, text in files.items():
+            data = text.encode()
+            self.write(self.path("ota", "stage", name), data)
+            entries.append({"name": name, "size": len(data), "sha256": ota.sha256_hex(data)})
+
+        self.write(
+            self.path("ota", "pending.json"),
+            json.dumps({"version": version, "files": entries}),
+        )
+
+    def test_applying_replaces_files_and_keeps_a_backup(self):
+        self.write(self.path("wifi.py"), "OLD = 1\n")
+        self.stage("v2", {"wifi.py": "NEW = 2\n", "ota.py": "OTA = 1\n"})
+
+        version = ota.apply_pending(self.root, log=lambda *_: None)
+
+        self.assertEqual(version, "v2")
+        self.assertEqual(self.read(self.path("wifi.py")), "NEW = 2\n")
+        self.assertEqual(self.read(self.path("ota", "backup", "wifi.py")), "OLD = 1\n")
+        self.assertEqual(self.read(self.path("ota", "version")), "v2")
+        self.assertFalse(os.path.exists(self.path("ota", "pending.json")))
+        self.assertEqual(os.listdir(self.path("ota", "stage")), [])
+
+    def test_a_wrong_checksum_is_never_applied(self):
+        self.write(self.path("main.py"), "OLD = 1\n")
+        self.write(self.path("ota", "stage", "main.py"), "TAMPERED = 1\n")
+        self.write(
+            self.path("ota", "pending.json"),
+            json.dumps({"version": "v2", "files": [
+                {"name": "main.py", "size": 12, "sha256": "a" * 64},
+            ]}),
+        )
+
+        with self.assertRaises(ValueError):
+            ota.apply_pending(self.root, log=lambda *_: None)
+
+        self.assertEqual(self.read(self.path("main.py")), "OLD = 1\n")
+
+    def test_a_syntax_error_is_never_applied(self):
+        self.write(self.path("ota", "stage", "main.py"), "def broken(:\n")
+        data = b"def broken(:\n"
+        self.write(
+            self.path("ota", "pending.json"),
+            json.dumps({"version": "v2", "files": [
+                {"name": "main.py", "size": len(data), "sha256": ota.sha256_hex(data)},
+            ]}),
+        )
+
+        with self.assertRaises(SyntaxError):
+            ota.apply_pending(self.root, log=lambda *_: None)
+
+        self.assertFalse(os.path.exists(self.path("main.py")))
+
+    def test_confirm_keeps_the_update_and_drops_the_backup(self):
+        self.write(self.path("wifi.py"), "OLD = 1\n")
+        self.stage("v2", {"wifi.py": "NEW = 2\n"})
+        ota.apply_pending(self.root, log=lambda *_: None)
+        self.write(self.path("ota", "boots"), "1")
+
+        self.assertTrue(ota.confirm(self.root, log=lambda *_: None))
+        self.assertFalse(os.path.exists(self.path("ota", "backup.json")))
+        self.assertFalse(os.path.exists(self.path("ota", "boots")))
+        self.assertEqual(os.listdir(self.path("ota", "backup")), [])
+
+    def test_three_unconfirmed_boots_roll_back(self):
+        self.write(self.path("wifi.py"), "BROKEN = 1\n")
+        self.write(self.path("ota", "backup", "wifi.py"), "GOOD = 1\n")
+        self.write(self.path("ota", "backup.json"), json.dumps({"files": ["wifi.py"]}))
+        self.write(self.path("ota", "boots"), "3")
+        resets = []
+
+        class Reboot(Exception):
+            pass
+
+        fake = types.SimpleNamespace(reset=lambda: (resets.append(1), (_ for _ in ()).throw(Reboot()))[1])
+
+        with mock.patch.object(ota, "machine", fake):
+            with self.assertRaises(Reboot):
+                ota.boot(self.root, log=lambda *_: None)
+
+        self.assertEqual(resets, [1])
+        self.assertEqual(self.read(self.path("wifi.py")), "GOOD = 1\n")
+        self.assertFalse(os.path.exists(self.path("ota", "backup.json")))
+
+    def test_a_staged_bundle_is_applied_before_main_py(self):
+        self.stage("v3", {"main.py": "VALUE = 3\n"})
+        resets = []
+
+        class Reboot(Exception):
+            pass
+
+        fake = types.SimpleNamespace(reset=lambda: (resets.append(1), (_ for _ in ()).throw(Reboot()))[1])
+
+        with mock.patch.object(ota, "machine", fake):
+            with self.assertRaises(Reboot):
+                ota.boot(self.root, log=lambda *_: None)
+
+        self.assertEqual(self.read(self.path("main.py")), "VALUE = 3\n")
+        self.assertEqual(resets, [1])
+
+
+class FirmwareServer(http.server.BaseHTTPRequestHandler):
+    """The two OTA endpoints, close enough to the PHP API for the client."""
+
+    manifest = {}
+    files = {}
+    requests = []
+
+    def do_GET(self):
+        parsed = urllib.parse.urlparse(self.path)
+        query = urllib.parse.parse_qs(parsed.query)
+        FirmwareServer.requests.append({
+            "path": parsed.path,
+            "query": query,
+            "key": self.headers.get("X-Api-Key"),
+        })
+
+        if parsed.path == "/api/firmware/manifest":
+            body = json.dumps(FirmwareServer.manifest).encode()
+            status = 200
+        elif parsed.path == "/api/firmware/file":
+            body = FirmwareServer.files.get((query.get("name") or [""])[0])
+            status = 200 if body is not None else 404
+        else:
+            body = b"{}"
+            status = 404
+
+        self.send_response(status)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+class OtaClientTests(unittest.TestCase):
+    """The board side: fetch, verify and stage; never touch a bad file."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FirmwareServer)
+        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
+        cls.thread.start()
+        cls.port = cls.server.server_address[1]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="furnace-ota-client-")
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.root, ignore_errors=True))
+        FirmwareServer.requests = []
+        FirmwareServer.files = {"main.py": b"VALUE = 2\n"}
+        FirmwareServer.manifest = {
+            "version": "v2",
+            "files": [{
+                "name": "main.py",
+                "size": len(b"VALUE = 2\n"),
+                "sha256": ota.sha256_hex(b"VALUE = 2\n"),
+            }],
+        }
+
+    def updater(self, **overrides):
+        values = {
+            "API_URL": "http://127.0.0.1:%d" % (self.port,),
+            "API_KEY": "secret",
+            "OTA_ENABLED": True,
+            "OTA_CHANNEL": "max31855",
+            "OTA_TIMEOUT_S": 5,
+            "TLS_VERIFY": False,
+            "OTA_CHECK_DELAY_S": 0,
+            "OTA_CHECK_S": 60,
+        }
+        values.update(overrides)
+
+        return ota.Updater(types.SimpleNamespace(**values), root=self.root, log=lambda *_: None)
+
+    def test_a_bundle_is_downloaded_verified_and_staged(self):
+        updater = self.updater()
+
+        self.assertTrue(updater.check())
+        self.assertEqual(updater.ready, "v2")
+
+        with open(os.path.join(self.root, "ota", "stage", "main.py"), "rb") as handle:
+            self.assertEqual(handle.read(), b"VALUE = 2\n")
+
+        with open(os.path.join(self.root, "ota", "pending.json"), "rb") as handle:
+            pending = json.loads(handle.read())
+
+        self.assertEqual(pending["version"], "v2")
+        self.assertEqual(FirmwareServer.requests[0]["key"], "secret")
+        self.assertEqual(FirmwareServer.requests[0]["query"]["channel"], ["max31855"])
+
+    def test_the_same_version_is_not_downloaded_again(self):
+        os.makedirs(os.path.join(self.root, "ota"))
+        with open(os.path.join(self.root, "ota", "version"), "wb") as handle:
+            handle.write(b"v2")
+
+        self.assertFalse(self.updater().check())
+        self.assertEqual([request["path"] for request in FirmwareServer.requests], ["/api/firmware/manifest"])
+
+    def test_files_that_already_match_are_not_downloaded(self):
+        FirmwareServer.files = {}
+        FirmwareServer.manifest.update({"version": "v9"})
+        with open(os.path.join(self.root, "main.py"), "wb") as handle:
+            handle.write(b"VALUE = 2\n")
+
+        self.assertFalse(self.updater().check())
+        self.assertEqual([request["path"] for request in FirmwareServer.requests], ["/api/firmware/manifest"])
+
+        with open(os.path.join(self.root, "ota", "version"), "rb") as handle:
+            self.assertEqual(handle.read(), b"v9")
+
+    def test_a_bad_checksum_is_rejected(self):
+        FirmwareServer.files = {"main.py": b"EVIL = 1\n"}
+
+        with self.assertRaises(OSError):
+            self.updater().check()
+
+        self.assertFalse(os.path.exists(os.path.join(self.root, "ota", "pending.json")))
+
+    def test_a_missing_bundle_is_not_an_error(self):
+        # The PHP API answers 404 when nothing has been published yet; the
+        # board must keep sampling and try again at the next interval.
+        updater = self.updater()
+        updater._get = lambda path: (404, b"")
+
+        self.assertFalse(updater.check())
+        self.assertIn("no bundle", updater.last_error)
+
+
+class PublishTests(unittest.TestCase):
+    """The bundle publisher used on the operator's machine."""
+
+    def setUp(self):
+        self.out = tempfile.mkdtemp(prefix="furnace-publish-")
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.out, ignore_errors=True))
+        self.publish = load(
+            "esp32s3_publish",
+            os.path.join(ROOT, "tools", "publish.py"),
+        )
+
+    def test_a_bundle_has_the_firmware_but_never_config_py(self):
+        manifest = self.publish.publish("max31855", out_dir=self.out, version="test-1")
+        target = os.path.join(self.out, "max31855")
+        names = {entry["name"] for entry in manifest["files"]}
+
+        self.assertEqual(
+            names,
+            {"boot.py", "wifi.py", "ingest.py", "supervisor.py", "ota.py", "main.py"},
+        )
+        self.assertNotIn("config.py", names)
+        self.assertTrue(os.path.isfile(os.path.join(target, "manifest.json")))
+
+        with open(os.path.join(target, "manifest.json"), encoding="utf-8") as handle:
+            stored = json.load(handle)
+
+        self.assertEqual(stored["version"], "test-1")
+        self.assertEqual(stored["channel"], "max31855")
+
+        for entry in stored["files"]:
+            with open(os.path.join(target, entry["name"]), "rb") as handle:
+                data = handle.read()
+
+            self.assertEqual(len(data), entry["size"])
+            self.assertEqual(ota.sha256_hex(data), entry["sha256"])
+
+    def test_the_rtd_bundle_carries_its_driver(self):
+        manifest = self.publish.publish("max31865", out_dir=self.out, version="test-2")
+        names = {entry["name"] for entry in manifest["files"]}
+
+        self.assertIn("max31865.py", names)
+        self.assertIn("main.py", names)
 
 
 if __name__ == "__main__":

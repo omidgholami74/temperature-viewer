@@ -1,20 +1,27 @@
-"""ESP32-S3 + 4x MAX31855, Wi-Fi, straight to the PHP API.
+"""ESP32-S3 + 3x MAX31855, Wi-Fi, straight to the PHP API.
 
-The original sketch is kept as it was — same pins, same ``read_temperature``
-and same ``ms,f1,f2,f3,f4`` line on USB serial — with two things added:
+Three furnaces are read every 100 ms; the ``ms,f1,f2,f3`` line goes out on USB
+serial for Thonny / Serial Studio / ``serial-web``, and every frame is POSTed
+to ``/api/ingest`` from the board itself — no PC collector in the middle.
 
-* the board joins a Wi-Fi network at boot (``wifi.py``), and
-* every frame is POSTed to ``/api/ingest`` itself (``ingest.py``), so the PC
-  collector in ``collector/`` is no longer needed.
+The API frame is still four channels wide. A board with three probes sends the
+fourth slot as ``null`` with no fault bit, so an empty slot is not reported as a
+broken probe. Add a fourth pin to ``CS_PINS`` (and an offset) to use it.
+
+Wiring (see README.md):
+
+    SCK  GPIO14   shared clock
+    MISO GPIO12   shared data in
+    CS   GPIO15, 16, 17             one per MAX31855 board
+    3V3  and GND  on every board   (the MAX31855 has no MOSI)
 
 Copy ``common/config.example.py`` to ``config.py``, edit it, then upload
-``config.py``, ``wifi.py``, ``ingest.py``, ``supervisor.py`` and this ``main.py``
-to the board root and run ``main.py``. See README.md in this folder for the
-wiring.
+``config.py``, ``wifi.py``, ``ingest.py``, ``supervisor.py``, ``ota.py`` and this
+``main.py`` to the board root and run ``main.py``. With those at the root the
+firmware runs on its own from a USB charger and updates itself from the API.
 
-With those five files at the board root the firmware also runs on its own from
-a USB charger: ``main.py`` starts at every power-up, the watchdog reboots a hung
-loop and ``supervisor.run_forever`` restarts a session that crashed.
+The watchdog reboots a hung loop, ``supervisor.run_forever`` restarts a crashed
+session and ``ota.py`` checks the server for a newer bundle in the background.
 """
 
 import time
@@ -26,19 +33,29 @@ import supervisor
 import wifi
 from ingest import Ingest
 
+try:
+    import ota
+except ImportError:  # a board flashed before OTA existed still samples
+    ota = None
+
 # ==========================================
-# ESP32-S3 + 4x MAX31855
+# ESP32-S3 + 3x MAX31855
 # ==========================================
 
 SCK_PIN = 14
 MISO_PIN = 12
 
-# Chip Select pins for four furnaces
-CS_PINS = [15, 16, 17, 18]
+# Chip Select pins, one per furnace. Add a fourth pin here to grow the build;
+# every list below follows this length.
+CS_PINS = [15, 16, 17]
 
 SAMPLE_INTERVAL_MS = 100
 
-CSV_HEADER = "ms,furnace1,furnace2,furnace3,furnace4"
+# The wire format is fixed at four channels by the API. Unused slots are sent
+# as null (temperature) and 0 (fault), so they read as "no probe installed".
+API_CHANNELS = 4
+
+CSV_HEADER = "ms,furnace1,furnace2,furnace3"
 FAULT_SENTINEL = -1000.0  # CSV value for a channel that reported a fault
 
 # Fixed calibration offset per furnace, in °C, in CS_PINS order: furnace 1 is
@@ -49,7 +66,7 @@ FAULT_SENTINEL = -1000.0  # CSV value for a channel that reported a fault
 # working temperature and leave a channel at 0.0 for no correction.
 # A faulted channel is not offset: it stays -1000.00 on the serial line and
 # null in the upload, so the dashboard still shows it as broken.
-CHANNEL_OFFSETS = [0.0, 0.0, 0.0, 0.0]
+CHANNEL_OFFSETS = [0.0, 0.0, 0.0]
 
 # SPI configuration
 spi = SPI(
@@ -187,6 +204,22 @@ def session(watch):
     # and the sampling loop must stay on the 100 ms grid while it happens.
     if ingest.start():
         print("# upload runs in a background thread")
+
+    updater = None
+
+    if ota is not None:
+        try:
+            updater = ota.Updater(config)
+        except Exception as error:
+            print("# OTA: disabled: %s" % (error,))
+
+        if updater is not None:
+            if updater.start():
+                print("# OTA: %s, checking every %d s" % (
+                    updater.channel, updater.check_s))
+            else:
+                print("# OTA: waiting for the next boot")
+
     echo = bool(getattr(config, "SERIAL_ECHO", True))
 
     if not clock_ok:
@@ -202,13 +235,14 @@ def session(watch):
     last_net_check = start_tick
     last_report = start_tick
     last_health = start_tick
+    confirmed = False
 
     try:
         while True:
             temperatures = []
             faults = []
 
-            # Read all four furnaces
+            # Read every installed furnace
             for index, cs in enumerate(chip_selects):
                 temperature, fault = read_channel(cs)
 
@@ -227,19 +261,20 @@ def session(watch):
             # slow upload cannot make the time column drift)
             elapsed_time = time.ticks_diff(time.ticks_ms(), start_tick)
 
-            # Print five comma-separated numeric columns:
-            # Time_ms, Furnace1, Furnace2, Furnace3, Furnace4
+            # Time_ms, Furnace1, Furnace2, ...
             if echo:
-                print("{},{:.2f},{:.2f},{:.2f},{:.2f}".format(
-                    elapsed_time,
-                    csv_value(temperatures[0]),
-                    csv_value(temperatures[1]),
-                    csv_value(temperatures[2]),
-                    csv_value(temperatures[3]),
+                print(",".join(
+                    [str(elapsed_time)] + ["%.2f" % csv_value(value) for value in temperatures]
                 ))
 
             at_ms = None if epoch_base_ms is None else epoch_base_ms + elapsed_time
-            ingest.add(elapsed_time, temperatures, faults, at_ms)
+
+            # Pad the frame to the API's four channels: an unused slot is null
+            # with no fault, not a broken probe.
+            payload_t = temperatures + [None] * (API_CHANNELS - len(temperatures))
+            payload_f = faults + [0] * (API_CHANNELS - len(faults))
+
+            ingest.add(elapsed_time, payload_t, payload_f, at_ms)
 
             now = time.ticks_ms()
 
@@ -264,6 +299,26 @@ def session(watch):
                     if not ingest.start():
                         print("# upload unavailable, sending inline")
 
+                if updater is not None and not updater.alive():
+                    print("# OTA thread stopped, starting it again")
+                    updater.start()
+
+            # A staged update is applied at the next boot; flush what is still
+            # queued first so the update does not cost a buffer of samples.
+            if updater is not None and updater.ready:
+                print("# OTA: %s staged, restarting" % (updater.ready,))
+                ingest.stop()
+                updater.stop()
+                ota.reboot()
+
+            # A freshly applied bundle keeps a backup until the firmware has
+            # survived a minute, which is what arms the boot-loop rollback.
+            if not confirmed and time.ticks_diff(now, start_tick) >= 60000:
+                confirmed = True
+
+                if ota is not None:
+                    ota.confirm()
+
             if time.ticks_diff(now, last_report) >= 60000:
                 last_report = now
                 print("# %s" % (ingest.stats(),))
@@ -283,6 +338,9 @@ def session(watch):
     finally:
         print("# stopping, flushing %d samples" % (len(ingest.pending),))
         ingest.stop()
+
+        if updater is not None:
+            updater.stop()
 
 
 def main():

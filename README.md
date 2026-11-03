@@ -88,7 +88,7 @@ extreme, CSV export with its own date picker, and an installable PWA manifest.
 | `backend/`  | PHP API only: JSON endpoints, SQLite schema, CLI tools, tests    |
 | `ui/`       | Static dashboard: HTML, design tokens, CSS, ES modules, config   |
 | `module/`   | Pico firmware: serial + flash log at 10 Hz, no network, simulator |
-| `esp32-s3/` | ESP32-S3 firmware: Wi-Fi, 10 Hz, **direct** `POST /api/ingest` — MicroPython and Arduino/C++ (MAX31855 or MAX31865) |
+| `esp32-s3/` | ESP32-S3 firmware: Wi-Fi, 10 Hz, **direct** `POST /api/ingest`, OTA updates — MicroPython (3× MAX31855) and Arduino/C++ |
 | `collector/`| PC console app: serial/file capture, checkpointed upload to API   |
 | `serial-web/`| Browser dashboard reading the COM port directly (Web Serial)     |
 | `tests/`    | Node unit tests for the timer and formatting helpers             |
@@ -184,7 +184,7 @@ Wiring, firmware upload and calibration are documented in
 **ESP32-S3 (Wi-Fi, no PC).** The board uploads to the API itself, so the PC
 and `collector/` drop out of the picture.
 
-- 4x MAX31855 + K-type probes (SCK 14, MISO 12, CS 15/16/17/18), or
+- 3x MAX31855 + K-type probes (SCK 14, MISO 12, CS 15/16/17), or
 - 4x MAX31865 + PT100/PT1000 RTDs (SCK 14, **MOSI 11**, MISO 12, CS 15/16/17/18).
 
 Pin tables, flashing and the API payload are in

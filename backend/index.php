@@ -29,6 +29,8 @@ try {
             'status' => 'ok',
             'endpoints' => [
                 'GET /api/health',
+                'GET /api/firmware/manifest?channel=<name>',
+                'GET /api/firmware/file?channel=<name>&name=<file>',
                 'GET /api/live?since=<id>&run=<id>',
                 'GET /api/history?window=<seconds>&max_points=<n>',
                 'GET /api/bounds',
@@ -95,6 +97,60 @@ function handleApi(string $method, string $route, array $config): never
                 'raw_rows' => $count,
                 'ingest_key_required' => trim((string) $config['ingest_key']) !== '',
             ]);
+
+        case 'GET /firmware/manifest':
+            Api::requireIngestKey($config);
+            $firmwareChannel = firmwareChannel();
+            $manifest = firmwareManifest($config, $firmwareChannel);
+
+            header('Content-Type: application/json; charset=utf-8');
+            header('Cache-Control: no-store');
+            header('X-Content-Type-Options: nosniff');
+
+            echo json_encode(
+                $manifest,
+                JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+            );
+
+            exit;
+
+        case 'GET /firmware/file':
+            Api::requireIngestKey($config);
+            $firmwareChannel = firmwareChannel();
+            $manifest = firmwareManifest($config, $firmwareChannel);
+            $requested = isset($_GET['name']) && is_string($_GET['name']) ? $_GET['name'] : '';
+            $entry = null;
+
+            foreach ($manifest['files'] as $file) {
+                if (
+                    is_array($file)
+                    && isset($file['name'], $file['sha256'])
+                    && firmwareFileName((string) $file['name']) === $requested
+                ) {
+                    $entry = $file;
+                    break;
+                }
+            }
+
+            if ($entry === null) {
+                throw new ApiError(404, 'No such file in this firmware bundle');
+            }
+
+            $filePath = firmwareDirectory($config) . '/' . $firmwareChannel . '/' . $entry['name'];
+
+            if (!is_file($filePath)) {
+                throw new ApiError(404, 'The firmware file is missing on the server');
+            }
+
+            header('Content-Type: text/plain; charset=utf-8');
+            header('Content-Length: ' . (string) filesize($filePath));
+            header('X-Firmware-Version: ' . (string) $manifest['version']);
+            header('X-Firmware-Sha256: ' . (string) $entry['sha256']);
+            header('Cache-Control: no-store');
+            header('X-Content-Type-Options: nosniff');
+
+            readfile($filePath);
+            exit;
 
         case 'GET /live':
             $since = Api::intParam('since', 0, 0) ?? 0;
@@ -517,6 +573,8 @@ function handleApi(string $method, string $route, array $config): never
                 'name' => 'furnace-monitor-api',
                 'endpoints' => [
                 'GET /api/health',
+                'GET /api/firmware/manifest?channel=<name>',
+                'GET /api/firmware/file?channel=<name>&name=<file>',
                 'GET /api/live?since=<id>&run=<id>',
                 'GET /api/history?window=<seconds>&max_points=<n>',
                 'GET /api/bounds',
@@ -535,6 +593,106 @@ function handleApi(string $method, string $route, array $config): never
 function nowMs(): int
 {
     return (int) floor(microtime(true) * 1000);
+}
+
+/**
+ * Directory holding the published OTA bundles (one folder per channel).
+ *
+ * @param array<string, mixed> $config
+ */
+function firmwareDirectory(array $config): string
+{
+    return rtrim((string) $config['firmware_dir'], '/');
+}
+
+/**
+ * The requested bundle name, validated before it touches the filesystem.
+ */
+function firmwareChannel(): string
+{
+    $channel = $_GET['channel'] ?? '';
+
+    if (!is_string($channel) || !preg_match('/^[a-z0-9][a-z0-9-]{0,31}$/', $channel)) {
+        throw new ApiError(422, 'channel must be a firmware bundle name such as max31855');
+    }
+
+    return $channel;
+}
+
+/**
+ * A file name that can only be a file in the bundle folder, never a path.
+ */
+function firmwareFileName(string $name): string
+{
+    if (!preg_match('/^[A-Za-z0-9_.-]{1,64}$/', $name) || strpos($name, '..') !== false) {
+        return '';
+    }
+
+    return $name;
+}
+
+/**
+ * Read and validate a channel's manifest.
+ *
+ * @param array<string, mixed> $config
+ * @return array{version: string, files: list<array<string, mixed>>}
+ */
+function firmwareManifest(array $config, string $channel): array
+{
+    $path = firmwareDirectory($config) . '/' . $channel . '/manifest.json';
+
+    if (!is_file($path)) {
+        throw new ApiError(404, 'No firmware bundle is published for this channel');
+    }
+
+    $raw = file_get_contents($path);
+
+    if ($raw === false) {
+        throw new ApiError(500, 'Could not read the firmware manifest');
+    }
+
+    try {
+        $manifest = json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        throw new ApiError(500, 'The firmware manifest is not valid JSON');
+    }
+
+    if (
+        !is_array($manifest)
+        || !isset($manifest['version'], $manifest['files'])
+        || !is_string($manifest['version'])
+        || !is_array($manifest['files'])
+        || !array_is_list($manifest['files'])
+    ) {
+        throw new ApiError(500, 'The firmware manifest is malformed');
+    }
+
+    $files = [];
+
+    foreach ($manifest['files'] as $file) {
+        if (!is_array($file) || !isset($file['name'], $file['sha256'])) {
+            continue;
+        }
+
+        $name = firmwareFileName((string) $file['name']);
+        $digest = strtolower((string) $file['sha256']);
+
+        if ($name === '' || !preg_match('/^[0-9a-f]{64}$/', $digest)) {
+            continue;
+        }
+
+        $files[] = [
+            'name' => $name,
+            'size' => is_int($file['size'] ?? null) ? $file['size'] : null,
+            'sha256' => $digest,
+        ];
+    }
+
+    if ($files === []) {
+        throw new ApiError(500, 'The firmware manifest lists no valid files');
+    }
+
+    return ['version' => $manifest['version'], 'files' => $files];
 }
 
 /**

@@ -3,16 +3,21 @@
 > Pins, probe wiring and power: [docs/hardware.md](../docs/hardware.md).
 > The 100 ms loop, watchdog and fault handling: [docs/firmware.md](../docs/firmware.md).
 
-Firmware for an **ESP32-S3** that samples four furnace channels at 10 Hz and
+Firmware for an **ESP32-S3** that samples the furnace channels at 10 Hz and
 uploads them **directly to the PHP API** over Wi-Fi. There is no middle layer:
 no PC, no `collector/`, no USB cable, and no file on a flash drive. The board is
 the collector.
+
+The MAX31855 build is wired for **three furnaces** (CS 15/16/17). The MAX31865
+build keeps four. The API frame is four slots wide either way: a slot with no
+probe is sent as `null` with no fault, so an unused channel is not reported as
+a broken one.
 
 Two sensor variants are included, and the rest of the project is unchanged:
 
 | Folder                  | Sensor                        | Probe              | Pins (see the folder README)                    |
 | ----------------------- | ----------------------------- | ------------------ | ----------------------------------------------- |
-| [`max31855/`](max31855/README.md) | 4x MAX31855 + K-type thermocouple | 4x T / K | SCK 14, MISO 12, CS 15/16/17/18        |
+| [`max31855/`](max31855/README.md) | 3x MAX31855 + K-type thermocouple | 3x K | SCK 14, MISO 12, CS 15/16/17          |
 | [`max31865/`](max31865/README.md) | 4x MAX31865 + PT100/PT1000 RTD    | 2/3/4-wire | SCK 14, **MOSI 11**, MISO 12, CS 15/16/17/18 |
 
 `common/` holds the files both variants share: `config.example.py`, `wifi.py`
@@ -50,16 +55,17 @@ the API, the database and the dashboard need no change:
 
 ```json
 {"samples": [
-  {"u": 1200, "at": 1792523131000, "t": [781.25, 660.5, null, 545.75], "f": [0, 0, 1, 0]}
+  {"u": 1200, "at": 1792523131000, "t": [781.25, 660.5, null, null], "f": [0, 0, 1, 0]}
 ]}
 ```
 
 - `u` — milliseconds since the board booted (the 100 ms grid inside a batch).
 - `at` — optional absolute Unix time in ms, sent when NTP synced. It is what
   keeps the history correct after a reboot or a Wi-Fi outage.
-- `t` — four temperatures in °C, `null` for a faulted channel (never `NaN`).
+- `t` — four slots in °C. A faulted channel is `null` (never `NaN`), and so is
+  a slot with no probe: the three-furnace build leaves slot 4 empty.
 - `f` — fault bit mask per channel: `1` open, `2` short to GND, `4` short to
-  VCC, `8` read error.
+  VCC, `8` read error. An empty slot has fault `0`.
 
 ## Files
 
@@ -71,9 +77,10 @@ esp32-s3/
 │   ├── config.example.py     copy to config.py and edit
 │   ├── wifi.py               association, reconnect, NTP clock
 │   ├── ingest.py             batch buffer + HTTP(S) POST to /api/ingest
+│   ├── ota.py                bundle download, staging, apply and rollback
 │   └── supervisor.py         watchdog + restart, so no PC is needed
 ├── max31855/
-│   ├── main.py               firmware for 4x MAX31855
+│   ├── main.py               firmware for 3x MAX31855
 │   └── README.md             wiring, thermocouple notes, troubleshooting
 ├── max31865/
 │   ├── main.py               firmware for 4x MAX31865 RTD
@@ -83,8 +90,10 @@ esp32-s3/
 │   ├── README.md             install, pins, build sizes, troubleshooting
 │   ├── furnace_arduino/      open this folder in the Arduino IDE
 │   └── tests/                host tests with g++ (no board needed)
+├── tools/
+│   └── publish.py            build an OTA bundle for the API
 └── tests/
-    └── test_firmware.py      HTTP client and RTD maths, no hardware needed
+    └── test_firmware.py      HTTP client, OTA bundle, RTD maths — no board
 ```
 
 ## Install
@@ -124,6 +133,7 @@ mpremote connect COM6 \
   cp esp32-s3/common/wifi.py :wifi.py + \
   cp esp32-s3/common/ingest.py :ingest.py + \
   cp esp32-s3/common/supervisor.py :supervisor.py + \
+  cp esp32-s3/common/ota.py :ota.py + \
   cp esp32-s3/max31855/main.py :main.py
 ```
 
@@ -136,6 +146,7 @@ mpremote connect COM6 \
   cp esp32-s3/common/wifi.py :wifi.py + \
   cp esp32-s3/common/ingest.py :ingest.py + \
   cp esp32-s3/common/supervisor.py :supervisor.py + \
+  cp esp32-s3/common/ota.py :ota.py + \
   cp esp32-s3/max31865/max31865.py :max31865.py + \
   cp esp32-s3/max31865/main.py :main.py
 ```
@@ -233,6 +244,59 @@ shifting bytes out with nothing connected, so it never stalls the loop; set
 console is the native USB-Serial-JTAG instead (no CH343 chip), turn the echo
 off before running from a charger.
 
+## Remote updates (OTA)
+
+After the first USB flash, the board updates itself from the API. A bundle is
+built from this folder, copied to the server once, and every board with
+`OTA_ENABLED = True` picks it up on its next check (60 s after boot, then every
+`OTA_CHECK_S`, six hours by default).
+
+```bash
+# 1. on the machine that has the repository
+python3 esp32-s3/tools/publish.py --variant max31855
+#    -> backend/var/firmware/max31855/{manifest.json,boot.py,main.py,...}
+
+# 2. copy that folder to the API host (or set FURNACE_FIRMWARE_DIR)
+rsync -a backend/var/firmware/max31855/ server:/srv/furnace/backend/var/firmware/max31855/
+
+# 3. nothing else: the board checks, downloads, verifies and reboots
+```
+
+The bundle contains `boot.py`, `wifi.py`, `ingest.py`, `supervisor.py`,
+`ota.py` and the variant's `main.py` (plus `max31865.py` on the RTD build).
+`config.py` is **never** published, so Wi-Fi credentials and the API key are
+not touched by an update.
+
+What happens on the board:
+
+1. `ota.py` asks `GET /api/firmware/manifest?channel=max31855` with `X-Api-Key`.
+2. If the version differs, it downloads only the files whose SHA-256 differs,
+   checks each size and hash, compiles every `.py`, and writes them to
+   `/ota/stage`.
+3. `main.py` flushes the upload queue and resets.
+4. `boot.py` applies the staged files, copies the replaced ones to `/ota/backup`
+   and resets again into the new firmware.
+5. After a minute of uptime `main.py` confirms the update and deletes the
+   backup. If the new firmware crashes before confirming **three times**, the
+   next boot restores the backup automatically.
+
+Console output of a successful update:
+
+```
+# OTA: max31855, checking every 21600 s
+# OTA: 20261103-120000 applied (6 files)
+# OTA: update confirmed
+```
+
+A missing bundle is not an error: a fresh server answers `404` and the board
+prints `# OTA: no bundle published for 'max31855' yet` once, then keeps
+sampling. `401/403` means `OTA_API_KEY`/`API_KEY` does not match
+`FURNACE_INGEST_KEY`; the board retries at the next interval.
+
+This covers the **MicroPython** firmware. The Arduino sketch in
+[`arduino/`](arduino/README.md) still needs a USB flash, because it is compiled
+into a single image rather than living as files on the board.
+
 ## Configuration
 
 Everything is a constant in `config.py`; there are no command-line arguments on
@@ -256,6 +320,12 @@ a microcontroller.
 | `NTP_HOST`      | `pool.ntp.org`                   |                                                |
 | `SERIAL_ECHO`   | `True`                           | Also print the CSV line on USB serial          |
 | `TLS_VERIFY`    | `False`                          | Validate the `https` certificate (see below)   |
+| `OTA_ENABLED`   | `True`                           | Check the API for a newer firmware bundle      |
+| `OTA_CHANNEL`   | `max31855`                       | Which published bundle this board runs         |
+| `OTA_CHECK_DELAY_S` | `60`                         | First check after boot                         |
+| `OTA_CHECK_S`   | `21600`                          | Check interval (6 h) while running             |
+| `OTA_URL`       | `""`                             | Different API host for updates; empty = `API_URL` |
+| `OTA_API_KEY`   | `""`                             | Different key for bundles; empty = `API_KEY`   |
 
 Each queued sample costs roughly 150 bytes of RAM, so the default 600-sample
 buffer is about 90 KB — fine on an ESP32-S3, too much for a plain ESP8266.
@@ -271,8 +341,8 @@ CA is in the bundle. `http://` also works and skips TLS entirely.
 
 ## Behaviour
 
-- **10 Hz grid.** Each pass reads all four channels, prints `ms,f1..f4`, queues
-  the frame and sleeps until the next 100 ms slot. The time column is
+- **10 Hz grid.** Each pass reads every installed channel, prints the CSV
+  line, queues the frame and sleeps until the next 100 ms slot. The time column is
   *measured* (`ticks_ms`), so nothing makes it drift.
 - **Uploads never pause sampling.** With `BACKGROUND_UPLOAD = True` (default) a
   worker thread does the POST while the main loop keeps reading sensors, so the
@@ -338,6 +408,10 @@ python3 -m unittest discover -s esp32-s3/tests -v
 | All four channels `--.-` / `-1000` | Wiring: 3V3, GND, SCK and MISO (and MOSI on the MAX31865), one CS per board, thermocouple polarity. Run `module/check.py`-style spot checks or the serial console. |
 | `# boot: MISSING from the board root: …` | That file never reached the board: upload it (see [Install](#install)) and reset. `main.py` cannot import it. |
 | Console shows `>>>` and nothing samples | Something stopped the program: a missing file (the line above names it) or Thonny attached to the board (press F5 or RST). |
+| `# OTA: no bundle published for 'max31855' yet` | Nothing was copied to `FURNACE_FIRMWARE_DIR` on the API host; run `tools/publish.py` and deploy the folder. |
+| `# OTA: the API rejected the key` | `OTA_API_KEY`/`API_KEY` does not match `FURNACE_INGEST_KEY`; fix the config and restart the board. |
+| The board does not take an update | The published `version` equals `/ota/version` on the board: publish with a new version. Also check that `OTA_CHANNEL` matches the folder name on the server. |
+| `# OTA: rolled back to the previous firmware` | The new bundle crashed three times before confirming; fix it and publish again. `config.py` and the Wi-Fi settings were never touched. |
 | Dashboard shows a second run starting | The board's `at` jumped (NTP correction) or someone pressed *Start new run*; see [backend/README.md](../backend/README.md#post-apiingest). |
 | `# boot: reset cause WDT_RESET` every few minutes | Something blocks the loop longer than `WATCHDOG_S`: a SPI read that never returns (wiring/power on a sensor board) or a network call. Raise `WATCHDOG_S` above `WIFI_TIMEOUT_S` if you lowered it. |
 | `# firmware stopped: …` repeating every few seconds | The session crashes at boot and the message names the cause: a file missing from the board root (`config.py`, `wifi.py`, `ingest.py`, `supervisor.py`), or an `API_URL` that `split_url` rejects. |

@@ -1,8 +1,9 @@
 # Hardware
 
 Two supported sensing variants on the ESP32-S3, plus the Raspberry Pi Pico
-module. All of them present the same four channels to the firmware, so the
-software never needs to know which probe is fitted.
+module. The thermocouple build is wired for three furnaces and the RTD build for
+four; the firmware pads the API frame to four slots, so the software never needs
+to know which probe is fitted.
 
 ![Wiring](images/wiring.svg)
 
@@ -11,11 +12,11 @@ software never needs to know which probe is fitted.
 | Part | Role | Notes |
 | --- | --- | --- |
 | ESP32-S3 dev board | Wi-Fi MCU | Any module with the pins below free; 3.3 V logic |
-| 4 × MAX31855 breakout | K-type thermocouple | Read-only SPI, 0.25 °C resolution |
+| 3 × MAX31855 breakout | K-type thermocouple | Read-only SPI, 0.25 °C resolution |
 | *or* 4 × MAX31865 breakout | PT100/PT1000 RTD | Full-duplex SPI, 0.03 °C typical |
-| 4 × probe | Sensing element | K-type or 3-wire PT100 depending on the board |
+| 3 or 4 × probe | Sensing element | K-type or 3-wire PT100 depending on the board |
 | 3.3 V supply | Power | USB or a 5 V→3.3 V regulator; ≥ 500 mA headroom |
-| 4 × 0.1 µF | Decoupling | One per amplifier, close to VIN/GND |
+| 0.1 µF per amplifier | Decoupling | Close to VIN/GND |
 
 ## ESP32-S3 pins
 
@@ -24,7 +25,7 @@ board can be reflashed between toolchains without rewiring.
 
 ### MAX31855 (thermocouple)
 
-| ESP32-S3 | Signal | MAX31855 (all four) |
+| ESP32-S3 | Signal | MAX31855 (all three) |
 | --- | --- | --- |
 | 3V3 | Power | `VIN` / `VCC` / `3V3` |
 | GND | Ground | `GND` |
@@ -33,7 +34,6 @@ board can be reflashed between toolchains without rewiring.
 | GPIO15 | CS 1 | `CS` of furnace 1 |
 | GPIO16 | CS 2 | `CS` of furnace 2 |
 | GPIO17 | CS 3 | `CS` of furnace 3 |
-| GPIO18 | CS 4 | `CS` of furnace 4 |
 | — | — | every `DO` joins GPIO12 |
 
 The MAX31855 has no MOSI, so GPIO11 stays free on this variant.

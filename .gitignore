@@ -1,7 +1,8 @@
-# Runtime data (never commit the SQLite database)
+# Runtime data (never commit the SQLite database or published OTA bundles)
 backend/var/*.sqlite
 backend/var/*.sqlite-wal
 backend/var/*.sqlite-shm
+backend/var/firmware/
 
 # Board credentials (Wi-Fi password, ingest key)
 module/config.py

@@ -5,10 +5,10 @@ itself from a charger or from a PC. What it cannot do is explain a failure: if
 a file is missing from the board root, ``main.py`` dies on its import and the
 board sits at a REPL prompt with a traceback nobody is watching.
 
-This file prints the two things that answer "why is it not running?" — how the
-board booted and which required files are actually on it — and then lets
-MicroPython run ``main.py`` as usual. It never imports the firmware itself, so
-it cannot start the sampler twice.
+This file applies a staged OTA bundle first, then prints the two things that
+answer "why is it not running?" — how the board booted and which required files
+are actually on it — and lets MicroPython run ``main.py`` as usual. It never
+imports the firmware itself, so it cannot start the sampler twice.
 """
 
 # The files main.py imports. boot.py and main.py are checked too, because a
@@ -59,7 +59,26 @@ def listing():
         return []
 
 
+def apply_update():
+    """Apply a bundle staged by ``ota.py``, or roll back a boot loop.
+
+    ``ota.py`` is optional: a board that was flashed before remote updates
+    existed still boots from the five files it has.
+    """
+    try:
+        import ota
+    except ImportError:
+        return
+
+    try:
+        ota.boot()
+    except Exception as error:
+        print("# boot: OTA failed: %s" % (error,))
+
+
 def main():
+    apply_update()
+
     cause = reset_cause()
 
     if cause is not None:

@@ -37,6 +37,7 @@ php -S 0.0.0.0:8080 -t . index.php
 | `FURNACE_DB`                       | `backend/var/furnace.sqlite`                                          | SQLite database file                           |
 | `FURNACE_ALLOWED_ORIGINS`          | `http://temp.futurefounderco.com,https://temp.futurefounderco.com,http://localhost:3000,http://127.0.0.1:3000` | Comma-separated browser origins allowed by CORS |
 | `FURNACE_INGEST_KEY`               | empty (open)                                                          | Value the device must send as `X-Api-Key`      |
+| `FURNACE_FIRMWARE_DIR`             | `backend/var/firmware`                                                | Published OTA bundles (one folder per channel) |
 | `FURNACE_RAW_RETENTION_HOURS`      | `48`                                                                  | Raw 10 Hz rows kept before pruning             |
 | `FURNACE_AGGREGATE_RETENTION_DAYS` | `180`                                                                 | One-second rollup rows kept                    |
 | `FURNACE_MAX_SAMPLE_GAP_MS`        | `3000`                                                                | Longest silence added to the run's `active_ms` |
@@ -129,6 +130,39 @@ this way is compressed into the upload time. With `at`, each sample is stored
 at its own time and the first batch of a run sets `started_at_ms` to the first
 sample's `at`, so an uploaded log keeps its real history.
 Retries are at-least-once: a lost HTTP response can store a duplicate frame.
+
+### `GET /api/firmware/manifest?channel=<name>`
+
+ESP32-S3 OTA: the manifest for one published bundle. Requires `X-Api-Key` when
+`FURNACE_INGEST_KEY` is set; the board sends the same key it uses for ingest.
+`channel` is a bundle name such as `max31855` and may contain only lower-case
+letters, digits and dashes.
+
+```json
+{
+  "channel": "max31855",
+  "version": "20261103-120000",
+  "created_at": "2026-11-03T12:00:00Z",
+  "files": [
+    { "name": "main.py", "size": 9123, "sha256": "…64 hex…" }
+  ]
+}
+```
+
+`404` means nothing has been published for that channel yet; the firmware logs
+it once and retries later. The manifest is validated before it is served: only
+plain file names, 64-character hashes and known fields survive.
+
+Run `python3 esp32-s3/tools/publish.py --variant max31855` to build a bundle in
+`backend/var/firmware/max31855/`. `config.py` is never published.
+
+### `GET /api/firmware/file?channel=<name>&name=<file>`
+
+One file from that bundle, `text/plain`, with `X-Firmware-Version` and
+`X-Firmware-Sha256`. Only files listed in the manifest are served, so the query
+cannot reach another path. The firmware verifies the hash itself and compiles
+the result before staging it; the previous files stay on the board until the
+new firmware has confirmed itself.
 
 ### `GET /api/live?since=<id>&run=<id>`
 

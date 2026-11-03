@@ -78,6 +78,7 @@ esp32-s3/
 │   ├── wifi.py               association, reconnect, NTP clock
 │   ├── ingest.py             batch buffer + HTTP(S) POST to /api/ingest
 │   ├── ota.py                bundle download, staging, apply and rollback
+│   ├── device.py             heartbeat, remote commands, Wi-Fi change
 │   └── supervisor.py         watchdog + restart, so no PC is needed
 ├── max31855/
 │   ├── main.py               firmware for 3x MAX31855
@@ -134,6 +135,7 @@ mpremote connect COM6 \
   cp esp32-s3/common/ingest.py :ingest.py + \
   cp esp32-s3/common/supervisor.py :supervisor.py + \
   cp esp32-s3/common/ota.py :ota.py + \
+  cp esp32-s3/common/device.py :device.py + \
   cp esp32-s3/max31855/main.py :main.py
 ```
 
@@ -147,6 +149,7 @@ mpremote connect COM6 \
   cp esp32-s3/common/ingest.py :ingest.py + \
   cp esp32-s3/common/supervisor.py :supervisor.py + \
   cp esp32-s3/common/ota.py :ota.py + \
+  cp esp32-s3/common/device.py :device.py + \
   cp esp32-s3/max31865/max31865.py :max31865.py + \
   cp esp32-s3/max31865/main.py :main.py
 ```
@@ -209,6 +212,14 @@ to start and nothing to plug in.
 | The upload thread dies | The loop notices within 15 s, starts it again, and falls back to inline sending if that fails. |
 | A power blip | The board reboots and continues; NTP timestamps keep the history correct. |
 
+**Remote management.** With `device.py` on the board, it reports every
+`HEARTBEAT_S` seconds (firmware, IP, RSSI, uptime, sent/buffered) and receives
+the commands queued in [`ui/admin.html`](../ui/admin.html): update firmware,
+restart, or change Wi-Fi. A Wi-Fi change is written to `/wifi.json` and used on
+the next boot, so the credentials in `config.py` are never edited over the air.
+A board flashed without `device.py` still records; it just does not appear in
+the admin panel.
+
 **What a reboot costs.** The queue lives in RAM, so a watchdog reboot or a
 power cut drops the samples that had not been POSTed yet — at most
 `BUFFER_LIMIT`, which is one minute at 10 Hz. Everything already sent is stored
@@ -246,10 +257,11 @@ off before running from a charger.
 
 ## Remote updates (OTA)
 
-After the first USB flash, the board updates itself from the API. A bundle is
-built from this folder, copied to the server once, and every board with
-`OTA_ENABLED = True` picks it up on its next check (60 s after boot, then every
-`OTA_CHECK_S`, six hours by default).
+After the first USB flash, the board updates only when an operator asks it to
+from the admin panel (`ui/admin.html`). There is no periodic update check: the
+next heartbeat (every `HEARTBEAT_S`, 15 s by default) delivers the `ota` command,
+and only then does the board fetch a bundle. A bundle is built from this folder
+and copied to the server once.
 
 ```bash
 # 1. on the machine that has the repository
@@ -259,21 +271,24 @@ python3 esp32-s3/tools/publish.py --variant max31855
 # 2. copy that folder to the API host (or set FURNACE_FIRMWARE_DIR)
 rsync -a backend/var/firmware/max31855/ server:/srv/furnace/backend/var/firmware/max31855/
 
-# 3. nothing else: the board checks, downloads, verifies and reboots
+# 3. open ui/admin.html, pick the board and press "Update firmware";
+#    the next heartbeat starts the download
 ```
 
 The bundle contains `boot.py`, `wifi.py`, `ingest.py`, `supervisor.py`,
-`ota.py` and the variant's `main.py` (plus `max31865.py` on the RTD build).
+`ota.py`, `device.py` and the variant's `main.py` (plus `max31865.py` on the
+RTD build).
 `config.py` is **never** published, so Wi-Fi credentials and the API key are
 not touched by an update.
 
 What happens on the board:
 
-1. `ota.py` asks `GET /api/firmware/manifest?channel=max31855` with `X-Api-Key`.
-2. If the version differs, it downloads only the files whose SHA-256 differs,
+1. The admin panel queues an `ota` command; the heartbeat reply carries it.
+2. `ota.py` asks `GET /api/firmware/manifest?channel=max31855` with `X-Api-Key`.
+3. If the version differs, it downloads only the files whose SHA-256 differs,
    checks each size and hash, compiles every `.py`, and writes them to
    `/ota/stage`.
-3. `main.py` flushes the upload queue and resets.
+4. `main.py` flushes the upload queue and resets.
 4. `boot.py` applies the staged files, copies the replaced ones to `/ota/backup`
    and resets again into the new firmware.
 5. After a minute of uptime `main.py` confirms the update and deletes the
@@ -283,15 +298,15 @@ What happens on the board:
 Console output of a successful update:
 
 ```
-# OTA: max31855, checking every 21600 s
-# OTA: 20261103-120000 applied (6 files)
+# device: esp32-1, heartbeat every 15 s
+# OTA: applied 20261103-120000 (6 files)
 # OTA: update confirmed
 ```
 
-A missing bundle is not an error: a fresh server answers `404` and the board
-prints `# OTA: no bundle published for 'max31855' yet` once, then keeps
-sampling. `401/403` means `OTA_API_KEY`/`API_KEY` does not match
-`FURNACE_INGEST_KEY`; the board retries at the next interval.
+Pressing Update before a bundle exists shows `# OTA: no bundle published for
+'max31855' yet`; the board keeps sampling and the admin panel reports the failed
+command. `401/403` means `OTA_API_KEY`/`API_KEY` does not match
+`FURNACE_INGEST_KEY`.
 
 This covers the **MicroPython** firmware. The Arduino sketch in
 [`arduino/`](arduino/README.md) still needs a USB flash, because it is compiled
@@ -320,12 +335,13 @@ a microcontroller.
 | `NTP_HOST`      | `pool.ntp.org`                   |                                                |
 | `SERIAL_ECHO`   | `True`                           | Also print the CSV line on USB serial          |
 | `TLS_VERIFY`    | `False`                          | Validate the `https` certificate (see below)   |
-| `OTA_ENABLED`   | `True`                           | Check the API for a newer firmware bundle      |
+| `DEVICE_ID`     | `esp32-1`                        | Name the admin panel uses; keep it unique      |
+| `DEVICE_NAME`   | `Furnace monitor`                | Label shown in the panel                       |
+| `HEARTBEAT_S`   | `15`                             | Report + command interval                      |
+| `OTA_ENABLED`   | `True`                           | Allow remote updates                           |
 | `OTA_CHANNEL`   | `max31855`                       | Which published bundle this board runs         |
-| `OTA_CHECK_DELAY_S` | `60`                         | First check after boot                         |
-| `OTA_CHECK_S`   | `21600`                          | Check interval (6 h) while running             |
-| `OTA_URL`       | `""`                             | Different API host for updates; empty = `API_URL` |
-| `OTA_API_KEY`   | `""`                             | Different key for bundles; empty = `API_KEY`   |
+| `OTA_URL`       | `""`                            | Different API host for updates; empty = `API_URL` |
+| `OTA_API_KEY`   | `""`                            | Different key for bundles; empty = `API_KEY`   |
 
 Each queued sample costs roughly 150 bytes of RAM, so the default 600-sample
 buffer is about 90 KB — fine on an ESP32-S3, too much for a plain ESP8266.
@@ -410,7 +426,7 @@ python3 -m unittest discover -s esp32-s3/tests -v
 | Console shows `>>>` and nothing samples | Something stopped the program: a missing file (the line above names it) or Thonny attached to the board (press F5 or RST). |
 | `# OTA: no bundle published for 'max31855' yet` | Nothing was copied to `FURNACE_FIRMWARE_DIR` on the API host; run `tools/publish.py` and deploy the folder. |
 | `# OTA: the API rejected the key` | `OTA_API_KEY`/`API_KEY` does not match `FURNACE_INGEST_KEY`; fix the config and restart the board. |
-| The board does not take an update | The published `version` equals `/ota/version` on the board: publish with a new version. Also check that `OTA_CHANNEL` matches the folder name on the server. |
+| The board does not take an update | Nothing is queued: press **Update firmware** in the admin panel and wait for the next heartbeat. If it still does nothing, the published `version` equals `/ota/version` on the board — publish with a new version. |
 | `# OTA: rolled back to the previous firmware` | The new bundle crashed three times before confirming; fix it and publish again. `config.py` and the Wi-Fi settings were never touched. |
 | Dashboard shows a second run starting | The board's `at` jumped (NTP correction) or someone pressed *Start new run*; see [backend/README.md](../backend/README.md#post-apiingest). |
 | `# boot: reset cause WDT_RESET` every few minutes | Something blocks the loop longer than `WATCHDOG_S`: a SPI read that never returns (wiring/power on a sensor board) or a network call. Raise `WATCHDOG_S` above `WIFI_TIMEOUT_S` if you lowered it. |

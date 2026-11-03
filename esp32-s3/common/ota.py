@@ -384,8 +384,6 @@ class Updater:
         self.key = getattr(config, "OTA_API_KEY", "") or getattr(config, "API_KEY", "") or ""
         self.timeout = float(getattr(config, "OTA_TIMEOUT_S", 10))
         self.verify = bool(getattr(config, "TLS_VERIFY", False))
-        self.delay_s = float(getattr(config, "OTA_CHECK_DELAY_S", 60))
-        self.check_s = float(getattr(config, "OTA_CHECK_S", 21600))
 
         if not valid_channel(self.channel):
             raise ValueError("OTA_CHANNEL must be a bundle name such as max31855")
@@ -400,8 +398,6 @@ class Updater:
         self.ready = ""          # version staged and waiting for a reboot
         self.last_error = ""
         self.last_version = ""
-        self._worker = None
-        self._stop = False
 
     # -- urls -------------------------------------------------------------
 
@@ -592,78 +588,9 @@ class Updater:
             self.last_error = str(error)
             raise
 
-    # -- background thread ------------------------------------------------
-
-    def start(self):
-        """Check from a thread, so the 100 ms sampling loop never waits."""
-        if not self.enabled or self.ready:
-            return False
-
-        if _thread is None:
-            self.log("# OTA: no thread support, updates are only applied at boot")
-            return False
-
-        if self._worker is not None:
-            return True
-
-        self._stop = False
-
-        if hasattr(_thread, "stack_size"):
-            try:
-                _thread.stack_size(16384)
-            except Exception:
-                pass
-
-        try:
-            self._worker = _thread.start_new_thread(self._run, ())
-        except Exception as error:
-            self.log("# OTA: background check unavailable: %s" % (error,))
-            self._worker = None
-            return False
-
-        return True
-
-    def stop(self):
-        self._stop = True
-
-        for _ in range(50):
-            if self._worker is None:
-                break
-
-            _sleep_ms(20)
-
-        self._worker = None
-
-    def alive(self):
-        if not self.enabled or self.ready:
-            return True
-
-        return self._worker is not None
-
-    def _wait(self, seconds):
-        remaining = int(max(0.0, seconds) * 1000)
-
-        while remaining > 0 and not self._stop:
-            step = 200 if remaining > 200 else remaining
-            _sleep_ms(step)
-            remaining -= step
-
-    def _run(self):
-        try:
-            self._wait(self.delay_s)
-
-            while not self._stop and not self.ready:
-                try:
-                    if self.check():
-                        self.log("# OTA: %s staged, waiting for a reboot" % (self.ready,))
-                        break
-                except Exception as error:
-                    self.last_error = str(error)
-                    self.log("# OTA: %s" % (error,))
-
-                self._wait(self.check_s)
-        finally:
-            self._worker = None
+    def local_version(self):
+        """Version currently on the board ('' when it was never updated)."""
+        return self._local_version()
 
     def stats(self):
         return "channel=%s version=%s%s" % (

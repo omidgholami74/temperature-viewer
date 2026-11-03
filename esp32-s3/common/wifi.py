@@ -4,12 +4,54 @@ The board connects once at boot and reconnects on its own afterwards, because
 a furnace room router reboots more often than the furnace does.
 """
 
+import json
 import time
 
 import network
 
 # 2025-01-01 in seconds: anything below this means the clock was never set.
 _CLOCK_FLOOR = 1735689600
+
+# Written by a ``wifi`` command from the admin panel. It overrides the
+# credentials in config.py without touching that file, so a bad password never
+# leaves the board unreachable through a lost config.py.
+OVERRIDE = "wifi.json"
+
+
+def _override_path(root=""):
+    base = root.rstrip("/") if root else ""
+
+    return base + "/" + OVERRIDE if base else "/" + OVERRIDE
+
+
+def credentials(config, root=""):
+    """The SSID/password to use: the saved override first, then config.py."""
+    try:
+        handle = open(_override_path(root), "r")
+
+        try:
+            data = json.load(handle)
+        finally:
+            handle.close()
+
+        ssid = str(data.get("ssid") or "")
+
+        if ssid:
+            return ssid, str(data.get("password") or "")
+    except Exception:
+        pass
+
+    return config.WIFI_SSID, config.WIFI_PASSWORD
+
+
+def save_override(ssid, password, root=""):
+    """Persist new credentials; they are used from the next boot on."""
+    handle = open(_override_path(root), "w")
+
+    try:
+        json.dump({"ssid": str(ssid), "password": str(password)}, handle)
+    finally:
+        handle.close()
 
 
 def connect(config, log=print, watch=None):
@@ -26,8 +68,9 @@ def connect(config, log=print, watch=None):
         _report(wlan, log)
         return wlan
 
-    log("Wi-Fi: joining %r" % (config.WIFI_SSID,))
-    wlan.connect(config.WIFI_SSID, config.WIFI_PASSWORD)
+    ssid, password = credentials(config)
+    log("Wi-Fi: joining %r" % (ssid,))
+    wlan.connect(ssid, password)
 
     timeout_ms = int(float(getattr(config, "WIFI_TIMEOUT_S", 20)) * 1000)
     deadline = time.ticks_add(time.ticks_ms(), timeout_ms)
@@ -69,7 +112,8 @@ def reconnect(wlan, config, log=print, watch=None):
         pass
 
     try:
-        wlan.connect(config.WIFI_SSID, config.WIFI_PASSWORD)
+        ssid, password = credentials(config)
+        wlan.connect(ssid, password)
     except (OSError, RuntimeError) as error:
         log("Wi-Fi: reconnect failed: %s" % (error,))
         return False

@@ -37,6 +37,8 @@ php -S 0.0.0.0:8080 -t . index.php
 | `FURNACE_DB`                       | `backend/var/furnace.sqlite`                                          | SQLite database file                           |
 | `FURNACE_ALLOWED_ORIGINS`          | `http://temp.futurefounderco.com,https://temp.futurefounderco.com,http://localhost:3000,http://127.0.0.1:3000` | Comma-separated browser origins allowed by CORS |
 | `FURNACE_INGEST_KEY`               | empty (open)                                                          | Value the device must send as `X-Api-Key`      |
+| `FURNACE_ADMIN_KEY`                | empty (open)                                                          | Value the admin panel sends as `X-Admin-Key`   |
+| `FURNACE_DEVICE_ONLINE_S`          | `45`                                                                  | Heartbeat age after which a board is offline   |
 | `FURNACE_FIRMWARE_DIR`             | `backend/var/firmware`                                                | Published OTA bundles (one folder per channel) |
 | `FURNACE_RAW_RETENTION_HOURS`      | `48`                                                                  | Raw 10 Hz rows kept before pruning             |
 | `FURNACE_AGGREGATE_RETENTION_DAYS` | `180`                                                                 | One-second rollup rows kept                    |
@@ -130,6 +132,34 @@ this way is compressed into the upload time. With `at`, each sample is stored
 at its own time and the first batch of a run sets `started_at_ms` to the first
 sample's `at`, so an uploaded log keeps its real history.
 Retries are at-least-once: a lost HTTP response can store a duplicate frame.
+
+### Device management
+
+The ESP32-S3 reports in every 15 s and the admin panel queues work for it. All
+device writes require `X-Admin-Key` when `FURNACE_ADMIN_KEY` is set, and a
+trusted `Origin` (the same CSRF boundary as a run reset). Reads are open like
+the rest of the dashboard API.
+
+- `POST /api/device/heartbeat` — firmware only, `X-Api-Key`. Body: `id`, `name`,
+  `firmware`, `ip`, `rssi`, `uptime_ms`, `sent`, `pending`, `dropped`,
+  `channels`. The reply carries `commands` (wifi/ota/restart) and the channel
+  labels. A command stays queued until the board acknowledges it, so an offline
+  board receives it later.
+- `POST /api/device/ack` — firmware only. `{id, command_id, status: done|failed,
+  result}`; the result appears in the connection log.
+- `GET /api/devices` — boards with online age, firmware, IP, RSSI, channel
+  labels, queue depth and the last command, plus the published bundles.
+- `GET /api/devices/events?limit=<n>` — registrations, reconnects and command
+  results, newest first.
+- `POST /api/devices/<id>/commands` — queue `{"kind":"wifi","ssid",…,
+  "password":…}`, `{"kind":"ota","channel":"max31855"}` or
+  `{"kind":"restart"}`.
+- `POST /api/devices/<id>/channels` — set `label` and `enabled` for channels
+  1–4. Presence comes from the heartbeat and is never overwritten by this call.
+
+A Wi-Fi password is stored in the command row until the board acknowledges it,
+and no endpoint returns the payload. Use a dedicated network for the furnace and
+keep the database private; the same advice as for `config.py` on the board.
 
 ### `GET /api/firmware/manifest?channel=<name>`
 

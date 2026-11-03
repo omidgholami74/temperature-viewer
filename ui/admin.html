@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#04080d">
+  <meta name="robots" content="noindex">
+  <title>Fleet admin — Furnace Monitor</title>
+  <link rel="stylesheet" href="assets/css/tokens.css">
+  <link rel="stylesheet" href="assets/css/admin.css">
+  <script src="assets/js/theme-boot.js"></script>
+</head>
+<body>
+  <div class="admin-shell">
+    <header class="admin-head">
+      <div>
+        <p class="eyebrow">Razi Applied Science Foundation</p>
+        <h1>Fleet admin</h1>
+        <p class="admin-sub">Boards, furnaces, Wi-Fi and firmware · <span data-role="api">API</span></p>
+      </div>
+      <div class="admin-actions">
+        <label class="key-field">
+          <span>Admin key</span>
+          <input type="password" autocomplete="off" spellcheck="false" placeholder="optional" data-role="admin-key">
+        </label>
+        <button class="btn btn--outline" type="button" data-role="refresh">Refresh</button>
+        <a class="btn btn--ghost" href="index.html">Dashboard</a>
+      </div>
+    </header>
+
+    <p class="admin-note" data-role="status" role="status" aria-live="polite">Loading…</p>
+
+    <section class="admin-grid" data-role="devices" aria-label="Boards"></section>
+
+    <div class="admin-columns">
+      <section class="panel admin-panel" aria-labelledby="furnaces-title">
+        <header class="admin-panel__head">
+          <h2 id="furnaces-title">Furnaces</h2>
+          <p>Labels live on the server and are shown by the dashboard. Enabled decides whether a channel counts as installed.</p>
+        </header>
+        <label class="field">
+          <span>Board</span>
+          <select class="input" data-role="channel-device"></select>
+        </label>
+        <div class="channel-editor" data-role="channel-editor"></div>
+        <button class="btn btn--primary" type="button" data-role="save-channels">Save channels</button>
+      </section>
+
+      <section class="panel admin-panel" aria-labelledby="wifi-title">
+        <header class="admin-panel__head">
+          <h2 id="wifi-title">Wi-Fi</h2>
+          <p>Queues new credentials for the board. It saves them, reboots and joins that network; <code>config.py</code> is not changed.</p>
+        </header>
+        <label class="field">
+          <span>Board</span>
+          <select class="input" data-role="wifi-device"></select>
+        </label>
+        <label class="field">
+          <span>SSID</span>
+          <input class="input" type="text" maxlength="32" autocomplete="off" data-role="wifi-ssid">
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input class="input" type="password" maxlength="64" autocomplete="new-password" data-role="wifi-password">
+        </label>
+        <p class="admin-warning">The password is stored on the server until the board acknowledges the command. Use a dedicated network for the furnace.</p>
+        <button class="btn btn--primary" type="button" data-role="send-wifi">Queue Wi-Fi change</button>
+      </section>
+
+      <section class="panel admin-panel" aria-labelledby="firmware-title">
+        <header class="admin-panel__head">
+          <h2 id="firmware-title">Firmware</h2>
+          <p>The board updates only when you press the button: the heartbeat delivers the command, then the bundle is verified, staged and applied on reboot.</p>
+        </header>
+        <label class="field">
+          <span>Board</span>
+          <select class="input" data-role="ota-device"></select>
+        </label>
+        <label class="field">
+          <span>Bundle</span>
+          <select class="input" data-role="ota-channel"></select>
+        </label>
+        <p class="admin-hint" data-role="bundle-info">—</p>
+        <div class="admin-buttons">
+          <button class="btn btn--primary" type="button" data-role="send-ota">Update firmware</button>
+          <button class="btn btn--danger" type="button" data-role="send-restart">Restart board</button>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel admin-panel" aria-labelledby="events-title">
+      <header class="admin-panel__head">
+        <h2 id="events-title">Connection log</h2>
+        <p>Registrations, reconnects and the result of every command. Times are local to this browser.</p>
+      </header>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Time</th><th>Board</th><th>Kind</th><th>Detail</th></tr>
+          </thead>
+          <tbody data-role="events"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script src="config.js"></script>
+  <script type="module" src="assets/js/admin.js"></script>
+</body>
+</html>

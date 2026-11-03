@@ -51,6 +51,26 @@ The three blocks fill exactly one screen: the page itself never scrolls. The
 chart is the flex row that absorbs the remaining height, so a phone in portrait
 and a laptop window both show the same information without scrolling.
 
+## Fleet admin
+
+`admin.html` is a second static page for the operator, not for the furnace
+screen. It lists every board that has sent a heartbeat (online/offline, IP,
+signal, uptime, sent/buffered, last command), edits furnace labels and enabled
+flags, queues a Wi-Fi change or a firmware update, restarts a board and shows
+the connection log.
+
+- It calls `GET /api/devices`, `GET /api/devices/events` and the two
+  `POST /api/devices/<id>/...` routes. When `FURNACE_ADMIN_KEY` is set on the
+  server, the write calls need that key in `X-Admin-Key`; the field at the top
+  keeps it in `sessionStorage` for the tab, never in the page source.
+- A board is listed only if it runs the heartbeat firmware (`device.py`,
+  `DEVICE_ID` in `config.py`). An older board still records and shows on the
+dashboard, it just has no admin controls.
+- A Wi-Fi password is sent to the API, stored until the board acknowledges the
+  command, and never returned by any endpoint. Use a dedicated network.
+- The page polls every 5 s while it is visible; a command is delivered on the
+  board's next heartbeat (`HEARTBEAT_S`, 15 s by default).
+
 ## Configuration
 
 `config.js` is loaded before the app and selects the API origin:

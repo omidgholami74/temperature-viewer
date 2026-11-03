@@ -80,11 +80,13 @@ fault bit 8. See [`collector/README.md`](../collector/README.md).
 
 ## Remote updates
 
-The MicroPython board updates itself from the API; the Arduino build still needs
-a USB flash. A bundle is a manifest plus plain `.py` files:
+The MicroPython board updates when an operator presses **Update firmware** in
+the admin panel; there is no periodic check. The next heartbeat delivers the
+`ota` command, and only then does the board fetch a bundle. The Arduino build
+still needs a USB flash. A bundle is a manifest plus plain `.py` files:
 
 ```
-main.py ── check ──▶ GET /api/firmware/manifest?channel=max31855
+admin panel ── ota ──▶ heartbeat reply ── check ──▶ GET /api/firmware/manifest?channel=max31855
                         │ version differs
                         ▼
               GET /api/firmware/file?name=main.py   (one per changed file)
@@ -108,10 +110,26 @@ Rules that make this safe to run unattended:
   the API key.
 * The previous file set is kept until the new firmware has run for a minute;
   three unconfirmed boots restore it automatically.
-* Sampling is not paused for the check: the download runs in its own thread, and
-  the reboot waits until the sample queue has been flushed.
-* A `404` (nothing published yet) is logged once and retried at the next
-  interval.
+* Sampling is not paused for the check: the download runs in the heartbeat
+  thread, and the reboot waits until the sample queue has been flushed.
+* A `404` (nothing published yet) fails that one command; nothing is retried
+  until the operator asks again.
+
+## Heartbeat and commands
+
+`device.py` reports every 15 s to `POST /api/device/heartbeat` with the firmware
+version, IP, RSSI, uptime and queue depth, and acknowledges each command with
+`POST /api/device/ack`. Three commands exist:
+
+| Command | Effect on the board |
+| --- | --- |
+| `ota` | One bundle check; stage and reboot if the version differs |
+| `wifi` | Write `/wifi.json`, acknowledge, reboot; `wifi.py` prefers it over `config.py` |
+| `restart` | Acknowledge and reboot |
+
+A command stays queued on the server until acknowledged, so a board that was
+offline applies it when it returns. The heartbeat thread never touches the
+sampling loop; a slow request only delays the next heartbeat.
 
 Publishing is one command per release; see
 [`esp32-s3/README.md`](../esp32-s3/README.md#remote-updates-ota) for the bundle

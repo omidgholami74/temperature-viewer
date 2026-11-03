@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Api;
 use App\ApiError;
 use App\Database;
+use App\DeviceRepository;
 use App\ReadingRepository;
 use App\RunRepository;
 
@@ -31,6 +32,12 @@ try {
                 'GET /api/health',
                 'GET /api/firmware/manifest?channel=<name>',
                 'GET /api/firmware/file?channel=<name>&name=<file>',
+                'GET /api/devices',
+                'GET /api/devices/events?limit=<n>',
+                'POST /api/devices/<id>/commands',
+                'POST /api/devices/<id>/channels',
+                'POST /api/device/heartbeat',
+                'POST /api/device/ack',
                 'GET /api/live?since=<id>&run=<id>',
                 'GET /api/history?window=<seconds>&max_points=<n>',
                 'GET /api/bounds',
@@ -84,7 +91,91 @@ function handleApi(string $method, string $route, array $config): never
     $pdo = Database::connect($config);
     $runs = new RunRepository($pdo);
     $readings = new ReadingRepository($pdo);
+    $devices = new DeviceRepository($pdo);
     $now = nowMs();
+
+    // Device management: /devices/<id>/commands and /devices/<id>/channels.
+    if (preg_match('#^/devices/([A-Za-z0-9_-]{1,32})/(commands|channels)$#', $route, $deviceRoute) === 1) {
+        if ($method !== 'POST') {
+            throw new ApiError(405, 'Use POST for device management');
+        }
+
+        Api::requireAdminKey($config);
+        Api::requireTrustedOrigin($config);
+
+        if ($devices->find($deviceRoute[1]) === null) {
+            throw new ApiError(404, 'Unknown device');
+        }
+
+        $body = Api::readJsonBody((int) $config['max_request_bytes']);
+
+        if ($deviceRoute[2] === 'commands') {
+            $kind = isset($body['kind']) && is_string($body['kind']) ? $body['kind'] : '';
+            $payload = [];
+
+            if ($kind === 'wifi') {
+                $ssid = isset($body['ssid']) && is_string($body['ssid']) ? trim($body['ssid']) : '';
+                $password = isset($body['password']) && is_string($body['password']) ? $body['password'] : '';
+
+                if ($ssid === '' || strlen($ssid) > 32) {
+                    throw new ApiError(422, 'ssid must be 1 to 32 characters');
+                }
+
+                if (strlen($password) > 64) {
+                    throw new ApiError(422, 'password is too long');
+                }
+
+                $payload = ['ssid' => $ssid, 'password' => $password];
+            } elseif ($kind === 'ota') {
+                $channel = isset($body['channel']) && is_string($body['channel']) ? $body['channel'] : '';
+
+                if ($channel !== '' && !preg_match('/^[a-z0-9][a-z0-9-]{0,31}$/', $channel)) {
+                    throw new ApiError(422, 'channel must be a bundle name');
+                }
+
+                $payload = $channel === '' ? [] : ['channel' => $channel];
+            } elseif ($kind !== 'restart') {
+                throw new ApiError(422, 'kind must be wifi, ota or restart');
+            }
+
+            Api::json([
+                'ok' => true,
+                'command' => $devices->queue($deviceRoute[1], $kind, $payload, $now),
+            ]);
+        }
+
+        $channels = $body['channels'] ?? null;
+
+        if (!is_array($channels) || $channels === [] || count($channels) > 4) {
+            throw new ApiError(422, 'channels must list 1 to 4 entries');
+        }
+
+        $clean = [];
+        $seen = [];
+
+        foreach ($channels as $entry) {
+            if (!is_array($entry)) {
+                throw new ApiError(422, 'each channel must be an object');
+            }
+
+            $number = isset($entry['channel']) ? (int) $entry['channel'] : 0;
+
+            if ($number < 1 || $number > 4 || isset($seen[$number])) {
+                throw new ApiError(422, 'channel must be 1 to 4 and appear once');
+            }
+
+            $seen[$number] = true;
+            $label = isset($entry['label']) && is_string($entry['label']) ? trim($entry['label']) : '';
+            $clean[] = [
+                'channel' => $number,
+                'label' => cutString($label === '' ? sprintf('Furnace %d', $number) : $label, 40),
+                'enabled' => !empty($entry['enabled']),
+            ];
+        }
+
+        $devices->setChannels($deviceRoute[1], $clean);
+        Api::json(['ok' => true, 'channels' => $devices->channels($deviceRoute[1])]);
+    }
 
     switch ($method . ' ' . $route) {
         case 'GET /health':
@@ -151,6 +242,74 @@ function handleApi(string $method, string $route, array $config): never
 
             readfile($filePath);
             exit;
+
+        case 'POST /device/heartbeat':
+            Api::requireIngestKey($config);
+            $body = Api::readJsonBody((int) $config['max_request_bytes']);
+            $deviceId = isset($body['id']) && is_string($body['id']) ? $body['id'] : '';
+
+            if (!preg_match('/^[A-Za-z0-9_-]{1,32}$/', $deviceId)) {
+                throw new ApiError(422, 'id must be a device id');
+            }
+
+            $present = [];
+
+            foreach ((array) ($body['channels'] ?? []) as $channel) {
+                if (is_int($channel) && $channel >= 1 && $channel <= 4) {
+                    $present[$channel] = $channel;
+                }
+            }
+
+            $state = $devices->heartbeat([
+                'id' => $deviceId,
+                'name' => cutString(trim((string) ($body['name'] ?? 'ESP32-S3')), 60),
+                'firmware' => cutString((string) ($body['firmware'] ?? ''), 40),
+                'ip' => cutString((string) ($body['ip'] ?? ''), 45),
+                'rssi' => isset($body['rssi']) && is_int($body['rssi']) ? max(-127, min(0, $body['rssi'])) : null,
+                'uptime_ms' => max(0, (int) ($body['uptime_ms'] ?? 0)),
+                'sent' => max(0, (int) ($body['sent'] ?? 0)),
+                'pending' => max(0, (int) ($body['pending'] ?? 0)),
+                'dropped' => max(0, (int) ($body['dropped'] ?? 0)),
+                'channels' => array_values($present),
+            ], $now);
+
+            Api::json(array_merge(['ok' => true, 'server_time_ms' => $now], $state));
+
+        case 'POST /device/ack':
+            Api::requireIngestKey($config);
+            $body = Api::readJsonBody((int) $config['max_request_bytes']);
+            $deviceId = isset($body['id']) && is_string($body['id']) ? $body['id'] : '';
+            $commandId = isset($body['command_id']) ? (int) $body['command_id'] : 0;
+            $status = isset($body['status']) && is_string($body['status']) ? $body['status'] : '';
+
+            if (!preg_match('/^[A-Za-z0-9_-]{1,32}$/', $deviceId) || $commandId < 1) {
+                throw new ApiError(422, 'id and command_id are required');
+            }
+
+            if (!in_array($status, ['done', 'failed'], true)) {
+                throw new ApiError(422, 'status must be done or failed');
+            }
+
+            $result = cutString(trim((string) ($body['result'] ?? '')), 200);
+
+            if (!$devices->ack($deviceId, $commandId, $status, $result, $now)) {
+                throw new ApiError(404, 'Unknown command for this device');
+            }
+
+            Api::json(['ok' => true, 'server_time_ms' => $now]);
+
+        case 'GET /devices':
+            Api::json([
+                'ok' => true,
+                'server_time_ms' => $now,
+                'online_after_ms' => (int) $config['device_online_s'] * 1000,
+                'devices' => $devices->all($now),
+                'bundles' => firmwareBundles($config),
+            ]);
+
+        case 'GET /devices/events':
+            $limit = Api::intParam('limit', 50, 1, 200) ?? 50;
+            Api::json(['ok' => true, 'events' => $devices->events($limit)]);
 
         case 'GET /live':
             $since = Api::intParam('since', 0, 0) ?? 0;
@@ -575,6 +734,12 @@ function handleApi(string $method, string $route, array $config): never
                 'GET /api/health',
                 'GET /api/firmware/manifest?channel=<name>',
                 'GET /api/firmware/file?channel=<name>&name=<file>',
+                'GET /api/devices',
+                'GET /api/devices/events?limit=<n>',
+                'POST /api/devices/<id>/commands',
+                'POST /api/devices/<id>/channels',
+                'POST /api/device/heartbeat',
+                'POST /api/device/ack',
                 'GET /api/live?since=<id>&run=<id>',
                 'GET /api/history?window=<seconds>&max_points=<n>',
                 'GET /api/bounds',
@@ -700,6 +865,31 @@ function firmwareManifest(array $config, string $channel): array
  *
  * @return list<int>
  */
+function firmwareBundles(array $config): array
+{
+    $root = firmwareDirectory($config);
+    $bundles = [];
+
+    foreach (glob($root . '/*/manifest.json') ?: [] as $path) {
+        $channel = basename(dirname($path));
+
+        try {
+            $manifest = firmwareManifest($config, $channel);
+        } catch (ApiError) {
+            continue;
+        }
+
+        $bundles[$channel] = [
+            'version' => $manifest['version'],
+            'files' => count($manifest['files']),
+        ];
+    }
+
+    ksort($bundles);
+
+    return $bundles;
+}
+
 function parseChannels(mixed $raw): array
 {
     if ($raw === null) {

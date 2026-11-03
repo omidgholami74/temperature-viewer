@@ -55,5 +55,58 @@ CREATE TABLE IF NOT EXISTS meta (
     value TEXT NOT NULL
 );
 
-INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '2');
+-- Boards that report in, the labels of their channels and the commands the
+-- admin panel queues for them. Presence comes from the heartbeat; label and
+-- enabled are operator settings and are never overwritten by a heartbeat.
+CREATE TABLE IF NOT EXISTS devices (
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL,
+    firmware     TEXT NOT NULL DEFAULT '',
+    ip           TEXT NOT NULL DEFAULT '',
+    rssi         INTEGER,
+    uptime_ms    INTEGER NOT NULL DEFAULT 0,
+    sent         INTEGER NOT NULL DEFAULT 0,
+    pending      INTEGER NOT NULL DEFAULT 0,
+    dropped      INTEGER NOT NULL DEFAULT 0,
+    created_at_ms INTEGER NOT NULL,
+    last_seen_ms INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_devices_seen ON devices (last_seen_ms);
+
+CREATE TABLE IF NOT EXISTS device_channels (
+    device_id TEXT NOT NULL REFERENCES devices (id) ON DELETE CASCADE,
+    channel   INTEGER NOT NULL,
+    label     TEXT NOT NULL,
+    present   INTEGER NOT NULL DEFAULT 0,
+    enabled   INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (device_id, channel)
+);
+
+CREATE TABLE IF NOT EXISTS device_commands (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id      TEXT NOT NULL REFERENCES devices (id) ON DELETE CASCADE,
+    kind           TEXT NOT NULL,
+    payload        TEXT NOT NULL,
+    created_at_ms  INTEGER NOT NULL,
+    delivered_at_ms INTEGER,
+    ack_at_ms      INTEGER,
+    status         TEXT NOT NULL DEFAULT 'queued',
+    result         TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_commands_device
+    ON device_commands (device_id, status);
+
+CREATE TABLE IF NOT EXISTS device_events (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL,
+    kind      TEXT NOT NULL,
+    detail    TEXT,
+    at_ms     INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_time ON device_events (at_ms);
+
+INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '3');
 INSERT OR IGNORE INTO meta (key, value) VALUES ('last_rollup_ms', '0');

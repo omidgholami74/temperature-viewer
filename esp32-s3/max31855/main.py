@@ -213,12 +213,25 @@ def session(watch):
         except Exception as error:
             print("# OTA: disabled: %s" % (error,))
 
-        if updater is not None:
-            if updater.start():
-                print("# OTA: %s, checking every %d s" % (
-                    updater.channel, updater.check_s))
-            else:
-                print("# OTA: waiting for the next boot")
+    link = None
+
+    try:
+        import device
+
+        link = device.DeviceLink(
+            config,
+            wlan,
+            ingest,
+            updater,
+            channels=list(range(1, len(CS_PINS) + 1)),
+        )
+
+        if link.start():
+            print("# device: %s, heartbeat every %d s" % (link.id, link.heartbeat_s))
+        else:
+            print("# device: heartbeat unavailable")
+    except Exception as error:
+        print("# device: disabled: %s" % (error,))
 
     echo = bool(getattr(config, "SERIAL_ECHO", True))
 
@@ -299,16 +312,19 @@ def session(watch):
                     if not ingest.start():
                         print("# upload unavailable, sending inline")
 
-                if updater is not None and not updater.alive():
-                    print("# OTA thread stopped, starting it again")
-                    updater.start()
+                if link is not None and not link.alive():
+                    print("# device: heartbeat stopped, starting it again")
+                    link.start()
 
             # A staged update is applied at the next boot; flush what is still
             # queued first so the update does not cost a buffer of samples.
             if updater is not None and updater.ready:
                 print("# OTA: %s staged, restarting" % (updater.ready,))
                 ingest.stop()
-                updater.stop()
+
+                if link is not None:
+                    link.stop()
+
                 ota.reboot()
 
             # A freshly applied bundle keeps a backup until the firmware has
@@ -339,8 +355,8 @@ def session(watch):
         print("# stopping, flushing %d samples" % (len(ingest.pending),))
         ingest.stop()
 
-        if updater is not None:
-            updater.stop()
+        if link is not None:
+            link.stop()
 
 
 def main():

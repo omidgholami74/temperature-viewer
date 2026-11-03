@@ -56,16 +56,20 @@ export class ApiError extends Error {
   }
 }
 
-async function request(path, { method = 'GET', body, timeout = TIMEOUT_MS } = {}) {
+async function request(path, { method = 'GET', body, timeout = TIMEOUT_MS, headers = {} } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
 
   try {
+    const requestHeaders = { Accept: 'application/json', ...headers };
+
+    if (body !== undefined) {
+      requestHeaders['Content-Type'] = 'application/json';
+    }
+
     const response = await fetch(path, {
       method,
-      headers: body === undefined
-        ? { Accept: 'application/json' }
-        : { Accept: 'application/json', 'Content-Type': 'application/json' },
+      headers: requestHeaders,
       body: body === undefined ? undefined : JSON.stringify(body),
       cache: 'no-store',
       credentials: 'omit',
@@ -99,6 +103,34 @@ async function request(path, { method = 'GET', body, timeout = TIMEOUT_MS } = {}
     clearTimeout(timer);
   }
 }
+
+/** Admin key for device management, kept only for this browser tab. */
+const ADMIN_KEY_STORAGE = 'furnace.adminKey';
+
+export function adminKey() {
+  try {
+    return sessionStorage.getItem(ADMIN_KEY_STORAGE) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function setAdminKey(value) {
+  try {
+    if (value) {
+      sessionStorage.setItem(ADMIN_KEY_STORAGE, value);
+    } else {
+      sessionStorage.removeItem(ADMIN_KEY_STORAGE);
+    }
+  } catch {
+    // Private mode: the key stays in memory for this page only.
+  }
+}
+
+const adminHeaders = () => {
+  const key = adminKey();
+  return key ? { 'X-Admin-Key': key } : {};
+};
 
 export const api = {
   live({ since = 0, run = null } = {}) {
@@ -159,6 +191,36 @@ export const api = {
 
     const query = params.toString();
     return request(endpoint(`/api/summary${query ? `?${query}` : ''}`), { timeout: 20000 });
+  },
+
+  /** Every registered board with its channels and last command. */
+  devices() {
+    return request(endpoint('/api/devices'));
+  },
+
+  /** Connection, command and OTA history, newest first. */
+  events(limit = 50) {
+    return request(endpoint(`/api/devices/events?limit=${limit}`));
+  },
+
+  /** Queue wifi, ota or restart for one board. Needs the admin key. */
+  command(deviceId, kind, extra = {}) {
+    return request(endpoint(`/api/devices/${encodeURIComponent(deviceId)}/commands`), {
+      method: 'POST',
+      body: { kind, ...extra },
+      headers: adminHeaders(),
+      timeout: 10000,
+    });
+  },
+
+  /** Rename or enable/disable the channels of one board. Needs the admin key. */
+  saveChannels(deviceId, channels) {
+    return request(endpoint(`/api/devices/${encodeURIComponent(deviceId)}/channels`), {
+      method: 'POST',
+      body: { channels },
+      headers: adminHeaders(),
+      timeout: 10000,
+    });
   },
 
   /**

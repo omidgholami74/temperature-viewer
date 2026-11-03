@@ -47,21 +47,29 @@ NTP_TIMEOUT_S = 6
 # blocks the loop) and above NTP_TIMEOUT_S. 0 disables the watchdog.
 WATCHDOG_S = 30
 
+# --- Device identity and heartbeat ---------------------------------------
+# The board reports in every HEARTBEAT_S seconds and receives the commands
+# queued from the admin panel (Wi-Fi change, OTA, restart). The id is what the
+# panel shows and what a command is addressed to; keep it unique per board.
+DEVICE_ID = "esp32-1"
+DEVICE_NAME = "Furnace monitor"
+HEARTBEAT_S = 15
+HEARTBEAT_DELAY_S = 5
+
 # --- Remote firmware updates (OTA) ---------------------------------------
-# The board fetches a bundle published with esp32-s3/tools/publish.py from the
-# API on /api/firmware/manifest, verifies every file, stages it and reboots.
-# Only the firmware .py files are replaced: config.py is never in a bundle, so
-# the Wi-Fi password and API key survive an update. The previous files are kept
-# until the new firmware has been up for a minute; three failed boots roll back.
+# An operator presses "Update" in the admin panel; the heartbeat delivers that
+# command and the board downloads the bundle published with
+# esp32-s3/tools/publish.py, verifies every file, stages it and reboots. There
+# is no periodic update check. config.py is never in a bundle, so credentials
+# survive an update; the previous files are kept until the new firmware has
+# been up for a minute, and three failed boots roll back.
 OTA_ENABLED = True
 OTA_CHANNEL = "max31855"        # bundle name: max31855 or max31865
-OTA_CHECK_DELAY_S = 60          # first check one minute after boot
-OTA_CHECK_S = 21600             # then every 6 hours
 # Optional different API host for updates; empty means API_URL.
 OTA_URL = ""
 # Optional separate key for the bundle endpoints; empty means API_KEY.
 OTA_API_KEY = ""
-OTA_TIMEOUT_S = 10
+OTA_TIMEOUT_S = 20
 
 # --- Console -------------------------------------------------------------
 # Also print the sample on USB serial (same CSV as module/), so the board can

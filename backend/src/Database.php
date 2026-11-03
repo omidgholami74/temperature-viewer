@@ -73,8 +73,12 @@ final class Database
             self::backfillActiveMs($pdo);
         }
 
-        if ((int) (self::meta($pdo, 'schema_version') ?? 0) < 2) {
-            self::setMeta($pdo, 'schema_version', '2');
+        $version = (int) (self::meta($pdo, 'schema_version') ?? 0);
+
+        if ($version < 3) {
+            // The device registry and command queue are new in version 3; the
+            // tables above are created by schema.sql on every connection.
+            self::setMeta($pdo, 'schema_version', '3');
         }
     }
 

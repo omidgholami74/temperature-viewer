@@ -32,6 +32,7 @@ COMMON_FILES = [
     (os.path.join("common", "ingest.py"), "ingest.py"),
     (os.path.join("common", "supervisor.py"), "supervisor.py"),
     (os.path.join("common", "ota.py"), "ota.py"),
+    (os.path.join("common", "device.py"), "device.py"),
 ]
 
 VARIANTS = {

@@ -134,7 +134,7 @@ final class Api
         }
 
         header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-        header('Access-Control-Allow-Headers: Content-Type, X-Api-Key');
+        header('Access-Control-Allow-Headers: Content-Type, X-Api-Key, X-Admin-Key');
         // The dashboard reads the generated export filename from the response.
         header('Access-Control-Expose-Headers: Content-Disposition');
         header('Access-Control-Max-Age: 600');
@@ -286,6 +286,30 @@ final class Api
 
         if (!is_string($provided) || $provided === '' || !hash_equals($expected, $provided)) {
             throw new ApiError(401, 'Invalid or missing API key');
+        }
+    }
+
+    /**
+     * Validate the admin key when one is configured.
+     *
+     * Device management is a write surface, so it is protected separately from
+     * ingest: a board key must not be able to reboot another board or change
+     * its Wi-Fi. An empty FURNACE_ADMIN_KEY keeps the trusted-LAN default.
+     *
+     * @param array<string, mixed> $config
+     */
+    public static function requireAdminKey(array $config): void
+    {
+        $expected = trim((string) ($config['admin_key'] ?? ''));
+
+        if ($expected === '') {
+            return;
+        }
+
+        $provided = $_SERVER['HTTP_X_ADMIN_KEY'] ?? '';
+
+        if (!is_string($provided) || $provided === '' || !hash_equals($expected, $provided)) {
+            throw new ApiError(401, 'Invalid or missing admin key');
         }
     }
 

@@ -30,6 +30,15 @@ return [
     // Leave empty to disable authentication (trusted local network only).
     'ingest_key' => (string) (getenv('FURNACE_INGEST_KEY') ?: ''),
 
+    // Admin panel key. When set, every device-management write (queue a
+    // command, edit channel labels) requires X-Admin-Key. Reads stay open like
+    // the rest of the dashboard API. Empty keeps the old trusted-LAN behaviour.
+    'admin_key' => (string) (getenv('FURNACE_ADMIN_KEY') ?: ''),
+
+    // A device is shown online while its last heartbeat is younger than this.
+    // The firmware reports every 15 s, so two missed reports make it offline.
+    'device_online_s' => max(10, (int) (getenv('FURNACE_DEVICE_ONLINE_S') ?: 45)),
+
     // Firmware bundles for ESP32-S3 OTA updates. publish.py writes
     // <dir>/<channel>/manifest.json plus the .py files. Keep it outside the
     // web root: backend/var is denied by .htaccess, and this API serves the

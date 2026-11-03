@@ -83,6 +83,40 @@ supervisor = load("esp32s3_supervisor", os.path.join(ROOT, "common", "supervisor
 sys.modules.setdefault("ingest", ingest)
 ota = load("esp32s3_ota", os.path.join(ROOT, "common", "ota.py"))
 
+# wifi.py imports network at module level; the board stub is enough here.
+if "network" not in sys.modules:
+    network = types.ModuleType("network")
+    network.STA_IF = 0
+
+    class _WLAN:
+        def __init__(self, interface=0):
+            self.interface = interface
+
+        def active(self, value=None):
+            return True
+
+        def isconnected(self):
+            return True
+
+        def ifconfig(self):
+            return ("192.168.1.42", "255.255.255.0", "192.168.1.1", "1.1.1.1")
+
+        def status(self, name=None):
+            return -57
+
+        def config(self, **kwargs):
+            pass
+
+        def connect(self, ssid, password):
+            pass
+
+    network.WLAN = _WLAN
+    sys.modules["network"] = network
+
+wifi = load("esp32s3_wifi", os.path.join(ROOT, "common", "wifi.py"))
+sys.modules.setdefault("wifi", wifi)
+device = load("esp32s3_device", os.path.join(ROOT, "common", "device.py"))
+
 # boot.py runs its diagnostics on import; the output is captured here.
 with mock.patch("builtins.print"):
     boot = load("esp32s3_boot", os.path.join(ROOT, "boot.py"))
@@ -1115,7 +1149,7 @@ class PublishTests(unittest.TestCase):
 
         self.assertEqual(
             names,
-            {"boot.py", "wifi.py", "ingest.py", "supervisor.py", "ota.py", "main.py"},
+            {"boot.py", "wifi.py", "ingest.py", "supervisor.py", "ota.py", "device.py", "main.py"},
         )
         self.assertNotIn("config.py", names)
         self.assertTrue(os.path.isfile(os.path.join(target, "manifest.json")))
@@ -1139,6 +1173,134 @@ class PublishTests(unittest.TestCase):
 
         self.assertIn("max31865.py", names)
         self.assertIn("main.py", names)
+
+
+class WifiOverrideTests(unittest.TestCase):
+    """A Wi-Fi change must not require editing config.py on the board."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="furnace-wifi-")
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.root, ignore_errors=True))
+        self.config = types.SimpleNamespace(WIFI_SSID="home", WIFI_PASSWORD="secret")
+
+    def test_config_py_is_used_without_an_override(self):
+        self.assertEqual(wifi.credentials(self.config, root=self.root), ("home", "secret"))
+
+    def test_a_saved_override_wins(self):
+        wifi.save_override("furnace-net", "newpass", root=self.root)
+
+        self.assertEqual(
+            wifi.credentials(self.config, root=self.root),
+            ("furnace-net", "newpass"),
+        )
+
+
+class DeviceLinkTests(unittest.TestCase):
+    """Heartbeat payload and the three commands the admin panel can send."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="furnace-device-")
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.root, ignore_errors=True))
+
+    def make(self, **overrides):
+        values = {
+            "API_URL": "http://127.0.0.1:9",
+            "API_KEY": "",
+            "DEVICE_ID": "esp32-1",
+            "DEVICE_NAME": "Furnace monitor",
+            "HEARTBEAT_S": 15,
+            "HEARTBEAT_DELAY_S": 0,
+            "API_TIMEOUT_S": 2,
+            "TLS_VERIFY": False,
+        }
+        values.update(overrides)
+        wlan = types.SimpleNamespace(
+            ifconfig=lambda: ("192.168.1.42", "255.255.255.0", "192.168.1.1", "1.1.1.1"),
+            status=lambda name=None: -57,
+        )
+        ingest_client = types.SimpleNamespace(sent=10, pending=[], dropped=1)
+        updater = types.SimpleNamespace(
+            local_version=lambda: "v1",
+            check=lambda: True,
+            ready="v2",
+        )
+        link = device.DeviceLink(
+            types.SimpleNamespace(**values),
+            wlan,
+            ingest_client,
+            updater,
+            channels=[1, 2, 3],
+            log=lambda *_: None,
+            root=self.root,
+        )
+
+        return link, updater
+
+    def test_the_payload_reports_the_board(self):
+        link, _ = self.make()
+        payload = link.payload()
+
+        self.assertEqual(payload["id"], "esp32-1")
+        self.assertEqual(payload["channels"], [1, 2, 3])
+        self.assertEqual(payload["rssi"], -57)
+        self.assertEqual(payload["ip"], "192.168.1.42")
+        self.assertEqual(payload["firmware"], "v1")
+        self.assertEqual(payload["sent"], 10)
+
+    def test_an_invalid_device_id_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.make(DEVICE_ID="../esp32")
+
+    def test_a_wifi_command_is_saved_and_acknowledged(self):
+        link, _ = self.make()
+        acks = []
+        reboots = []
+        link._ack = lambda *args: acks.append(args)
+        link._reboot = lambda: reboots.append(1)
+
+        link._run({"id": 7, "kind": "wifi", "payload": {"ssid": "new-net", "password": "pw"}})
+
+        self.assertEqual(acks, [(7, "done", "saved, restarting")])
+        self.assertEqual(reboots, [1])
+
+        with open(os.path.join(self.root, "wifi.json"), encoding="utf-8") as handle:
+            self.assertEqual(json.load(handle), {"ssid": "new-net", "password": "pw"})
+
+    def test_a_wifi_command_without_an_ssid_fails(self):
+        link, _ = self.make()
+        acks = []
+        reboots = []
+        link._ack = lambda *args: acks.append(args)
+        link._reboot = lambda: reboots.append(1)
+
+        link._run({"id": 8, "kind": "wifi", "payload": {"ssid": ""}})
+
+        self.assertEqual(acks, [(8, "failed", "empty ssid")])
+        self.assertEqual(reboots, [])
+
+    def test_an_ota_command_runs_one_check(self):
+        link, updater = self.make()
+        calls = []
+        updater.check = lambda: (calls.append(1), True)[1]
+        acks = []
+        link._ack = lambda *args: acks.append(args)
+
+        link._run({"id": 9, "kind": "ota", "payload": {}})
+
+        self.assertEqual(calls, [1], "the command must trigger exactly one check")
+        self.assertEqual(acks, [(9, "done", "staged v2")])
+
+    def test_a_restart_command_reboots_after_acking(self):
+        link, _ = self.make()
+        acks = []
+        reboots = []
+        link._ack = lambda *args: acks.append(args)
+        link._reboot = lambda: reboots.append(1)
+
+        link._run({"id": 10, "kind": "restart", "payload": {}})
+
+        self.assertEqual(acks, [(10, "done", "restarting")])
+        self.assertEqual(reboots, [1])
 
 
 if __name__ == "__main__":

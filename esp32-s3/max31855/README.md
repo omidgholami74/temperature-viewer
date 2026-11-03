@@ -2,8 +2,8 @@
 
 This is the ESP32-S3 port of the original sketch in
 [`module/`](../../module): same pins (`SCK 14`, `MISO 12`, `CS 15/16/17/18`),
-same `read_temperature()`, same `ms,f1,f2,f3` line on USB serial — plus Wi-Fi, a
-direct upload to the API and OTA updates. Three furnaces, not four: slot four of
+same `read_temperature()`, same `ms,f1,f2,f3` line on USB serial — plus a
+median/EMA noise filter, Wi-Fi, a direct upload to the API and OTA updates. Three furnaces, not four: slot four of
 the API frame is sent empty, so adding a fourth probe is one line in `CS_PINS`.
 
 ```
@@ -35,7 +35,7 @@ Reversed polarity reads a falling temperature when the furnace heats up.
 - Power the boards from **3V3**, not 5V: the MAX31855 logic pins are not 5V
   tolerant on every breakout, and the ESP32-S3 is a 3.3 V part.
 - Keep the SPI wires short (under ~20 cm) and run them away from the heating
-  elements; a 1 MHz clock is slow enough that wiring is rarely the problem.
+  elements; a 500 kHz clock is slow enough that wiring is rarely the problem.
 - Use a separate twisted pair per probe, grounded at one end only, to avoid a
   ground loop through the thermocouple sheath.
 - GPIO15–GPIO17 are free on a bare ESP32-S3 module; if your board wires them to
@@ -80,10 +80,17 @@ ms,furnace1,furnace2,furnace3
   | `0x4`    | 4       | short to VCC      |
   | `0x10000`| 8       | general fault     |
 
-  `read_temperature()` is kept verbatim for reference and returns `nan` like
-  before; the loop uses `read_channel()` so a fault becomes a JSON `null`
-  instead of `NaN` (which is not valid JSON).
+  `read_temperature()` keeps the original API and returns `nan` on a fault;
+  the loop uses `read_channel()` so a fault becomes a JSON `null` instead of
+  `NaN` (which is not valid JSON).
 - The signed 14-bit value is scaled by 0.25 °C, the MAX31855 resolution.
+- **Noise filtering.** Each channel is read five times per slot (6 ms apart),
+  the median of the valid frames is kept, and an EMA
+  (`NOISE_EMA_ALPHA = 0.35`) smooths the result. A single corrupt SPI frame —
+  the usual cause of a sudden ±6 °C spike — is discarded instead of averaged
+  in, and values outside −270…1800 °C are treated as spikes. Tune
+  `NOISE_SAMPLES`, `NOISE_GAP_US` and `NOISE_EMA_ALPHA` at the top of
+  [`main.py`](main.py); five reads still fit the 100 ms slot.
 - One frame per 100 ms, batched as described in the
   [ESP32-S3 README](../README.md#behaviour).
 
@@ -133,6 +140,7 @@ move the numbers with them. A faulted channel is never offset: it stays
 | ------- | ----- |
 | All channels `-1000` / `--.-` on the dashboard | No SPI traffic: wrong `MISO` pin, missing 3V3/GND, or two boards driving one CS line. |
 | One channel `-1000`, others fine | That probe: broken welded tip, reversed `T+`/`T-`, or a CS pin used twice. |
+| A reading still jumps by several °C | EMI on the SPI wires; shorten them, ground the shield at one end only, and keep the 500 kHz clock. The median filter removes single spikes, not a constant noise source. |
 | `f` = 1 (open) in the CSV | Open thermocouple or a probe with an internal break — check with a multimeter (it should read close to 0 Ω). |
 | Temperature drops when the furnace heats | Reversed thermocouple polarity. |
 | Reading is constant 0 °C | `CS` stuck low or MISO shared with another device; check the soldered header. |

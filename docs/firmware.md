@@ -24,13 +24,18 @@ sensor driver and how a frame leaves the board.
 ```
 slot N                      slot N+1
   │                            │
-  ├─ read the probes (SPI)      │     3–4 × 4 bytes at 1 MHz ≈ 0.2 ms
+  ├─ read the probes (SPI)      │     1–5 reads per channel at 0.5–1 MHz
   ├─ apply channel offset       │
   ├─ format CSV line            │     ~0.3 ms
   ├─ enqueue frame              │     lock + append, never blocks on network
   ├─ serial write (if enabled)  │
   └─ sleep until slot N+1       │     measured from the slot, not from sleep()
 ```
+
+The MicroPython MAX31855 build spends most of the slot on its noise filter:
+five reads per channel at 500 kHz, a median per channel, then an EMA across
+samples (≈76 ms for three furnaces). The MAX31865 and Arduino builds take one
+reading per channel and rely on the probe's own filtering.
 
 The next slot is computed from the *previous slot*, so jitter does not
 accumulate: a slow serial write delays one sample, not every following one.
@@ -203,8 +208,9 @@ fresh boot is never discarded.
 A new driver only has to return, for each channel, a temperature in °C or
 `null`, plus a fault mask. Everything downstream (offsets, CSV, JSON, batching,
 storage, dashboards) works unchanged. Keep the read inside the 100 ms slot: at
-1 MHz a 4-byte transfer is ~0.2 ms, so there is room for a slightly longer
-frame, but not for a blocking network call.
+0.5–1 MHz a 4-byte transfer is ~0.2 ms, but the stock MAX31855 filter already
+uses ~76 ms of the slot, so there is room for a slightly longer frame, not for
+a blocking network call.
 
 ## Related
 

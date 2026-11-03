@@ -58,9 +58,11 @@ timestamps.
 
 ## A frame's journey
 
-1. **Sample.** Four SPI reads in one 100 ms slot. The MAX31855 returns 14 bits
-   plus three fault flags; the MAX31865 returns a resistance ratio, converted
-   with the Callendar–Van Dusen polynomial.
+1. **Sample.** Three (MAX31855) or four (MAX31865) SPI channels in one 100 ms
+   slot; the MAX31855 build medians five reads per channel before smoothing
+   them with an EMA. The MAX31855 returns 14 bits plus three fault flags; the
+   MAX31865 returns a resistance ratio, converted with the Callendar–Van Dusen
+   polynomial.
 2. **Normalise.** Faulted channels become `null` with a fault bit; the firmware's
    `-1000.00` sentinel exists only on the serial line so a fault is never
    mistaken for a temperature.

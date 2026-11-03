@@ -1,8 +1,9 @@
 """ESP32-S3 + 3x MAX31855, Wi-Fi, straight to the PHP API.
 
-Three furnaces are read every 100 ms; the ``ms,f1,f2,f3`` line goes out on USB
-serial for Thonny / Serial Studio / ``serial-web``, and every frame is POSTed
-to ``/api/ingest`` from the board itself — no PC collector in the middle.
+Three furnaces are read every 100 ms, each through a median/EMA noise filter;
+the ``ms,f1,f2,f3`` line goes out on USB serial for Thonny / Serial Studio /
+``serial-web``, and every frame is POSTed to ``/api/ingest`` from the board
+itself — no PC collector in the middle.
 
 The API frame is still four channels wide. A board with three probes sends the
 fourth slot as ``null`` with no fault bit, so an empty slot is not reported as a
@@ -16,12 +17,13 @@ Wiring (see README.md):
     3V3  and GND  on every board   (the MAX31855 has no MOSI)
 
 Copy ``common/config.example.py`` to ``config.py``, edit it, then upload
-``config.py``, ``wifi.py``, ``ingest.py``, ``supervisor.py``, ``ota.py`` and this
-``main.py`` to the board root and run ``main.py``. With those at the root the
-firmware runs on its own from a USB charger and updates itself from the API.
+``config.py``, ``wifi.py``, ``ingest.py``, ``supervisor.py``, ``ota.py``,
+``device.py`` and this ``main.py`` to the board root and run ``main.py``. With
+those at the root the firmware runs on its own from a USB charger and accepts
+updates from the admin panel.
 
 The watchdog reboots a hung loop, ``supervisor.run_forever`` restarts a crashed
-session and ``ota.py`` checks the server for a newer bundle in the background.
+session and ``ota.py`` applies a bundle only when the panel queues an update.
 """
 
 import time
@@ -58,6 +60,25 @@ API_CHANNELS = 4
 CSV_HEADER = "ms,furnace1,furnace2,furnace3"
 FAULT_SENTINEL = -1000.0  # CSV value for a channel that reported a fault
 
+# ---------------------------------------------------------------------------
+# Noise reduction
+# ---------------------------------------------------------------------------
+# Every channel is read several times per slot and the median is used, so one
+# corrupt SPI frame (the usual cause of a sudden ±6 °C spike) is thrown away
+# instead of averaged into the result. Five reads 6 ms apart keep three
+# furnaces inside the 100 ms slot: 3 × (4 × 6 ms + 5 reads) ≈ 76 ms. Raising
+# NOISE_GAP_US without also raising SAMPLE_INTERVAL_MS makes the loop miss
+# slots.
+NOISE_SAMPLES = 5
+NOISE_GAP_US = 6000
+CHANNEL_GAP_US = 500        # pause between channels on the shared SCK/MISO bus
+NOISE_EMA_ALPHA = 0.35      # 1.0 = no smoothing, 0.25-0.4 = smooth but responsive
+
+# Plausible type-K range. A frame outside it is treated as a spike and dropped
+# before the median filter instead of being uploaded as a real temperature.
+TEMP_MIN_C = -270.0
+TEMP_MAX_C = 1800.0
+
 # Fixed calibration offset per furnace, in °C, in CS_PINS order: furnace 1 is
 # CS 15, furnace 2 is CS 16, and so on. The value is added to every reading of
 # that channel — both in the CSV line and in the uploaded sample — which is
@@ -69,9 +90,12 @@ FAULT_SENTINEL = -1000.0  # CSV value for a channel that reported a fault
 CHANNEL_OFFSETS = [0.0, 0.0, 0.0]
 
 # SPI configuration
+# 500 kHz instead of 1 MHz: the MAX31855 tolerates 5 MHz, but a slower clock
+# rings far less on long unshielded SCK/MISO wires, which is a common source of
+# the spikes this filter removes.
 spi = SPI(
     1,
-    baudrate=1000000,
+    baudrate=500000,
     polarity=0,
     phase=0,
     bits=8,
@@ -87,8 +111,8 @@ chip_selects = [
 ]
 
 
-def read_temperature(cs):
-    """Read thermocouple temperature in Celsius."""
+def _read_raw(cs):
+    """Read one raw 32-bit frame; ``None`` when the transfer failed."""
 
     try:
         cs.value(1)
@@ -100,83 +124,140 @@ def read_temperature(cs):
         cs.value(1)
 
         if data is None or len(data) != 4:
-            return float("nan")
+            return None
 
-        # Combine four bytes into a 32-bit value
-        raw = (
+        return (
             (data[0] << 24)
             | (data[1] << 16)
             | (data[2] << 8)
             | data[3]
         )
 
-        # Check MAX31855 general fault flag
-        if raw & 0x00010000:
-            return float("nan")
-
-        # Extract signed 14-bit thermocouple temperature
-        temp_raw = (raw >> 18) & 0x3FFF
-
-        if temp_raw & 0x2000:
-            temp_raw -= 0x4000
-
-        return temp_raw * 0.25
-
     except Exception:
-        cs.value(1)
-        return float("nan")
+        try:
+            cs.value(1)
+        except Exception:
+            pass
+        return None
+
+
+def _decode(raw):
+    """Decode one frame into ``(temperature_or_None, fault_bits)``.
+
+    Fault bits match the API: 1 open thermocouple, 2 short to GND,
+    4 short to VCC, 8 read error.
+    """
+
+    fault = 0
+
+    if raw & 0x1:      # OC  open circuit
+        fault |= 1
+    if raw & 0x2:      # SCG short to ground
+        fault |= 2
+    if raw & 0x4:      # SCV short to VCC
+        fault |= 4
+    if raw & 0x10000:  # general fault
+        fault |= 8
+
+    if fault:
+        return None, fault
+
+    # Extract signed 14-bit thermocouple temperature
+    temp_raw = (raw >> 18) & 0x3FFF
+
+    if temp_raw & 0x2000:
+        temp_raw -= 0x4000
+
+    return temp_raw * 0.25, 0
+
+
+def _plausible(temperature):
+    """Reject obviously wrong values before they reach the median filter."""
+
+    return temperature is not None and TEMP_MIN_C < temperature < TEMP_MAX_C
+
+
+def _median(values):
+    """Median without importing statistics (keeps RAM low)."""
+
+    ordered = sorted(values)
+    count = len(ordered)
+
+    if not count:
+        return None
+
+    middle = count // 2
+
+    if count % 2:
+        return ordered[middle]
+
+    return (ordered[middle - 1] + ordered[middle]) * 0.5
+
+
+# EMA state per channel, ``None`` until the first valid reading.
+_ema_state = [None] * len(CS_PINS)
+
+
+def _smooth(index, temperature):
+    """Exponential moving average for one channel; faults pass through."""
+
+    if temperature is None:
+        return None
+
+    previous = _ema_state[index]
+
+    if previous is None:
+        _ema_state[index] = temperature
+        return temperature
+
+    smoothed = previous + NOISE_EMA_ALPHA * (temperature - previous)
+    _ema_state[index] = smoothed
+    return smoothed
 
 
 def read_channel(cs):
-    """Same read as read_temperature, plus the fault mask the API wants.
+    """Read one channel with median filtering.
 
     Returns ``(temperature_or_None, fault_bits)`` with the API's bits:
     1 open thermocouple, 2 short to GND, 4 short to VCC, 8 read error.
+
+    Strategy: take ``NOISE_SAMPLES`` frames spaced by ``NOISE_GAP_US``, drop
+    any frame that reports a fault or an out-of-range value, and return the
+    median of the rest. A channel is only reported as faulted when every read
+    failed, so one bad transfer does not blank a working probe.
     """
 
-    try:
-        cs.value(1)
-        cs.value(0)
-        time.sleep_us(2)
+    samples = []
+    fault_bits = 0
 
-        data = spi.read(4)
+    for i in range(NOISE_SAMPLES):
+        raw = _read_raw(cs)
 
-        cs.value(1)
+        if raw is None:
+            fault_bits |= 8
+        else:
+            temperature, fault = _decode(raw)
 
-        if data is None or len(data) != 4:
-            return None, 8
+            if fault:
+                fault_bits |= fault
+            elif _plausible(temperature):
+                samples.append(temperature)
 
-        raw = (
-            (data[0] << 24)
-            | (data[1] << 16)
-            | (data[2] << 8)
-            | data[3]
-        )
+        # Wait for a fresh conversion before the next read.
+        if i != NOISE_SAMPLES - 1:
+            time.sleep_us(NOISE_GAP_US)
 
-        fault = 0
+    if not samples:
+        return None, fault_bits or 8
 
-        if raw & 0x1:      # OC  open circuit
-            fault |= 1
-        if raw & 0x2:      # SCG short to ground
-            fault |= 2
-        if raw & 0x4:      # SCV short to VCC
-            fault |= 4
-        if raw & 0x10000:  # general fault
-            fault |= 8
+    return _median(samples), 0
 
-        if fault:
-            return None, fault
 
-        temp_raw = (raw >> 18) & 0x3FFF
+def read_temperature(cs):
+    """Read one channel in Celsius; ``nan`` on a fault (original API)."""
 
-        if temp_raw & 0x2000:
-            temp_raw -= 0x4000
-
-        return temp_raw * 0.25, 0
-
-    except Exception:
-        cs.value(1)
-        return None, 8
+    temperature, _fault = read_channel(cs)
+    return float("nan") if temperature is None else temperature
 
 
 def csv_value(temperature):
@@ -255,9 +336,13 @@ def session(watch):
             temperatures = []
             faults = []
 
-            # Read every installed furnace
+            # Read every installed furnace: median of NOISE_SAMPLES reads,
+            # then an EMA, then the channel's fixed calibration offset. The
+            # offset is applied only to a valid reading, so a fault stays a
+            # fault instead of becoming a plausible-looking temperature.
             for index, cs in enumerate(chip_selects):
                 temperature, fault = read_channel(cs)
+                temperature = _smooth(index, temperature)
 
                 if temperature is not None:
                     # A short list in CHANNEL_OFFSETS is treated as 0.0 rather
@@ -267,6 +352,10 @@ def session(watch):
 
                 temperatures.append(temperature)
                 faults.append(fault)
+
+                # A short pause keeps one channel's edges out of the next
+                # channel's frame; all three CS lines share SCK and MISO.
+                time.sleep_us(CHANNEL_GAP_US)
 
             watch.feed()
 

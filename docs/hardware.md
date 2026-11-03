@@ -102,15 +102,17 @@ reads hot. Use 3-wire for furnace probes; 4-wire when accuracy matters most.
   through the probe shields.
 * Keep SPI runs under ~20 cm (ESP32-S3) or ~30 cm (Pico) and away from heater
   wiring and contactors.
-* A 1 MHz clock is deliberately slow: wiring and noise are far more likely to
-  cause faults than timing.
+* A 0.5–1 MHz clock is deliberately slow: wiring and noise are far more likely
+  to cause faults than timing. The MAX31855 build also medians five reads per
+  channel and smooths them with an EMA (see
+  [`esp32-s3/max31855/README.md`](../esp32-s3/max31855/README.md#how-it-works)).
 
 ## Calibration
 
 Each channel can carry a fixed offset in `esp32-s3/max31855/main.py`:
 
 ```python
-CHANNEL_OFFSETS = [0.0, 0.0, 0.0, 0.0]   # °C, one per CS pin
+CHANNEL_OFFSETS = [0.0, 0.0, 0.0]   # °C, one per CS pin
 ```
 
 The offset is applied before the serial line and the upload, so CSV, database

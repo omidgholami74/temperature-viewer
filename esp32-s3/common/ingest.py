@@ -156,6 +156,29 @@ def split_url(url):
     return host, port, path, scheme == "https"
 
 
+def set_socket_timeout(sock, seconds):
+    """Best-effort timeout for plain and TLS sockets.
+
+    MicroPython's ``SSLSocket`` does not expose ``settimeout`` (the plain
+    socket was already configured before wrapping). Calling it blindly makes
+    every upload fail with ``AttributeError`` instead of sending a sample.
+    """
+    setter = getattr(sock, "settimeout", None)
+
+    if setter is None:
+        setter = getattr(getattr(sock, "sock", None), "settimeout", None)
+
+    if setter is None:
+        return False
+
+    try:
+        setter(seconds)
+    except Exception:
+        return False
+
+    return True
+
+
 def api_base_path(path):
     """Root for heartbeat/OTA, also when API_URL includes ``/api/ingest``.
 
@@ -679,9 +702,10 @@ class Ingest:
                     sock = ssl.wrap_socket(sock, server_hostname=self.host)
                     self.log("API: TLS certificate not verified (TLS_VERIFY = False)")
 
-            # Some MicroPython ssl builds do not inherit the plain socket
-            # timeout. Apply it after wrapping so recv cannot hang forever.
-            sock.settimeout(self.timeout)
+            # Some MicroPython ssl builds wrap the socket in an object without
+            # settimeout. The plain socket was configured above; only apply the
+            # timeout again when the TLS object supports it.
+            set_socket_timeout(sock, self.timeout)
         except Exception:
             # Do not throw the DNS result away after one failed dial: a stale
             # keep-alive or a busy server is common. After three failures the

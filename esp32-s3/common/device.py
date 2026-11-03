@@ -230,9 +230,10 @@ class DeviceLink:
                 else:
                     sock = ssl.wrap_socket(sock, server_hostname=self.host)
 
-            # Keep the read bounded even when the TLS implementation did not
-            # inherit the plain socket timeout.
-            sock.settimeout(self.timeout)
+            # MicroPython's SSLSocket has no settimeout; the plain socket
+            # timeout above still applies. Never abort heartbeat/OTA for a
+            # missing optional method.
+            ingest.set_socket_timeout(sock, self.timeout)
             sock.sendall(("\r\n".join(lines) + "\r\n\r\n" + body).encode("utf-8"))
 
             while True:

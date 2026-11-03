@@ -19,7 +19,7 @@ retention, formatting), not every getter.
 | MQTT transport | `python3 -m unittest discover -s MQTT/firmware/tests -v` | Batch encoding, retained will, QoS 1 publish, ack trimming, buffer overflow, reconnect bookkeeping |
 
 Counts at the time of writing: 33 bridge tests, 11 transport tests, 22
-dashboard/serial tests, 83 ESP32-S3 firmware tests and the collector suite. The
+dashboard/serial tests, 84 ESP32-S3 firmware tests and the collector suite. The
 backend smoke test needs PHP and `curl`; the Arduino suite needs `g++`.
 
 ## What each suite actually covers

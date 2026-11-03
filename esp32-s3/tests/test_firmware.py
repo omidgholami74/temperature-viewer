@@ -550,6 +550,12 @@ class KeepAliveTests(unittest.TestCase):
             client.close()
             server.close()
 
+    def test_a_tls_socket_without_settimeout_is_tolerated(self):
+        class TlsSocket:
+            pass
+
+        self.assertFalse(ingest.set_socket_timeout(TlsSocket(), 5))
+
     def test_chunked_reply_is_read_completely(self):
         left, right = socket.socketpair()
 

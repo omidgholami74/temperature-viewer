@@ -73,12 +73,33 @@ final class Database
             self::backfillActiveMs($pdo);
         }
 
+        // Version 4 adds live settings and the reported sensor source. New
+        // databases get the columns from schema.sql; an existing one needs the
+        // ALTERs because CREATE TABLE IF NOT EXISTS never changes a table.
+        $deviceNames = array_column($pdo->query('PRAGMA table_info(devices)')->fetchAll(), 'name');
+
+        foreach ([
+            'source' => "TEXT NOT NULL DEFAULT ''",
+            'settings' => 'TEXT',
+            'settings_at_ms' => 'INTEGER',
+        ] as $column => $definition) {
+            if (!in_array($column, $deviceNames, true)) {
+                $pdo->exec(sprintf('ALTER TABLE devices ADD COLUMN %s %s', $column, $definition));
+            }
+        }
+
+        $channelNames = array_column($pdo->query('PRAGMA table_info(device_channels)')->fetchAll(), 'name');
+
+        if (!in_array('offset', $channelNames, true)) {
+            $pdo->exec('ALTER TABLE device_channels ADD COLUMN offset REAL NOT NULL DEFAULT 0');
+        }
+
+        // Version 5 adds the operator profile table. It is created by
+        // schema.sql; the version marker is what makes the change auditable.
         $version = (int) (self::meta($pdo, 'schema_version') ?? 0);
 
-        if ($version < 3) {
-            // The device registry and command queue are new in version 3; the
-            // tables above are created by schema.sql on every connection.
-            self::setMeta($pdo, 'schema_version', '3');
+        if ($version < 5) {
+            self::setMeta($pdo, 'schema_version', '5');
         }
     }
 

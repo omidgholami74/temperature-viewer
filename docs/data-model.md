@@ -1,7 +1,8 @@
 # Data model
 
-SQLite, four tables, one writer. The schema is small because the hard parts are
-in how rows are written, not in how many tables exist.
+SQLite, one writer. The schema is small because the hard parts are in how rows
+are written, not in how many tables exist; the data tables (`runs`, `readings`,
+`readings_1s`) are separate from the board registry and its command queue.
 
 ![Data model](images/data-model.svg)
 
@@ -51,10 +52,23 @@ Per-second averages, `PRIMARY KEY (run_id, t_ms)` and `WITHOUT ROWID`, written b
 the maintenance job. Kept for `FURNACE_AGGREGATE_RETENTION_DAYS` (180 by
 default) after raw rows are pruned.
 
+### `devices`, `device_channels`, `device_commands`, `device_events`
+
+The board registry, operator labels/offsets, queued commands and the connection
+log. `devices.last_seen_ms` drives online/offline; the settings snapshot is
+returned on every heartbeat so a reflashed board can recover it.
+
+### `device_profiles`
+
+One row per board with the operator-owned `display_name`, `location` and free
+text `notes`. It is separate from `devices.name`, which the heartbeat updates
+from firmware, so a rename is never lost on the next poll.
+
 ### `meta`
 
 Key/value store for `schema_version`, the rollup checkpoint
-(`last_rollup_ms`) and maintenance bookkeeping.
+(`last_rollup_ms`), the public dashboard settings (noise threshold, default
+window and notice) and maintenance bookkeeping.
 
 ## Run lifecycle
 
@@ -135,8 +149,9 @@ newest **recorded** sample, not to `now`.
 ## Migrations and backups
 
 * The schema is created idempotently at boot and versioned in `meta`
-  (`schema_version = 2`). A future migration bumps it and runs inside a
-  transaction.
+  (`schema_version = 5`, which adds the device registry, live settings,
+  per-channel offsets and operator profiles). Schema changes run before the API
+  serves a request.
 * Back up by copying the SQLite file while the API is idle, or with
   `sqlite3 backend/var/furnace.sqlite ".backup backup.sqlite"`.
 * `--vacuum` in the maintenance job reclaims space after a large prune; it needs

@@ -213,6 +213,87 @@ export const api = {
     });
   },
 
+  /** Public dashboard settings: the server owns the noise threshold. */
+  dashboard() {
+    return request(endpoint('/api/dashboard'));
+  },
+
+  /** Save public dashboard settings. Needs the admin key. */
+  saveDashboard(settings) {
+    return request(endpoint('/api/dashboard'), {
+      method: 'POST',
+      body: settings,
+      headers: adminHeaders(),
+      timeout: 10000,
+    });
+  },
+
+  /** Operator-owned board profile: display name, location and notes. */
+  saveProfile(deviceId, profile) {
+    return request(endpoint(`/api/devices/${encodeURIComponent(deviceId)}/profile`), {
+      method: 'POST',
+      body: profile,
+      headers: adminHeaders(),
+      timeout: 10000,
+    });
+  },
+
+  /**
+   * Upload a complete .py source bundle as multipart form data. The server
+   * validates the file list, swaps the channel folder atomically and returns
+   * the new manifest; OTA delivery stays a separate command.
+   */
+  async uploadFirmware(formData) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+
+    try {
+      const response = await fetch(endpoint('/api/firmware/upload'), {
+        method: 'POST',
+        headers: { Accept: 'application/json', ...adminHeaders() },
+        body: formData,
+        cache: 'no-store',
+        credentials: 'omit',
+        signal: controller.signal,
+      });
+      let payload = null;
+
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        throw new ApiError(payload?.error ?? `Upload failed (${response.status})`, response.status);
+      }
+
+      return payload;
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+
+      if (error?.name === 'AbortError') {
+        throw new ApiError('The upload took too long');
+      }
+
+      throw new ApiError('Backend unreachable');
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+
+  /** Save live sampling/filter/heartbeat settings. Needs the admin key. */
+  saveSettings(deviceId, settings) {
+    return request(endpoint(`/api/devices/${encodeURIComponent(deviceId)}/settings`), {
+      method: 'POST',
+      body: settings,
+      headers: adminHeaders(),
+      timeout: 10000,
+    });
+  },
+
   /** Rename or enable/disable the channels of one board. Needs the admin key. */
   saveChannels(deviceId, channels) {
     return request(endpoint(`/api/devices/${encodeURIComponent(deviceId)}/channels`), {

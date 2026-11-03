@@ -109,7 +109,10 @@ reads hot. Use 3-wire for furnace probes; 4-wire when accuracy matters most.
 
 ## Calibration
 
-Each channel can carry a fixed offset in `esp32-s3/max31855/main.py`:
+Set each channel's fixed offset in the **Furnaces** panel of
+[`ui/admin.html`](../ui/admin.html); the board stores it in `/settings.json`.
+`CHANNEL_OFFSETS` in `esp32-s3/max31855/main.py` is only the first-boot/default
+fallback when the board runs without the API:
 
 ```python
 CHANNEL_OFFSETS = [0.0, 0.0, 0.0]   # °C, one per CS pin
@@ -117,8 +120,9 @@ CHANNEL_OFFSETS = [0.0, 0.0, 0.0]   # °C, one per CS pin
 
 The offset is applied before the serial line and the upload, so CSV, database
 and dashboard all show the corrected value. Fill it as
-`reference thermometer − reading` at a working temperature. A faulted channel is
-never offset: it stays `-1000.00` on serial and `null` in JSON.
+`reference thermometer − reading` at a working temperature. A faulted or
+disabled channel is never offset: it stays `-1000.00` on serial and `null` in
+JSON.
 
 The RTD path has no offset table; its error is dominated by `R_REF`,
 `R_NOMINAL` and wire mode, which are configured in `max31865/main.py`.

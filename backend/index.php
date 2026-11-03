@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Api;
 use App\ApiError;
+use App\DashboardSettings;
 use App\Database;
 use App\DeviceRepository;
 use App\ReadingRepository;
@@ -32,10 +33,15 @@ try {
                 'GET /api/health',
                 'GET /api/firmware/manifest?channel=<name>',
                 'GET /api/firmware/file?channel=<name>&name=<file>',
+                'GET /api/dashboard',
+                'POST /api/dashboard',
                 'GET /api/devices',
                 'GET /api/devices/events?limit=<n>',
                 'POST /api/devices/<id>/commands',
                 'POST /api/devices/<id>/channels',
+                'POST /api/devices/<id>/settings',
+                'POST /api/devices/<id>/profile',
+                'POST /api/firmware/upload',
                 'POST /api/device/heartbeat',
                 'POST /api/device/ack',
                 'GET /api/live?since=<id>&run=<id>',
@@ -92,10 +98,40 @@ function handleApi(string $method, string $route, array $config): never
     $runs = new RunRepository($pdo);
     $readings = new ReadingRepository($pdo);
     $devices = new DeviceRepository($pdo);
+    $dashboard = new DashboardSettings($pdo);
     $now = nowMs();
 
-    // Device management: /devices/<id>/commands and /devices/<id>/channels.
-    if (preg_match('#^/devices/([A-Za-z0-9_-]{1,32})/(commands|channels)$#', $route, $deviceRoute) === 1) {
+    // Public dashboard settings. Reads are open like the rest of the display
+    // API; the write requires the admin key and a trusted origin.
+    if ($route === '/dashboard') {
+        if ($method === 'GET') {
+            Api::json(['settings' => $dashboard->get()]);
+        }
+
+        if ($method !== 'POST') {
+            throw new ApiError(405, 'Use GET or POST for dashboard settings');
+        }
+
+        Api::requireAdminKey($config);
+        Api::requireTrustedOrigin($config);
+        $body = Api::readJsonBody((int) $config['max_request_bytes']);
+
+        Api::json(['ok' => true, 'settings' => $dashboard->save($body)]);
+    }
+
+    // Source upload is intentionally separate from OTA delivery: the operator
+    // uploads a complete .py bundle here, then queues the normal OTA command.
+    if ($route === '/firmware/upload') {
+        if ($method !== 'POST') {
+            throw new ApiError(405, 'Use POST for firmware upload');
+        }
+
+        $now = nowMs();
+        Api::json(handleFirmwareUpload($config, $now));
+    }
+
+    // Device management: /devices/<id>/commands, channels, settings and profile.
+    if (preg_match('#^/devices/([A-Za-z0-9_-]{1,32})/(commands|channels|settings|profile)$#', $route, $deviceRoute) === 1) {
         if ($method !== 'POST') {
             throw new ApiError(405, 'Use POST for device management');
         }
@@ -135,7 +171,7 @@ function handleApi(string $method, string $route, array $config): never
 
                 $payload = $channel === '' ? [] : ['channel' => $channel];
             } elseif ($kind !== 'restart') {
-                throw new ApiError(422, 'kind must be wifi, ota or restart');
+                throw new ApiError(422, 'kind must be wifi, ota or restart; use /settings for configuration');
             }
 
             Api::json([
@@ -144,10 +180,44 @@ function handleApi(string $method, string $route, array $config): never
             ]);
         }
 
+        if ($deviceRoute[2] === 'settings') {
+            $settings = validateDeviceSettings($body);
+            $command = $devices->saveSettings($deviceRoute[1], $settings, $now);
+
+            Api::json([
+                'ok' => true,
+                'command' => $command,
+                'settings' => $devices->settings($deviceRoute[1]),
+            ]);
+        }
+
+        if ($deviceRoute[2] === 'profile') {
+            foreach (['display_name', 'location', 'notes'] as $field) {
+                if (isset($body[$field]) && !is_string($body[$field])) {
+                    throw new ApiError(422, sprintf('%s must be text', $field));
+                }
+            }
+
+            $name = cutString(trim((string) ($body['display_name'] ?? '')), 60);
+            $location = cutString(trim((string) ($body['location'] ?? '')), 80);
+            $notes = cutString(trim((string) ($body['notes'] ?? '')), 500);
+
+            Api::json([
+                'ok' => true,
+                'profile' => $devices->saveProfile($deviceRoute[1], $name, $location, $notes, $now),
+            ]);
+        }
+
         $channels = $body['channels'] ?? null;
 
         if (!is_array($channels) || $channels === [] || count($channels) > 4) {
             throw new ApiError(422, 'channels must list 1 to 4 entries');
+        }
+
+        $existing = [];
+
+        foreach ($devices->channels($deviceRoute[1]) as $channel) {
+            $existing[(int) $channel['channel']] = $channel;
         }
 
         $clean = [];
@@ -166,15 +236,39 @@ function handleApi(string $method, string $route, array $config): never
 
             $seen[$number] = true;
             $label = isset($entry['label']) && is_string($entry['label']) ? trim($entry['label']) : '';
+            $offset = isset($existing[$number]) ? (float) $existing[$number]['offset'] : 0.0;
+
+            if (array_key_exists('offset', $entry)) {
+                if (!is_int($entry['offset']) && !is_float($entry['offset'])) {
+                    throw new ApiError(422, 'channel offset must be a number');
+                }
+
+                $offset = (float) $entry['offset'];
+
+                if (!is_finite($offset) || $offset < -200.0 || $offset > 200.0) {
+                    throw new ApiError(422, 'channel offset must be between -200 and 200 °C');
+                }
+
+                $offset = round($offset, 2);
+            }
+
             $clean[] = [
                 'channel' => $number,
                 'label' => cutString($label === '' ? sprintf('Furnace %d', $number) : $label, 40),
                 'enabled' => !empty($entry['enabled']),
+                'offset' => $offset,
             ];
         }
 
         $devices->setChannels($deviceRoute[1], $clean);
-        Api::json(['ok' => true, 'channels' => $devices->channels($deviceRoute[1])]);
+        $command = $devices->saveSettings($deviceRoute[1], $devices->settings($deviceRoute[1]) ?? [], $now);
+
+        Api::json([
+            'ok' => true,
+            'channels' => $devices->channels($deviceRoute[1]),
+            'settings' => $devices->settings($deviceRoute[1]),
+            'command' => $command,
+        ]);
     }
 
     switch ($method . ' ' . $route) {
@@ -263,6 +357,7 @@ function handleApi(string $method, string $route, array $config): never
             $state = $devices->heartbeat([
                 'id' => $deviceId,
                 'name' => cutString(trim((string) ($body['name'] ?? 'ESP32-S3')), 60),
+                'source' => cutString((string) ($body['source'] ?? ''), 20),
                 'firmware' => cutString((string) ($body['firmware'] ?? ''), 40),
                 'ip' => cutString((string) ($body['ip'] ?? ''), 45),
                 'rssi' => isset($body['rssi']) && is_int($body['rssi']) ? max(-127, min(0, $body['rssi'])) : null,
@@ -734,10 +829,15 @@ function handleApi(string $method, string $route, array $config): never
                 'GET /api/health',
                 'GET /api/firmware/manifest?channel=<name>',
                 'GET /api/firmware/file?channel=<name>&name=<file>',
+                'GET /api/dashboard',
+                'POST /api/dashboard',
                 'GET /api/devices',
                 'GET /api/devices/events?limit=<n>',
                 'POST /api/devices/<id>/commands',
                 'POST /api/devices/<id>/channels',
+                'POST /api/devices/<id>/settings',
+                'POST /api/devices/<id>/profile',
+                'POST /api/firmware/upload',
                 'POST /api/device/heartbeat',
                 'POST /api/device/ack',
                 'GET /api/live?since=<id>&run=<id>',
@@ -800,7 +900,7 @@ function firmwareFileName(string $name): string
  * Read and validate a channel's manifest.
  *
  * @param array<string, mixed> $config
- * @return array{version: string, files: list<array<string, mixed>>}
+ * @return array{channel: string, version: string, created_at: string, uploaded_at: string, notes: string, files: list<array<string, mixed>>}
  */
 function firmwareManifest(array $config, string $channel): array
 {
@@ -857,13 +957,317 @@ function firmwareManifest(array $config, string $channel): array
         throw new ApiError(500, 'The firmware manifest lists no valid files');
     }
 
-    return ['version' => $manifest['version'], 'files' => $files];
+    return [
+        'channel' => $channel,
+        'version' => $manifest['version'],
+        'created_at' => is_string($manifest['created_at'] ?? null) ? $manifest['created_at'] : '',
+        'uploaded_at' => is_string($manifest['uploaded_at'] ?? null) ? $manifest['uploaded_at'] : '',
+        'notes' => is_string($manifest['notes'] ?? null) ? $manifest['notes'] : '',
+        'files' => $files,
+    ];
 }
 
 /**
- * Furnace numbers (1..4) selected for an export. Absent means all four.
+ * Validate and publish a complete source bundle uploaded from the admin panel.
  *
- * @return list<int>
+ * The browser never writes into the live bundle folder directly. Files are
+ * checked in a temporary directory, the manifest is generated there, and only
+ * then is the channel folder swapped. A failed upload therefore leaves the
+ * previous firmware servable.
+ *
+ * @param array<string, mixed> $config
+ * @return array<string, mixed>
+ */
+function handleFirmwareUpload(array $config, int $now): array
+{
+    if (trim((string) ($config['admin_key'] ?? '')) === '') {
+        throw new ApiError(503, 'Set FURNACE_ADMIN_KEY before uploading source bundles');
+    }
+
+    Api::requireAdminKey($config);
+    Api::requireTrustedOrigin($config);
+
+    $channel = isset($_POST['channel']) && is_string($_POST['channel']) ? trim($_POST['channel']) : '';
+
+    if (!preg_match('/^[a-z0-9][a-z0-9-]{0,31}$/', $channel)) {
+        throw new ApiError(422, 'channel must be a bundle name such as max31855');
+    }
+
+    $version = isset($_POST['version']) && is_string($_POST['version']) ? trim($_POST['version']) : '';
+
+    if ($version !== '' && !preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/', $version)) {
+        throw new ApiError(422, 'version must start with a letter or digit and contain only letters, digits, dot, dash or underscore');
+    }
+
+    $notes = isset($_POST['notes']) && is_string($_POST['notes']) ? cutString(trim($_POST['notes']), 200) : '';
+    $upload = $_FILES['files'] ?? null;
+
+    if (!is_array($upload) || !isset($upload['name']) || !is_array($upload['name']) || $upload['name'] === []) {
+        throw new ApiError(422, 'Select the .py files for the bundle');
+    }
+
+    $names = array_values($upload['name']);
+    $count = count($names);
+    $maxFiles = (int) ($config['max_firmware_files'] ?? 16);
+
+    if ($count < 1 || $count > $maxFiles) {
+        throw new ApiError(422, sprintf('A bundle must contain 1 to %d files', $maxFiles));
+    }
+
+    $required = [
+        'boot.py',
+        'wifi.py',
+        'ingest.py',
+        'supervisor.py',
+        'ota.py',
+        'device.py',
+        'settings.py',
+        'main.py',
+    ];
+
+    if ($channel === 'max31865') {
+        $required[] = 'max31865.py';
+    }
+
+    $maxFileBytes = (int) ($config['max_firmware_file_bytes'] ?? 524288);
+    $maxTotalBytes = (int) ($config['max_firmware_bytes'] ?? 2097152);
+    $accepted = [];
+    $total = 0;
+
+    foreach ($names as $index => $rawName) {
+        $name = firmwareFileName(is_string($rawName) ? $rawName : '');
+
+        if ($name === '' || str_starts_with($name, '.') || !str_ends_with($name, '.py')) {
+            throw new ApiError(422, 'Bundle files must have a plain .py file name');
+        }
+
+        if ($name === 'config.py' || $name === 'manifest.json') {
+            throw new ApiError(422, 'config.py and manifest.json cannot be uploaded');
+        }
+
+        if (isset($accepted[$name])) {
+            throw new ApiError(422, sprintf('%s was uploaded twice', $name));
+        }
+
+        $error = $upload['error'][$index] ?? UPLOAD_ERR_NO_FILE;
+
+        if ($error !== UPLOAD_ERR_OK) {
+            throw new ApiError(422, sprintf('%s did not upload cleanly (error %d)', $name, $error));
+        }
+
+        $temporary = (string) ($upload['tmp_name'][$index] ?? '');
+        $size = $temporary !== '' ? filesize($temporary) : false;
+
+        if ($size === false || $size < 1 || $size > $maxFileBytes) {
+            throw new ApiError(422, sprintf('%s must be between 1 byte and %d bytes', $name, $maxFileBytes));
+        }
+
+        $total += $size;
+
+        if ($total > $maxTotalBytes) {
+            throw new ApiError(413, 'The source bundle is too large', ['max_bytes' => $maxTotalBytes]);
+        }
+
+        $accepted[$name] = ['tmp' => $temporary, 'size' => $size];
+    }
+
+    $missing = array_values(array_diff($required, array_keys($accepted)));
+
+    if ($missing !== []) {
+        throw new ApiError(422, 'The bundle is missing required files', ['missing' => $missing]);
+    }
+
+    $root = firmwareDirectory($config);
+
+    if (!is_dir($root) && !mkdir($root, 0o775, true) && !is_dir($root)) {
+        throw new ApiError(500, 'Cannot create the firmware directory');
+    }
+
+    if (!is_writable($root)) {
+        throw new ApiError(500, 'The firmware directory is not writable');
+    }
+
+    $temporaryDirectory = $root . '/.upload-' . bin2hex(random_bytes(6));
+
+    if (!mkdir($temporaryDirectory, 0o775) && !is_dir($temporaryDirectory)) {
+        throw new ApiError(500, 'Cannot create a temporary firmware directory');
+    }
+
+    try {
+        $entries = [];
+
+        foreach ($accepted as $name => $file) {
+            $destination = $temporaryDirectory . '/' . $name;
+
+            if (!move_uploaded_file($file['tmp'], $destination)) {
+                throw new ApiError(500, sprintf('Could not store %s', $name));
+            }
+
+            $digest = hash_file('sha256', $destination);
+
+            if ($digest === false) {
+                throw new ApiError(500, sprintf('Could not hash %s', $name));
+            }
+
+            $entries[] = [
+                'name' => $name,
+                'size' => $file['size'],
+                'sha256' => strtolower($digest),
+            ];
+        }
+
+        usort($entries, static fn (array $left, array $right): int => strcmp($left['name'], $right['name']));
+        $seconds = intdiv($now, 1000);
+        $version = $version !== ''
+            ? $version
+            : gmdate('Ymd-His', $seconds) . '-' . strtoupper(bin2hex(random_bytes(2)));
+        $manifest = [
+            'channel' => $channel,
+            'version' => $version,
+            'created_at' => gmdate('Y-m-d\TH:i:s\Z', $seconds),
+            'uploaded_at' => gmdate('Y-m-d\TH:i:s\Z', $seconds),
+            'notes' => $notes,
+            'files' => $entries,
+        ];
+        $encoded = json_encode(
+            $manifest,
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+        );
+
+        if (file_put_contents($temporaryDirectory . '/manifest.json', $encoded . "\n") === false) {
+            throw new ApiError(500, 'Could not write the firmware manifest');
+        }
+
+        $target = $root . '/' . $channel;
+        $backup = $root . '/.' . $channel . '.previous';
+        removeTree($backup);
+
+        if (is_dir($target) && !rename($target, $backup)) {
+            throw new ApiError(500, 'Could not replace the previous bundle');
+        }
+
+        if (!rename($temporaryDirectory, $target)) {
+            if (is_dir($backup)) {
+                rename($backup, $target);
+            }
+
+            throw new ApiError(500, 'Could not publish the uploaded bundle');
+        }
+
+        removeTree($backup);
+
+        return [
+            'ok' => true,
+            'bundle' => [
+                'channel' => $channel,
+                'version' => $version,
+                'files' => count($entries),
+                'names' => array_map(static fn (array $entry): string => $entry['name'], $entries),
+                'created_at' => $manifest['created_at'],
+                'notes' => $notes,
+            ],
+            'bundles' => firmwareBundles($config),
+        ];
+    } catch (Throwable $exception) {
+        removeTree($temporaryDirectory);
+        throw $exception;
+    }
+}
+
+/** Remove a temporary or previous bundle without following symlinks. */
+function removeTree(string $path): void
+{
+    if (!is_dir($path)) {
+        if (is_file($path)) {
+            unlink($path);
+        }
+
+        return;
+    }
+
+    foreach (scandir($path) ?: [] as $entry) {
+        if ($entry === '.' || $entry === '..') {
+            continue;
+        }
+
+        $child = $path . '/' . $entry;
+
+        if (is_dir($child) && !is_link($child)) {
+            removeTree($child);
+        } else {
+            unlink($child);
+        }
+    }
+
+    rmdir($path);
+}
+
+/**
+ * Validate the live settings endpoint and return only the fields supplied.
+ *
+ * @return array<string, int|float>
+ */
+function validateDeviceSettings(array $body): array
+{
+    $raw = $body['settings'] ?? $body;
+
+    if (!is_array($raw) || (array_is_list($raw) && $raw !== [])) {
+        throw new ApiError(422, 'settings must be an object');
+    }
+
+    $limits = [
+        'sample_ms' => [50, 60000],
+        'noise_samples' => [1, 9],
+        'noise_gap_us' => [0, 50000],
+        'heartbeat_s' => [5, 3600],
+    ];
+    $clean = [];
+
+    foreach ($limits as $key => [$minimum, $maximum]) {
+        if (!array_key_exists($key, $raw)) {
+            continue;
+        }
+
+        $value = $raw[$key];
+
+        if (!is_int($value) && !(is_float($value) && floor($value) === $value)) {
+            throw new ApiError(422, sprintf('%s must be a whole number', $key));
+        }
+
+        $value = (int) $value;
+
+        if ($value < $minimum || $value > $maximum) {
+            throw new ApiError(422, sprintf('%s must be between %d and %d', $key, $minimum, $maximum));
+        }
+
+        $clean[$key] = $value;
+    }
+
+    if (array_key_exists('ema_alpha', $raw)) {
+        if (!is_int($raw['ema_alpha']) && !is_float($raw['ema_alpha'])) {
+            throw new ApiError(422, 'ema_alpha must be a number');
+        }
+
+        $alpha = (float) $raw['ema_alpha'];
+
+        if (!is_finite($alpha) || $alpha < 0.05 || $alpha > 1.0) {
+            throw new ApiError(422, 'ema_alpha must be between 0.05 and 1.0');
+        }
+
+        $clean['ema_alpha'] = round($alpha, 3);
+    }
+
+    if ($clean === []) {
+        throw new ApiError(422, 'settings must contain sample_ms, noise_samples, noise_gap_us, ema_alpha or heartbeat_s');
+    }
+
+    return $clean;
+}
+
+/**
+ * Published source bundles with their version and file names.
+ *
+ * @return array<string, array<string, mixed>>
  */
 function firmwareBundles(array $config): array
 {
@@ -882,6 +1286,13 @@ function firmwareBundles(array $config): array
         $bundles[$channel] = [
             'version' => $manifest['version'],
             'files' => count($manifest['files']),
+            'names' => array_map(
+                static fn (array $file): string => (string) $file['name'],
+                $manifest['files'],
+            ),
+            'created_at' => (string) ($manifest['created_at'] ?? ''),
+            'uploaded_at' => (string) ($manifest['uploaded_at'] ?? ''),
+            'notes' => (string) ($manifest['notes'] ?? ''),
         ];
     }
 

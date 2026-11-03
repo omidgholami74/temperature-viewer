@@ -13,7 +13,7 @@ imports the firmware itself, so it cannot start the sampler twice.
 
 # The files main.py imports. boot.py and main.py are checked too, because a
 # board that is missing either of them cannot start at all.
-REQUIRED = ("boot.py", "config.py", "wifi.py", "ingest.py", "supervisor.py", "main.py")
+REQUIRED = ("boot.py", "config.py", "wifi.py", "ingest.py", "supervisor.py", "settings.py", "main.py")
 
 _RESET_NAMES = (
     "PWRON_RESET",

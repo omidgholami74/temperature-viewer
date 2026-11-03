@@ -20,8 +20,8 @@ Two sensor variants are included, and the rest of the project is unchanged:
 | [`max31855/`](max31855/README.md) | 3x MAX31855 + K-type thermocouple | 3x K | SCK 14, MISO 12, CS 15/16/17          |
 | [`max31865/`](max31865/README.md) | 4x MAX31865 + PT100/PT1000 RTD    | 2/3/4-wire | SCK 14, **MOSI 11**, MISO 12, CS 15/16/17/18 |
 
-`common/` holds the files both variants share: `config.example.py`, `wifi.py`
-and `ingest.py`.
+`common/` holds the files both variants share: `config.example.py`, `wifi.py`,
+`ingest.py`, `supervisor.py`, `ota.py`, `device.py` and `settings.py`.
 
 ### MicroPython or Arduino?
 
@@ -79,6 +79,7 @@ esp32-s3/
 │   ├── ingest.py             batch buffer + HTTP(S) POST to /api/ingest
 │   ├── ota.py                bundle download, staging, apply and rollback
 │   ├── device.py             heartbeat, remote commands, Wi-Fi change
+│   ├── settings.py           live settings: rate, filter, heartbeat, offsets
 │   └── supervisor.py         watchdog + restart, so no PC is needed
 ├── max31855/
 │   ├── main.py               firmware for 3x MAX31855
@@ -136,6 +137,7 @@ mpremote connect COM6 \
   cp esp32-s3/common/supervisor.py :supervisor.py + \
   cp esp32-s3/common/ota.py :ota.py + \
   cp esp32-s3/common/device.py :device.py + \
+  cp esp32-s3/common/settings.py :settings.py + \
   cp esp32-s3/max31855/main.py :main.py
 ```
 
@@ -150,13 +152,15 @@ mpremote connect COM6 \
   cp esp32-s3/common/supervisor.py :supervisor.py + \
   cp esp32-s3/common/ota.py :ota.py + \
   cp esp32-s3/common/device.py :device.py + \
+  cp esp32-s3/common/settings.py :settings.py + \
   cp esp32-s3/max31865/max31865.py :max31865.py + \
   cp esp32-s3/max31865/main.py :main.py
 ```
 
 With Thonny it is the same idea: open each file and *Save to board* under the
 name after the colon (`boot.py`, `config.py`, `wifi.py`, `ingest.py`,
-`supervisor.py`, `main.py`). With the files at the board root, `main.py` runs
+`supervisor.py`, `ota.py`, `device.py`, `settings.py`, `main.py`). With the
+files at the board root, `main.py` runs
 automatically after every reset and every power-up.
 
 ```bash
@@ -172,7 +176,8 @@ mpremote connect COM6 repl       # watch the console (Ctrl-] to leave)
 nothing typed. Two things stop it:
 
 - **A file is missing from the board root.** `main.py` imports `config`,
-  `wifi`, `ingest` and `supervisor`; one absent file is an `ImportError`, and
+  `wifi`, `ingest`, `supervisor` and `settings`; one absent file is an
+  `ImportError`, and
 the board then sits at a REPL prompt. `boot.py` names them:
 
   ```
@@ -276,8 +281,8 @@ rsync -a backend/var/firmware/max31855/ server:/srv/furnace/backend/var/firmware
 ```
 
 The bundle contains `boot.py`, `wifi.py`, `ingest.py`, `supervisor.py`,
-`ota.py`, `device.py` and the variant's `main.py` (plus `max31865.py` on the
-RTD build).
+`ota.py`, `device.py`, `settings.py` and the variant's `main.py` (plus
+`max31865.py` on the RTD build).
 `config.py` is **never** published, so Wi-Fi credentials and the API key are
 not touched by an update.
 
@@ -337,6 +342,16 @@ a microcontroller.
 | `TLS_VERIFY`    | `False`                          | Validate the `https` certificate (see below)   |
 | `DEVICE_ID`     | `esp32-1`                        | Name the admin panel uses; keep it unique      |
 | `DEVICE_NAME`   | `Furnace monitor`                | Label shown in the panel                       |
+
+### Live settings from the admin panel
+
+The panel can change the frame interval (`50–60000 ms`), noise filter window
+(`1–9` reads), read gap (`0–50000 µs`), EMA alpha (`0.05–1.0`), heartbeat
+(`5–3600 s`) and each channel's enabled flag/offset without a reflash. The board
+writes `/settings.json` and applies the change on the next frame; the file
+survives a reboot, and the heartbeat re-sends the snapshot if the file is lost.
+`config.py` and the constants in `main.py` remain the fallback defaults. A
+faulted or disabled channel is never offset.
 | `HEARTBEAT_S`   | `15`                             | Report + command interval                      |
 | `OTA_ENABLED`   | `True`                           | Allow remote updates                           |
 | `OTA_CHANNEL`   | `max31855`                       | Which published bundle this board runs         |

@@ -54,22 +54,38 @@ and a laptop window both show the same information without scrolling.
 ## Fleet admin
 
 `admin.html` is a second static page for the operator, not for the furnace
-screen. It lists every board that has sent a heartbeat (online/offline, IP,
-signal, uptime, sent/buffered, last command), edits furnace labels and enabled
-flags, queues a Wi-Fi change or a firmware update, restarts a board and shows
-the connection log.
+screen, and the public dashboard deliberately has **no link to it**. It lists
+every board that has sent a heartbeat (online/offline, source, IP, signal,
+uptime, sent/buffered, last command), edits furnace labels, enabled flags and
+calibration offsets, sets the public noise-filter threshold/default window/notice,
+saves an operator profile for each board, tunes sampling/noise/heartbeat
+presets, uploads a complete `.py` source bundle, queues an OTA update, restarts
+a board and shows the connection log.
 
-- It calls `GET /api/devices`, `GET /api/devices/events` and the two
-  `POST /api/devices/<id>/...` routes. When `FURNACE_ADMIN_KEY` is set on the
-  server, the write calls need that key in `X-Admin-Key`; the field at the top
-  keeps it in `sessionStorage` for the tab, never in the page source.
+Hiding the link is not server access control. If `admin.html` must not be
+reachable directly, put HTTP Basic Auth (or an SSO proxy) in front of that file
+on the static host; the API key only protects write calls.
+
+- It calls `GET /api/devices`, `GET /api/devices/events`, `GET /api/dashboard`
+  and the `POST /api/devices/<id>/commands|channels|settings|profile` routes.
+  When `FURNACE_ADMIN_KEY` is set on the server, the write calls need that key
+  in `X-Admin-Key`; the field at the top keeps it in `sessionStorage` for the
+  tab, never in the page source. Source upload also refuses to run at all while
+  the server key is empty.
+- The browser uploads the complete bundle (all eight root `.py` files) to
+  `POST /api/firmware/upload`; `config.py` is rejected. Publishing a bundle and
+  applying it to a board are separate actions, so a successful upload is not an
+  OTA yet.
 - A board is listed only if it runs the heartbeat firmware (`device.py`,
   `DEVICE_ID` in `config.py`). An older board still records and shows on the
 dashboard, it just has no admin controls.
 - A Wi-Fi password is sent to the API, stored until the board acknowledges the
   command, and never returned by any endpoint. Use a dedicated network.
 - The page polls every 5 s while it is visible; a command is delivered on the
-  board's next heartbeat (`HEARTBEAT_S`, 15 s by default).
+  board's next heartbeat (`HEARTBEAT_S`, 15 s by default). Settings are applied
+  on the board's next frame, and `/settings.json` keeps them across a reboot.
+- Furnace offsets are sent to the board with the settings command; the constant
+  in `main.py` is only the first-boot fallback.
 
 ## Configuration
 

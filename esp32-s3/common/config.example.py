@@ -49,8 +49,9 @@ WATCHDOG_S = 30
 
 # --- Device identity and heartbeat ---------------------------------------
 # The board reports in every HEARTBEAT_S seconds and receives the commands
-# queued from the admin panel (Wi-Fi change, OTA, restart). The id is what the
-# panel shows and what a command is addressed to; keep it unique per board.
+# queued from the admin panel (Wi-Fi change, OTA, restart and live settings).
+# The panel can change the interval later; /settings.json wins over this value.
+# DEVICE_ID is what the panel shows and what a command is addressed to.
 DEVICE_ID = "esp32-1"
 DEVICE_NAME = "Furnace monitor"
 HEARTBEAT_S = 15

@@ -14,7 +14,7 @@
   <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="assets/img/icon-180.png">
   <link rel="stylesheet" href="assets/css/tokens.css?v=7">
-  <link rel="stylesheet" href="assets/css/app.css?v=7">
+  <link rel="stylesheet" href="assets/css/app.css?v=8">
   <!-- Resolve the saved theme before the first paint, so a light-mode phone
        never flashes the dark dashboard. -->
   <script src="assets/js/theme-boot.js?v=7"></script>
@@ -52,6 +52,8 @@
     </header>
 
     <main id="main">
+      <p class="notice-bar" data-role="notice" role="status" hidden></p>
+
       <section class="timer-card panel" aria-labelledby="timer-title">
         <header class="timer-card__head">
           <div class="section-title">
@@ -240,38 +242,12 @@
             <p class="field__hint">Saved on this device only. System follows the phone setting automatically.</p>
           </div>
 
-          <div class="settings-row settings-row--noise">
-            <div class="settings-row__text">
-              <p class="settings-row__title">Noise filter</p>
-              <p class="settings-row__hint">Ignore a one-sample temperature drop above this threshold. A second low sample confirms the drop is real and displays it.</p>
-            </div>
-            <div class="noise-controls">
-              <label class="noise-toggle"><input type="checkbox" data-role="noise-enabled" checked><span>Enabled</span></label>
-              <label class="noise-threshold">
-                <span class="field__label">Drop threshold</span>
-                <span class="noise-threshold__field">
-                  <input class="input" type="number" inputmode="decimal" min="1" max="95" step="1" value="60" data-role="noise-threshold" aria-describedby="noise-status">
-                  <span class="noise-threshold__unit" aria-hidden="true">%</span>
-                </span>
-              </label>
-            </div>
-            <p class="settings-row__hint" id="noise-status" data-role="noise-status" aria-live="polite">Enabled · ignores isolated drops of 60% or more. Stored readings and timer remain unchanged.</p>
-          </div>
-
           <div class="settings-row">
             <div class="settings-row__text">
               <p class="settings-row__title">Recording</p>
               <p class="settings-row__hint">Close the current run and start a new timer. Recorded data stays available to analyse or export.</p>
             </div>
             <button class="btn btn--danger" type="button" data-role="new-run">Start new run</button>
-          </div>
-
-          <div class="settings-row">
-            <div class="settings-row__text">
-              <p class="settings-row__title">Admin panel</p>
-              <p class="settings-row__hint">Boards, furnaces, Wi-Fi changes, firmware updates and the connection log.</p>
-            </div>
-            <a class="btn btn--outline" href="admin.html">Open</a>
           </div>
         </section>
 
@@ -449,6 +425,6 @@
        bump it whenever config.js or main.js changes meaning. -->
   <script src="config.js?v=7"></script>
   <script src="assets/vendor/chart.umd.min.js"></script>
-  <script type="module" src="assets/js/main.js?v=7"></script>
+  <script type="module" src="assets/js/main.js?v=8"></script>
 </body>
 </html>

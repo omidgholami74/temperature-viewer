@@ -18,7 +18,7 @@ retention, formatting), not every getter.
 | MQTT transport | `python3 -m unittest discover -s MQTT/firmware/tests -v` | Batch encoding, retained will, QoS 1 publish, ack trimming, buffer overflow, reconnect bookkeeping |
 
 Counts at the time of writing: 33 bridge tests, 11 transport tests, 22
-dashboard/serial tests, 58 ESP32-S3 firmware tests and the collector suite. The
+dashboard/serial tests, 65 ESP32-S3 firmware tests and the collector suite. The
 backend smoke test needs PHP and `curl`; the Arduino suite needs `g++`.
 
 ## What each suite actually covers
@@ -50,6 +50,9 @@ handles the shapes browsers return.
 Runs the real `ingest.py` against a local HTTP server: batching, retry after a
 failure, dropping a `422`, `X-Api-Key`, and that a failed request keeps the
 queue intact. The RTD conversion is compared with published IEC 60751 points.
+Heartbeat tests cover Wi-Fi/OTA/restart and the live settings command, including
+the settings file on disk, rejection of an invalid payload and the unchanged
+snapshot after that rejection.
 
 ### Collector (`collector/tests/`)
 
@@ -71,7 +74,7 @@ These cannot be automated in this repository:
 
 | Check | Why | How |
 | --- | --- | --- |
-| Sensor accuracy | Needs a reference thermometer | Compare at a soak temperature, fill `CHANNEL_OFFSETS` |
+| Sensor accuracy | Needs a reference thermometer | Compare at a soak temperature, set the offset in the admin panel |
 | Wi-Fi roaming and reconnect | Needs an AP | Pull the AP, watch the console and the buffer |
 | Watchdog reboot | Needs a board | Hang the loop deliberately; `boot.py` prints `WDT_RESET` |
 | Browser rendering | Needs a real browser | Open `ui/index.html` and the MQTT dashboard, check both themes and a phone width |

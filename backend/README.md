@@ -40,6 +40,9 @@ php -S 0.0.0.0:8080 -t . index.php
 | `FURNACE_ADMIN_KEY`                | empty (open)                                                          | Value the admin panel sends as `X-Admin-Key`   |
 | `FURNACE_DEVICE_ONLINE_S`          | `45`                                                                  | Heartbeat age after which a board is offline   |
 | `FURNACE_FIRMWARE_DIR`             | `backend/var/firmware`                                                | Published OTA bundles (one folder per channel) |
+| `FURNACE_MAX_FIRMWARE_FILES`       | `16`                                                                  | Maximum files in one admin upload             |
+| `FURNACE_MAX_FIRMWARE_FILE_BYTES`  | `524288`                                                              | Maximum size of one source file               |
+| `FURNACE_MAX_FIRMWARE_BYTES`       | `2097152`                                                             | Maximum total source bundle size              |
 | `FURNACE_RAW_RETENTION_HOURS`      | `48`                                                                  | Raw 10 Hz rows kept before pruning             |
 | `FURNACE_AGGREGATE_RETENTION_DAYS` | `180`                                                                 | One-second rollup rows kept                    |
 | `FURNACE_MAX_SAMPLE_GAP_MS`        | `3000`                                                                | Longest silence added to the run's `active_ms` |
@@ -141,21 +144,43 @@ trusted `Origin` (the same CSRF boundary as a run reset). Reads are open like
 the rest of the dashboard API.
 
 - `POST /api/device/heartbeat` — firmware only, `X-Api-Key`. Body: `id`, `name`,
-  `firmware`, `ip`, `rssi`, `uptime_ms`, `sent`, `pending`, `dropped`,
-  `channels`. The reply carries `commands` (wifi/ota/restart) and the channel
-  labels. A command stays queued until the board acknowledges it, so an offline
-  board receives it later.
+  `source`, `firmware`, `ip`, `rssi`, `uptime_ms`, `sent`, `pending`, `dropped`,
+  `channels`. The reply carries `commands` (wifi/ota/restart/settings), the
+  channel labels and the saved settings snapshot. A command stays queued until
+  the board acknowledges it, so an offline board receives it later; the
+  snapshot lets a reflashed board recover its configuration without a command.
 - `POST /api/device/ack` — firmware only. `{id, command_id, status: done|failed,
   result}`; the result appears in the connection log.
-- `GET /api/devices` — boards with online age, firmware, IP, RSSI, channel
-  labels, queue depth and the last command, plus the published bundles.
+- `GET /api/devices` — boards with online age, source, firmware, IP, RSSI,
+  channel labels/offsets, operator profile, live settings, queue depth and the
+  last command, plus the published source bundles and their file names.
+- `POST /api/devices/<id>/profile` — save the operator-owned `display_name`,
+  `location` and `notes`. The heartbeat keeps updating the firmware-reported
+  name, so it can never overwrite this profile.
+- `GET /api/dashboard` — public dashboard settings: `noise_enabled`,
+  `noise_threshold` (5–95), `default_window_s` and `notice`.
+- `POST /api/dashboard` — save those public settings (admin key + trusted
+  origin). The public page has no threshold control and no admin link.
 - `GET /api/devices/events?limit=<n>` — registrations, reconnects and command
   results, newest first.
 - `POST /api/devices/<id>/commands` — queue `{"kind":"wifi","ssid",…,
   "password":…}`, `{"kind":"ota","channel":"max31855"}` or
   `{"kind":"restart"}`.
-- `POST /api/devices/<id>/channels` — set `label` and `enabled` for channels
-  1–4. Presence comes from the heartbeat and is never overwritten by this call.
+- `POST /api/devices/<id>/channels` — set `label`, `enabled` and `offset` for
+  channels 1–4, then queue the resulting settings for the board. Presence comes
+  from the heartbeat and is never overwritten by this call.
+- `POST /api/devices/<id>/settings` — set `sample_ms`, `noise_samples`,
+  `noise_gap_us`, `ema_alpha` and `heartbeat_s`. The server stores the desired
+  snapshot, returns it in later heartbeats and queues a `settings` command.
+  Ranges: 50–60000 ms, 1–9 reads, 0–50000 µs, 0.05–1.0, 5–3600 s.
+- `POST /api/firmware/upload` — multipart upload of a complete `.py` source
+  bundle from the admin panel. Set `FURNACE_ADMIN_KEY` or this endpoint returns
+  `503`; `config.py` is refused. Files are validated, hashed and swapped into
+  the channel folder atomically. The board still compiles and verifies the
+  bundle before staging it during the next OTA command.
+
+Public settings are stored in `meta`; `device_profiles` holds the operator
+profile. Both are created by the idempotent schema migration (version 5).
 
 A Wi-Fi password is stored in the command row until the board acknowledges it,
 and no endpoint returns the payload. Use a dedicated network for the furnace and

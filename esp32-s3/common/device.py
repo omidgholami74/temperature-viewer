@@ -8,6 +8,13 @@ operator queued in the admin panel:
                  next boot joins that network (``config.py`` is untouched).
 * ``ota``     -- run the bundle check once; ``main.py`` reboots when it is staged.
 * ``restart`` -- acknowledge and reboot.
+* ``settings`` -- apply sample rate, noise filter, heartbeat interval and the
+                 enabled/offset state of each furnace, then save
+                 ``/settings.json`` so the change survives a reboot.
+
+The heartbeat reply also carries the saved settings snapshot, which lets a
+board that was reflashed recover the operator's configuration without a new
+command.
 
 A command stays queued on the server until it is acknowledged, so a board that
 is offline for a while still receives it when it comes back.
@@ -98,12 +105,14 @@ def valid_id(value):
 class DeviceLink:
     """One heartbeat thread plus the command handlers it runs."""
 
-    def __init__(self, config, wlan, ingest_client, updater=None, channels=None, log=print, root=""):
+    def __init__(self, config, wlan, ingest_client, updater=None, channels=None, log=print, root="", settings=None, source=""):
         self.log = log
         self.root = root
         self.wlan = wlan
         self.ingest = ingest_client
         self.updater = updater
+        self.settings = settings
+        self.source = str(source or getattr(config, "SOURCE", "") or "")
         self.channels = list(channels or [1, 2, 3])
         self.id = str(getattr(config, "DEVICE_ID", "esp32-1"))
 
@@ -112,6 +121,7 @@ class DeviceLink:
 
         self.name = str(getattr(config, "DEVICE_NAME", "Furnace monitor"))
         self.heartbeat_s = max(5.0, float(getattr(config, "HEARTBEAT_S", 15)))
+        self._sync_heartbeat()
         self.delay_s = max(0.0, float(getattr(config, "HEARTBEAT_DELAY_S", 5)))
         self.timeout = float(getattr(config, "API_TIMEOUT_S", 8))
         self.key = getattr(config, "API_KEY", "") or ""
@@ -228,6 +238,7 @@ class DeviceLink:
         return {
             "id": self.id,
             "name": self.name,
+            "source": self.source,
             "firmware": self.firmware(),
             "ip": self.ip(),
             "rssi": self.rssi(),
@@ -258,6 +269,35 @@ class DeviceLink:
             machine.reset()
 
         raise RuntimeError("machine.reset is not available")
+
+    def _sync_heartbeat(self):
+        """Follow a settings change without waiting for a restart."""
+
+        if self.settings is None:
+            return
+
+        try:
+            self.heartbeat_s = max(5.0, float(self.settings.snapshot()["heartbeat_s"]))
+        except Exception:
+            pass
+
+    def _apply_settings(self, raw):
+        """Apply one settings payload; returns True when it changed something."""
+
+        if self.settings is None:
+            raise OSError("settings module is not installed")
+
+        changed = self.settings.apply(raw)
+        self._sync_heartbeat()
+
+        if changed:
+            snapshot = self.settings.snapshot()
+            self.log("# device: settings applied, %d ms frame, heartbeat %d s" % (
+                snapshot["sample_ms"],
+                snapshot["heartbeat_s"],
+            ))
+
+        return changed
 
     def _run(self, command):
         if not isinstance(command, dict):
@@ -312,6 +352,21 @@ class DeviceLink:
             else:
                 self._ack(command_id, "done", "already current")
 
+        elif kind == "settings":
+            raw = payload.get("settings") if isinstance(payload, dict) else None
+
+            if not isinstance(raw, dict):
+                self._ack(command_id, "failed", "missing settings payload")
+                return
+
+            try:
+                changed = self._apply_settings(raw)
+            except Exception as error:
+                self._ack(command_id, "failed", str(error))
+                return
+
+            self._ack(command_id, "done", "applied" if changed else "unchanged")
+
     def heartbeat(self):
         """Send one heartbeat and run whatever the server queued."""
         status, reply = self._post(self._address("heartbeat"), self.payload())
@@ -321,8 +376,19 @@ class DeviceLink:
 
         data = json.loads(reply.decode("utf-8"))
 
+        # Commands first, so a freshly queued settings change is acknowledged
+        # as applied. The saved snapshot then covers a board that lost its
+        # local file; applying it is idempotent, so it is safe on every poll.
         for command in data.get("commands") or []:
             self._run(command)
+
+        stored = data.get("settings")
+
+        if isinstance(stored, dict):
+            try:
+                self._apply_settings(stored)
+            except Exception as error:
+                self.log("# device: stored settings rejected: %s" % (error,))
 
         return data
 

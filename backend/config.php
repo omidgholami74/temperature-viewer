@@ -55,6 +55,13 @@ return [
     'max_request_bytes' => 131072,
     'default_max_points' => 1200,
 
+    // Admin source upload goes through PHP's multipart parser. A bundle is a
+    // handful of small text files; these limits keep a mistaken upload from
+    // filling the server. The board still compiles every file before staging.
+    'max_firmware_files' => max(1, (int) (getenv('FURNACE_MAX_FIRMWARE_FILES') ?: 16)),
+    'max_firmware_file_bytes' => max(4096, (int) (getenv('FURNACE_MAX_FIRMWARE_FILE_BYTES') ?: 524288)),
+    'max_firmware_bytes' => max(8192, (int) (getenv('FURNACE_MAX_FIRMWARE_BYTES') ?: 2097152)),
+
     // Longest silence between two samples that still counts as working time.
     // At 10 Hz a normal gap is 100 ms; a longer one means the furnace was not
     // reporting, so it becomes idle time instead of counting as recorded.

@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS meta (
 CREATE TABLE IF NOT EXISTS devices (
     id           TEXT PRIMARY KEY,
     name         TEXT NOT NULL,
+    source       TEXT NOT NULL DEFAULT '',
     firmware     TEXT NOT NULL DEFAULT '',
     ip           TEXT NOT NULL DEFAULT '',
     rssi         INTEGER,
@@ -69,7 +70,9 @@ CREATE TABLE IF NOT EXISTS devices (
     pending      INTEGER NOT NULL DEFAULT 0,
     dropped      INTEGER NOT NULL DEFAULT 0,
     created_at_ms INTEGER NOT NULL,
-    last_seen_ms INTEGER NOT NULL
+    last_seen_ms INTEGER NOT NULL,
+    settings      TEXT,
+    settings_at_ms INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_devices_seen ON devices (last_seen_ms);
@@ -80,6 +83,7 @@ CREATE TABLE IF NOT EXISTS device_channels (
     label     TEXT NOT NULL,
     present   INTEGER NOT NULL DEFAULT 0,
     enabled   INTEGER NOT NULL DEFAULT 1,
+    offset    REAL NOT NULL DEFAULT 0,
     PRIMARY KEY (device_id, channel)
 );
 
@@ -108,5 +112,16 @@ CREATE TABLE IF NOT EXISTS device_events (
 
 CREATE INDEX IF NOT EXISTS idx_events_time ON device_events (at_ms);
 
-INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '3');
+-- Operator-owned labels for a board. The heartbeat keeps devices.name as the
+-- name reported by firmware, so a rename here is never overwritten on the next
+-- poll. Location and notes are free text for the workshop.
+CREATE TABLE IF NOT EXISTS device_profiles (
+    device_id      TEXT PRIMARY KEY REFERENCES devices (id) ON DELETE CASCADE,
+    display_name   TEXT NOT NULL DEFAULT '',
+    location       TEXT NOT NULL DEFAULT '',
+    notes          TEXT NOT NULL DEFAULT '',
+    updated_at_ms  INTEGER NOT NULL
+);
+
+INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '5');
 INSERT OR IGNORE INTO meta (key, value) VALUES ('last_rollup_ms', '0');

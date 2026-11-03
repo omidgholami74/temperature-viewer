@@ -49,6 +49,17 @@ main {
    App bar
    ------------------------------------------------------------------------- */
 
+.notice-bar {
+  margin: 0;
+  padding: 9px 14px;
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warn) 9%, transparent);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
 .app-bar {
   display: flex;
   align-items: center;

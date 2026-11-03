@@ -53,6 +53,8 @@ mpremote connect COM6 \
   cp ../common/ingest.py :ingest.py + \
   cp ../common/supervisor.py :supervisor.py + \
   cp ../common/ota.py :ota.py + \
+  cp ../common/device.py :device.py + \
+  cp ../common/settings.py :settings.py + \
   cp main.py :main.py
 mpremote connect COM6 repl                         # Ctrl-] to leave
 ```
@@ -98,17 +100,19 @@ ms,furnace1,furnace2,furnace3
 
 A probe rarely reads the exact temperature, and the error is usually constant:
 a cold-junction error, a probe lying against the wall of the chamber, or a long
-lead. Correct it once in [`main.py`](main.py) instead of in the dashboard:
+lead. Set the offset per furnace in the **Furnaces** panel of
+[`ui/admin.html`](../../ui/admin.html); the board stores it in `/settings.json`
+and applies it to the CSV, the uploaded sample and the dashboard.
+
+`CHANNEL_OFFSETS` in [`main.py`](main.py) is now only the first-boot/default
+fallback, useful when the board runs without the server:
 
 ```python
 # furnace1 (CS 15), furnace2 (CS 16), furnace3 (CS 17)
 CHANNEL_OFFSETS = [0.0, 0.0, 0.0]   # °C, added to every reading
 ```
 
-The offset is added to the reading before anything else sees it, so the CSV on
-the serial line, the saved sample and the dashboard all show the corrected
-value. There is no per-sample drift correction and nothing to configure on the
-server.
+There is no per-sample drift correction and no offset on a faulted channel.
 
 How to fill it in:
 

@@ -5,23 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#04080d">
   <meta name="robots" content="noindex">
-  <title>Fleet admin — Furnace Monitor</title>
+  <title>Control room — Furnace Monitor</title>
   <link rel="stylesheet" href="assets/css/tokens.css">
-  <link rel="stylesheet" href="assets/css/admin.css">
+  <link rel="stylesheet" href="assets/css/admin.css?v=8">
   <script src="assets/js/theme-boot.js"></script>
 </head>
 <body>
   <div class="admin-shell">
     <header class="admin-head">
-      <div>
+      <div class="admin-head__intro">
         <p class="eyebrow">Razi Applied Science Foundation</p>
-        <h1>Fleet admin</h1>
-        <p class="admin-sub">Boards, furnaces, Wi-Fi and firmware · <span data-role="api">API</span></p>
+        <h1>Furnace control room</h1>
+        <p class="admin-sub">Fleet health, calibration, source delivery and live controls · <span data-role="api">API</span></p>
+        <div class="admin-head__badges">
+          <span class="status-pill"><span class="status-pill__dot" aria-hidden="true"></span> Operator console</span>
+          <span class="status-pill status-pill--quiet">No public admin link</span>
+        </div>
       </div>
       <div class="admin-actions">
         <label class="key-field">
           <span>Admin key</span>
-          <input type="password" autocomplete="off" spellcheck="false" placeholder="optional" data-role="admin-key">
+          <input type="password" autocomplete="off" spellcheck="false" placeholder="required for writes" data-role="admin-key">
         </label>
         <button class="btn btn--outline" type="button" data-role="refresh">Refresh</button>
         <a class="btn btn--ghost" href="index.html">Dashboard</a>
@@ -30,23 +34,232 @@
 
     <p class="admin-note" data-role="status" role="status" aria-live="polite">Loading…</p>
 
-    <section class="admin-grid" data-role="devices" aria-label="Boards"></section>
+    <section class="admin-overview" aria-label="Fleet summary">
+      <article class="metric metric--accent">
+        <span class="metric__label">Online now</span>
+        <strong class="metric__value" data-role="stat-online">—</strong>
+        <span class="metric__hint" data-role="stat-online-hint">waiting for boards</span>
+      </article>
+      <article class="metric">
+        <span class="metric__label">Pending commands</span>
+        <strong class="metric__value" data-role="stat-pending">—</strong>
+        <span class="metric__hint">queued or delivered</span>
+      </article>
+      <article class="metric">
+        <span class="metric__label">Source bundles</span>
+        <strong class="metric__value" data-role="stat-bundles">—</strong>
+        <span class="metric__hint">available for OTA</span>
+      </article>
+      <article class="metric">
+        <span class="metric__label">Offline</span>
+        <strong class="metric__value" data-role="stat-offline">—</strong>
+        <span class="metric__hint">check power / Wi-Fi</span>
+      </article>
+    </section>
+
+    <nav class="admin-nav" aria-label="Admin sections">
+      <a href="#boards">Boards</a>
+      <a href="#module">Module</a>
+      <a href="#dashboard">Public view</a>
+      <a href="#profile">Profiles</a>
+      <a href="#upload">Source upload</a>
+      <a href="#furnaces">Furnaces</a>
+      <a href="#wifi">Wi-Fi</a>
+      <a href="#firmware">Firmware</a>
+      <a href="#events">Log</a>
+    </nav>
+
+    <section class="admin-grid" id="boards" data-role="devices" aria-label="Boards"></section>
+
+    <section class="panel admin-panel admin-panel--wide" id="module" data-section="01 · Live module" data-role="module-panel" aria-labelledby="module-title">
+      <header class="admin-panel__head">
+        <h2 id="module-title">Module</h2>
+        <p>Live sampling, noise filter and heartbeat. Saved as <code>/settings.json</code> on the board and applied on the next frame; no reflash.</p>
+      </header>
+      <div class="settings-bar">
+        <label class="field">
+          <span>Board</span>
+          <select class="input" data-role="settings-device"></select>
+        </label>
+        <p class="admin-hint">Sensor source: <strong data-role="module-source">—</strong></p>
+      </div>
+      <div class="settings-grid">
+        <label class="field">
+          <span>Frame interval (ms)</span>
+          <input class="input" type="number" min="50" max="60000" step="10" data-role="sample-ms">
+        </label>
+        <label class="field">
+          <span>Heartbeat (s)</span>
+          <input class="input" type="number" min="5" max="3600" step="1" data-role="heartbeat-s">
+        </label>
+        <label class="field">
+          <span>Noise reads / channel</span>
+          <input class="input" type="number" min="1" max="9" step="1" data-role="noise-samples">
+        </label>
+        <label class="field">
+          <span>Read gap (µs)</span>
+          <input class="input" type="number" min="0" max="50000" step="500" data-role="noise-gap">
+        </label>
+        <label class="field">
+          <span>EMA alpha</span>
+          <input class="input" type="number" min="0.05" max="1" step="0.05" data-role="ema-alpha">
+        </label>
+      </div>
+      <p class="admin-hint">A 100 ms frame with 5 reads and a 6000 µs gap fits three MAX31855 channels in one slot (~75 ms). Lower the sample rate before increasing the read gap.</p>
+      <details class="calibrator">
+        <summary>Noise checklist</summary>
+        <p class="admin-hint">If readings still jump: use a twisted, shielded K-type pair with the shield grounded at one end; keep thermocouple leads away from mains and SSR wiring; add 100 nF at the MAX31855 supply and a 1 kΩ + 0.1 µF RC at T+/T−; power the board from a clean 5 V supply. In firmware, try <b>Quiet</b> (9 reads, 12 ms gap, EMA 0.2) and a slower frame. Do not filter so hard that the furnace response looks delayed.</p>
+      </details>
+      <div class="preset-row">
+        <span class="admin-hint">Quick presets</span>
+        <button class="btn btn--compact" type="button" data-preset="quiet">Quiet</button>
+        <button class="btn btn--compact" type="button" data-preset="balanced">Balanced</button>
+        <button class="btn btn--compact" type="button" data-preset="fast">Fast</button>
+      </div>
+      <div class="admin-buttons">
+        <button class="btn btn--primary" type="button" data-role="save-settings">Save module settings</button>
+      </div>
+    </section>
+
+    <section class="panel admin-panel admin-panel--wide" id="dashboard" data-section="02 · Public view" data-role="dashboard-panel" aria-labelledby="dashboard-title">
+      <header class="admin-panel__head">
+        <h2 id="dashboard-title">Public dashboard</h2>
+        <p>The public page has no admin link and no filter controls. These values are applied to every visitor from the server.</p>
+      </header>
+      <div class="settings-grid">
+        <label class="field">
+          <span>Default chart window</span>
+          <select class="input" data-role="dashboard-window">
+            <option value="60">1 minute</option>
+            <option value="600">10 minutes</option>
+            <option value="3600">1 hour</option>
+            <option value="21600">6 hours</option>
+            <option value="86400">24 hours</option>
+            <option value="0">All recorded</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Drop threshold (%)</span>
+          <input class="input" type="number" min="5" max="95" step="1" data-role="dashboard-threshold">
+        </label>
+        <label class="field field--wide">
+          <span>Public notice (optional)</span>
+          <input class="input" type="text" maxlength="180" placeholder="e.g. Furnace 3 is offline for service" data-role="dashboard-notice">
+        </label>
+      </div>
+      <label class="check-row">
+        <input type="checkbox" data-role="dashboard-noise">
+        <span><b>Single-frame drop filter</b><small>Hold one spike and reveal a real drop on the next sample. Raw stored data is never changed.</small></span>
+      </label>
+      <p class="admin-hint">The threshold is a percentage of the previous reading. A lower value filters more aggressively; 60% ignores only severe one-frame glitches.</p>
+      <div class="admin-buttons">
+        <button class="btn btn--primary" type="button" data-role="save-dashboard">Save public settings</button>
+      </div>
+    </section>
+
+    <section class="panel admin-panel admin-panel--wide" id="profile" data-section="03 · Board identity" data-role="profile-panel" aria-labelledby="profile-title">
+      <header class="admin-panel__head">
+        <h2 id="profile-title">Board profile</h2>
+        <p>An operator-owned name, location and note. This is separate from the firmware name, so a heartbeat never overwrites it.</p>
+      </header>
+      <label class="field">
+        <span>Board</span>
+        <select class="input" data-role="profile-device"></select>
+      </label>
+      <div class="settings-grid">
+        <label class="field">
+          <span>Display name</span>
+          <input class="input" type="text" maxlength="60" placeholder="e.g. Kiln A" data-role="profile-name">
+        </label>
+        <label class="field">
+          <span>Location</span>
+          <input class="input" type="text" maxlength="80" placeholder="e.g. Workshop, north wall" data-role="profile-location">
+        </label>
+        <label class="field field--wide">
+          <span>Notes</span>
+          <textarea class="input" rows="3" maxlength="500" placeholder="Sensor type, calibration date, maintenance notes…" data-role="profile-notes"></textarea>
+        </label>
+      </div>
+      <div class="admin-buttons">
+        <button class="btn btn--primary" type="button" data-role="save-profile">Save profile</button>
+      </div>
+    </section>
+
+    <section class="panel admin-panel admin-panel--wide" id="upload" data-section="04 · Source delivery" data-role="upload-panel" aria-labelledby="upload-title">
+      <header class="admin-panel__head">
+        <h2 id="upload-title">Upload source bundle</h2>
+        <p>Upload the complete set of <code>.py</code> files for one board variant. The server verifies names and hashes, then swaps the bundle atomically; the board only receives it when you queue an OTA update.</p>
+      </header>
+      <div class="settings-grid">
+        <label class="field">
+          <span>Bundle / channel</span>
+          <input class="input" type="text" list="bundle-channels" maxlength="32" value="max31855" data-role="upload-channel">
+          <datalist id="bundle-channels">
+            <option value="max31855"></option>
+            <option value="max31865"></option>
+          </datalist>
+        </label>
+        <label class="field">
+          <span>Version (optional)</span>
+          <input class="input" type="text" maxlength="40" placeholder="auto-generated" data-role="upload-version">
+        </label>
+        <label class="field field--wide">
+          <span>Release note</span>
+          <input class="input" type="text" maxlength="200" placeholder="e.g. quieter MAX31855 filter" data-role="upload-notes">
+        </label>
+        <label class="field field--wide">
+          <span>Source files</span>
+          <input class="input input--file" type="file" accept=".py" multiple data-role="upload-files">
+        </label>
+      </div>
+      <p class="admin-warning">Requires <code>FURNACE_ADMIN_KEY</code>. A bundle must include <code>boot.py</code>, <code>wifi.py</code>, <code>ingest.py</code>, <code>supervisor.py</code>, <code>ota.py</code>, <code>device.py</code>, <code>settings.py</code> and <code>main.py</code>; <code>config.py</code> is never accepted. Uploaded code runs on the board, so only upload files you trust.</p>
+      <div class="admin-buttons">
+        <button class="btn btn--primary" type="button" data-role="upload-firmware">Upload bundle</button>
+      </div>
+    </section>
 
     <div class="admin-columns">
-      <section class="panel admin-panel" aria-labelledby="furnaces-title">
+      <section class="panel admin-panel" id="furnaces" data-section="05 · Furnaces" aria-labelledby="furnaces-title">
         <header class="admin-panel__head">
           <h2 id="furnaces-title">Furnaces</h2>
-          <p>Labels live on the server and are shown by the dashboard. Enabled decides whether a channel counts as installed.</p>
+          <p>Labels live on the server and are shown by the dashboard. Enabled and offset are queued to the board: a disabled furnace is an empty slot with no fault, and the offset is added to every valid reading.</p>
         </header>
         <label class="field">
           <span>Board</span>
           <select class="input" data-role="channel-device"></select>
         </label>
+        <div class="channel-row channel-row--head" aria-hidden="true">
+          <span></span><span>Name</span><span>Offset °C</span><span>Probe</span>
+        </div>
         <div class="channel-editor" data-role="channel-editor"></div>
-        <button class="btn btn--primary" type="button" data-role="save-channels">Save channels</button>
+        <details class="calibrator">
+          <summary>Calibration helper</summary>
+          <p class="admin-hint">Enter the real temperature from a reference thermometer and the value currently shown. The new offset is added to the existing offset, so two-point checks can be repeated.</p>
+          <div class="calibrator__grid">
+            <label class="field">
+              <span>Furnace</span>
+              <select class="input" data-role="cal-channel">
+                <option value="1">Furnace 1</option>
+                <option value="2">Furnace 2</option>
+                <option value="3">Furnace 3</option>
+                <option value="4">Furnace 4</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Reference °C</span>
+              <input class="input" type="number" step="0.1" data-role="cal-reference" placeholder="e.g. 800.0">
+            </label>
+            <label class="field">
+              <span>Displayed °C</span>
+              <input class="input" type="number" step="0.1" data-role="cal-measured" placeholder="e.g. 794.5">
+            </label>
+            <button class="btn btn--compact" type="button" data-role="cal-apply">Apply to offset</button>
+          </div>
+        </details>
+        <button class="btn btn--primary" type="button" data-role="save-channels">Save furnaces</button>
       </section>
 
-      <section class="panel admin-panel" aria-labelledby="wifi-title">
+      <section class="panel admin-panel" id="wifi" data-section="06 · Network" aria-labelledby="wifi-title">
         <header class="admin-panel__head">
           <h2 id="wifi-title">Wi-Fi</h2>
           <p>Queues new credentials for the board. It saves them, reboots and joins that network; <code>config.py</code> is not changed.</p>
@@ -67,17 +280,17 @@
         <button class="btn btn--primary" type="button" data-role="send-wifi">Queue Wi-Fi change</button>
       </section>
 
-      <section class="panel admin-panel" aria-labelledby="firmware-title">
+      <section class="panel admin-panel" id="firmware" data-section="07 · Deployment" aria-labelledby="firmware-title">
         <header class="admin-panel__head">
-          <h2 id="firmware-title">Firmware</h2>
-          <p>The board updates only when you press the button: the heartbeat delivers the command, then the bundle is verified, staged and applied on reboot.</p>
+          <h2 id="firmware-title">Firmware source</h2>
+          <p>Choose the published source bundle to run. The board updates only when you press the button: the heartbeat delivers the command, then every file is verified, staged and applied on reboot.</p>
         </header>
         <label class="field">
           <span>Board</span>
           <select class="input" data-role="ota-device"></select>
         </label>
         <label class="field">
-          <span>Bundle</span>
+          <span>Source bundle</span>
           <select class="input" data-role="ota-channel"></select>
         </label>
         <p class="admin-hint" data-role="bundle-info">—</p>
@@ -88,7 +301,7 @@
       </section>
     </div>
 
-    <section class="panel admin-panel" aria-labelledby="events-title">
+    <section class="panel admin-panel" id="events" data-section="08 · Audit log" aria-labelledby="events-title">
       <header class="admin-panel__head">
         <h2 id="events-title">Connection log</h2>
         <p>Registrations, reconnects and the result of every command. Times are local to this browser.</p>
@@ -105,6 +318,6 @@
   </div>
 
   <script src="config.js"></script>
-  <script type="module" src="assets/js/admin.js"></script>
+  <script type="module" src="assets/js/admin.js?v=8"></script>
 </body>
 </html>

@@ -83,12 +83,20 @@ mpremote connect COM6 \
   cp ../common/wifi.py :wifi.py + \
   cp ../common/ingest.py :ingest.py + \
   cp ../common/supervisor.py :supervisor.py + \
+  cp ../common/ota.py :ota.py + \
+  cp ../common/device.py :device.py + \
+  cp ../common/settings.py :settings.py + \
   cp max31865.py :max31865.py + \
   cp main.py :main.py
 mpremote connect COM6 repl
 ```
 
-## Driver
+## Live settings and driver
+
+Frame interval, heartbeat, and each channel's enabled flag/offset can be changed
+from the **Module** and **Furnaces** panels in [`ui/admin.html`](../../ui/admin.html);
+the board saves them in `/settings.json`. The RTD driver keeps its own 50/60 Hz
+notch filter, so the MAX31855 noise settings do not apply here.
 
 [`max31865.py`](max31865.py) is self-contained (no `mip install`):
 

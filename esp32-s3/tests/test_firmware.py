@@ -116,6 +116,7 @@ if "network" not in sys.modules:
 wifi = load("esp32s3_wifi", os.path.join(ROOT, "common", "wifi.py"))
 sys.modules.setdefault("wifi", wifi)
 device = load("esp32s3_device", os.path.join(ROOT, "common", "device.py"))
+settings_module = load("esp32s3_settings", os.path.join(ROOT, "common", "settings.py"))
 
 # boot.py runs its diagnostics on import; the output is captured here.
 with mock.patch("builtins.print"):
@@ -660,7 +661,7 @@ class BootTests(unittest.TestCase):
     def test_missing_lists_what_main_py_imports(self):
         absent = boot.missing(["boot.py", "main.py", "config.py", "wifi.py", "ingest.py"])
 
-        self.assertEqual(absent, ["supervisor.py"])
+        self.assertEqual(absent, ["supervisor.py", "settings.py"])
 
     def test_a_complete_board_has_nothing_missing(self):
         self.assertEqual(boot.missing(list(boot.REQUIRED)), [])
@@ -1149,7 +1150,7 @@ class PublishTests(unittest.TestCase):
 
         self.assertEqual(
             names,
-            {"boot.py", "wifi.py", "ingest.py", "supervisor.py", "ota.py", "device.py", "main.py"},
+            {"boot.py", "wifi.py", "ingest.py", "supervisor.py", "ota.py", "device.py", "settings.py", "main.py"},
         )
         self.assertNotIn("config.py", names)
         self.assertTrue(os.path.isfile(os.path.join(target, "manifest.json")))
@@ -1195,8 +1196,88 @@ class WifiOverrideTests(unittest.TestCase):
         )
 
 
+class SettingsTests(unittest.TestCase):
+    """The live settings file must validate, persist and survive a bad payload."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="furnace-settings-")
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.root, ignore_errors=True))
+
+    def make(self, **defaults):
+        return settings_module.Settings(
+            root=self.root,
+            defaults=defaults,
+            channels=[
+                {"channel": 1, "enabled": True, "offset": 0.0},
+                {"channel": 2, "enabled": True, "offset": 0.0},
+                {"channel": 3, "enabled": True, "offset": 0.0},
+            ],
+            log=lambda *_: None,
+        )
+
+    def test_defaults_match_the_firmware_constants(self):
+        runtime = self.make(sample_ms=100, noise_samples=5, ema_alpha=0.35)
+        snapshot = runtime.snapshot()
+
+        self.assertEqual(snapshot["sample_ms"], 100)
+        self.assertEqual(snapshot["noise_samples"], 5)
+        self.assertEqual(snapshot["ema_alpha"], 0.35)
+        self.assertEqual(len(snapshot["channels"]), 3)
+        self.assertTrue(snapshot["channels"][0]["enabled"])
+
+    def test_apply_persists_and_reloads(self):
+        runtime = self.make()
+        changed = runtime.apply({
+            "sample_ms": 500,
+            "noise_samples": 3,
+            "noise_gap_us": 3000,
+            "ema_alpha": 0.5,
+            "heartbeat_s": 30,
+            "channels": [
+                {"channel": 1, "enabled": False, "offset": -1.5},
+                {"channel": 2, "enabled": True, "offset": 2.0},
+                {"channel": 3, "enabled": True, "offset": 0.0},
+            ],
+        })
+
+        self.assertTrue(changed)
+
+        reloaded = self.make()
+        snapshot = reloaded.snapshot()
+
+        self.assertEqual(snapshot["sample_ms"], 500)
+        self.assertEqual(snapshot["heartbeat_s"], 30)
+        self.assertFalse(snapshot["channels"][0]["enabled"])
+        self.assertEqual(snapshot["channels"][0]["offset"], -1.5)
+        self.assertEqual(snapshot["channels"][1]["offset"], 2.0)
+
+    def test_an_invalid_payload_leaves_the_old_values_in_place(self):
+        runtime = self.make(sample_ms=100)
+
+        with self.assertRaises(settings_module.SettingsError):
+            runtime.apply({"sample_ms": 10, "channels": [
+                {"channel": 1, "enabled": True, "offset": 0.0},
+                {"channel": 1, "enabled": True, "offset": 0.0},
+            ]})
+
+        self.assertEqual(runtime.snapshot()["sample_ms"], 100)
+        self.assertEqual(len(runtime.snapshot()["channels"]), 3)
+
+    def test_a_corrupt_file_is_ignored(self):
+        with open(os.path.join(self.root, "settings.json"), "w", encoding="utf-8") as handle:
+            handle.write("{not json")
+
+        runtime = self.make(sample_ms=250)
+
+        self.assertEqual(runtime.snapshot()["sample_ms"], 250)
+
+    def test_an_unchanged_payload_does_not_rewrite(self):
+        runtime = self.make()
+        self.assertFalse(runtime.apply(runtime.snapshot()))
+
+
 class DeviceLinkTests(unittest.TestCase):
-    """Heartbeat payload and the three commands the admin panel can send."""
+    """Heartbeat payload and the commands the admin panel can send."""
 
     def setUp(self):
         self.root = tempfile.mkdtemp(prefix="furnace-device-")
@@ -1224,6 +1305,15 @@ class DeviceLinkTests(unittest.TestCase):
             check=lambda: True,
             ready="v2",
         )
+        self.runtime = settings_module.Settings(
+            root=self.root,
+            channels=[
+                {"channel": 1, "enabled": True, "offset": 0.0},
+                {"channel": 2, "enabled": True, "offset": 0.0},
+                {"channel": 3, "enabled": True, "offset": 0.0},
+            ],
+            log=lambda *_: None,
+        )
         link = device.DeviceLink(
             types.SimpleNamespace(**values),
             wlan,
@@ -1232,6 +1322,8 @@ class DeviceLinkTests(unittest.TestCase):
             channels=[1, 2, 3],
             log=lambda *_: None,
             root=self.root,
+            settings=self.runtime,
+            source="max31855",
         )
 
         return link, updater
@@ -1246,6 +1338,7 @@ class DeviceLinkTests(unittest.TestCase):
         self.assertEqual(payload["ip"], "192.168.1.42")
         self.assertEqual(payload["firmware"], "v1")
         self.assertEqual(payload["sent"], 10)
+        self.assertEqual(payload["source"], "max31855")
 
     def test_an_invalid_device_id_is_rejected(self):
         with self.assertRaises(ValueError):
@@ -1301,6 +1394,51 @@ class DeviceLinkTests(unittest.TestCase):
 
         self.assertEqual(acks, [(10, "done", "restarting")])
         self.assertEqual(reboots, [1])
+
+    def test_a_settings_command_is_applied_and_saved(self):
+        link, _ = self.make()
+        acks = []
+        link._ack = lambda *args: acks.append(args)
+
+        link._run({
+            "id": 11,
+            "kind": "settings",
+            "payload": {"settings": {
+                "sample_ms": 500,
+                "heartbeat_s": 30,
+                "channels": [
+                    {"channel": 1, "enabled": False, "offset": 1.25},
+                    {"channel": 2, "enabled": True, "offset": 0.0},
+                    {"channel": 3, "enabled": True, "offset": 0.0},
+                ],
+            }},
+        })
+
+        self.assertEqual(acks, [(11, "done", "applied")])
+        self.assertEqual(link.heartbeat_s, 30)
+        self.assertFalse(self.runtime.snapshot()["channels"][0]["enabled"])
+
+        with open(os.path.join(self.root, "settings.json"), encoding="utf-8") as handle:
+            stored = json.load(handle)
+
+        self.assertEqual(stored["sample_ms"], 500)
+        self.assertEqual(stored["channels"][0]["offset"], 1.25)
+
+    def test_an_invalid_settings_command_fails_without_changing_anything(self):
+        link, _ = self.make()
+        acks = []
+        link._ack = lambda *args: acks.append(args)
+
+        link._run({
+            "id": 12,
+            "kind": "settings",
+            "payload": {"settings": {"sample_ms": 1}},
+        })
+
+        self.assertEqual(len(acks), 1)
+        self.assertEqual(acks[0][0], 12)
+        self.assertEqual(acks[0][1], "failed")
+        self.assertEqual(self.runtime.snapshot()["sample_ms"], 100)
 
 
 if __name__ == "__main__":

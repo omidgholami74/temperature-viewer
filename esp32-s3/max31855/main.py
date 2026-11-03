@@ -18,9 +18,9 @@ Wiring (see README.md):
 
 Copy ``common/config.example.py`` to ``config.py``, edit it, then upload
 ``config.py``, ``wifi.py``, ``ingest.py``, ``supervisor.py``, ``ota.py``,
-``device.py`` and this ``main.py`` to the board root and run ``main.py``. With
-those at the root the firmware runs on its own from a USB charger and accepts
-updates from the admin panel.
+``device.py``, ``settings.py`` and this ``main.py`` to the board root and run
+``main.py``. With those at the root the firmware runs on its own from a USB
+charger and accepts settings and updates from the admin panel.
 
 The watchdog reboots a hung loop, ``supervisor.run_forever`` restarts a crashed
 session and ``ota.py`` applies a bundle only when the panel queues an update.
@@ -31,6 +31,7 @@ import time
 from machine import Pin, SPI
 
 import config
+import settings as settings_module
 import supervisor
 import wifi
 from ingest import Ingest
@@ -79,15 +80,30 @@ NOISE_EMA_ALPHA = 0.35      # 1.0 = no smoothing, 0.25-0.4 = smooth but responsi
 TEMP_MIN_C = -270.0
 TEMP_MAX_C = 1800.0
 
-# Fixed calibration offset per furnace, in °C, in CS_PINS order: furnace 1 is
-# CS 15, furnace 2 is CS 16, and so on. The value is added to every reading of
-# that channel — both in the CSV line and in the uploaded sample — which is
-# what corrects a probe that is consistently off (cold-junction error, a probe
-# touching the wall, a long lead). Calibrate against a reference thermometer at
-# working temperature and leave a channel at 0.0 for no correction.
-# A faulted channel is not offset: it stays -1000.00 on the serial line and
-# null in the upload, so the dashboard still shows it as broken.
+# Default calibration offset per furnace, in °C, in CS_PINS order: furnace 1
+# is CS 15, furnace 2 is CS 16, and so on. These values are only the fallback
+# and the first-boot defaults: the admin panel stores an offset per channel in
+# /settings.json and that value wins until the file is deleted. A faulted
+# channel is never offset, so it stays -1000.00 on serial and null in upload.
 CHANNEL_OFFSETS = [0.0, 0.0, 0.0]
+
+# Live settings: sample rate, filter, heartbeat and per-channel offset/enabled.
+# They are loaded from /settings.json and can be changed from the admin panel
+# without reflashing; the constants in this file are the defaults.
+runtime = settings_module.Settings(
+    defaults={
+        "sample_ms": SAMPLE_INTERVAL_MS,
+        "noise_samples": NOISE_SAMPLES,
+        "noise_gap_us": NOISE_GAP_US,
+        "ema_alpha": NOISE_EMA_ALPHA,
+        "heartbeat_s": getattr(config, "HEARTBEAT_S", 15),
+    },
+    channels=[
+        {"channel": index + 1, "enabled": True, "offset": offset}
+        for index, offset in enumerate(CHANNEL_OFFSETS)
+    ],
+    log=print,
+)
 
 # SPI configuration
 # 500 kHz instead of 1 MHz: the MAX31855 tolerates 5 MHz, but a slower clock
@@ -198,39 +214,43 @@ def _median(values):
 _ema_state = [None] * len(CS_PINS)
 
 
-def _smooth(index, temperature):
+def _smooth(index, temperature, alpha=None):
     """Exponential moving average for one channel; faults pass through."""
 
     if temperature is None:
         return None
 
+    factor = NOISE_EMA_ALPHA if alpha is None else alpha
     previous = _ema_state[index]
 
     if previous is None:
         _ema_state[index] = temperature
         return temperature
 
-    smoothed = previous + NOISE_EMA_ALPHA * (temperature - previous)
+    smoothed = previous + factor * (temperature - previous)
     _ema_state[index] = smoothed
     return smoothed
 
 
-def read_channel(cs):
+def read_channel(cs, samples=None, gap_us=None):
     """Read one channel with median filtering.
 
     Returns ``(temperature_or_None, fault_bits)`` with the API's bits:
     1 open thermocouple, 2 short to GND, 4 short to VCC, 8 read error.
 
-    Strategy: take ``NOISE_SAMPLES`` frames spaced by ``NOISE_GAP_US``, drop
-    any frame that reports a fault or an out-of-range value, and return the
-    median of the rest. A channel is only reported as faulted when every read
-    failed, so one bad transfer does not blank a working probe.
+    Strategy: take ``samples`` frames spaced by ``gap_us``, drop any frame that
+    reports a fault or an out-of-range value, and return the median of the
+    rest. A channel is only reported as faulted when every read failed, so one
+    bad transfer does not blank a working probe. Both arguments default to the
+    module constants and are supplied from the live settings by the loop.
     """
 
-    samples = []
+    count = NOISE_SAMPLES if samples is None else int(samples)
+    spacing = NOISE_GAP_US if gap_us is None else int(gap_us)
+    readings = []
     fault_bits = 0
 
-    for i in range(NOISE_SAMPLES):
+    for i in range(count):
         raw = _read_raw(cs)
 
         if raw is None:
@@ -241,16 +261,16 @@ def read_channel(cs):
             if fault:
                 fault_bits |= fault
             elif _plausible(temperature):
-                samples.append(temperature)
+                readings.append(temperature)
 
         # Wait for a fresh conversion before the next read.
-        if i != NOISE_SAMPLES - 1:
-            time.sleep_us(NOISE_GAP_US)
+        if i != count - 1:
+            time.sleep_us(spacing)
 
-    if not samples:
+    if not readings:
         return None, fault_bits or 8
 
-    return _median(samples), 0
+    return _median(readings), 0
 
 
 def read_temperature(cs):
@@ -305,6 +325,8 @@ def session(watch):
             ingest,
             updater,
             channels=list(range(1, len(CS_PINS) + 1)),
+            settings=runtime,
+            source="max31855",
         )
 
         if link.start():
@@ -335,20 +357,39 @@ def session(watch):
         while True:
             temperatures = []
             faults = []
+            frame_settings = runtime.snapshot()
+            channel_settings = {}
+
+            for entry in frame_settings["channels"]:
+                channel_settings[entry["channel"]] = entry
 
             # Read every installed furnace: median of NOISE_SAMPLES reads,
-            # then an EMA, then the channel's fixed calibration offset. The
+            # then an EMA, then that channel's live calibration offset. The
             # offset is applied only to a valid reading, so a fault stays a
             # fault instead of becoming a plausible-looking temperature.
             for index, cs in enumerate(chip_selects):
-                temperature, fault = read_channel(cs)
-                temperature = _smooth(index, temperature)
+                channel = channel_settings.get(index + 1) or {
+                    "enabled": True,
+                    "offset": 0.0,
+                }
+
+                if not channel["enabled"]:
+                    # Drop the old average so re-enabling the furnace starts
+                    # from the first fresh reading instead of a stale value.
+                    _ema_state[index] = None
+                    temperatures.append(None)
+                    faults.append(0)
+                    continue
+
+                temperature, fault = read_channel(
+                    cs,
+                    frame_settings["noise_samples"],
+                    frame_settings["noise_gap_us"],
+                )
+                temperature = _smooth(index, temperature, frame_settings["ema_alpha"])
 
                 if temperature is not None:
-                    # A short list in CHANNEL_OFFSETS is treated as 0.0 rather
-                    # than an IndexError, which would restart the board.
-                    offset = CHANNEL_OFFSETS[index] if index < len(CHANNEL_OFFSETS) else 0.0
-                    temperature += offset
+                    temperature += channel["offset"]
 
                 temperatures.append(temperature)
                 faults.append(fault)
@@ -429,7 +470,7 @@ def session(watch):
                 print("# %s" % (ingest.stats(),))
 
             # Wait for the next sample
-            next_tick = time.ticks_add(next_tick, SAMPLE_INTERVAL_MS)
+            next_tick = time.ticks_add(next_tick, frame_settings["sample_ms"])
             delay = time.ticks_diff(next_tick, time.ticks_ms())
 
             if delay > 0:

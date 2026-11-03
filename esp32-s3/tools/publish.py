@@ -33,6 +33,7 @@ COMMON_FILES = [
     (os.path.join("common", "supervisor.py"), "supervisor.py"),
     (os.path.join("common", "ota.py"), "ota.py"),
     (os.path.join("common", "device.py"), "device.py"),
+    (os.path.join("common", "settings.py"), "settings.py"),
 ]
 
 VARIANTS = {
@@ -153,7 +154,7 @@ def main(argv=None):
     print("Next:")
     print("  1. copy %s to the API host (%s)" % (target, "FURNACE_FIRMWARE_DIR"))
     print("  2. restart PHP if the directory is new")
-    print("  3. the board checks after boot and every OTA_CHECK_S seconds")
+    print("  3. press Update firmware in the admin panel (no periodic checks)")
 
     return 0
 

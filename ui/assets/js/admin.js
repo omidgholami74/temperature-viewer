@@ -12,6 +12,15 @@ const el = {
   channelDevice: $('[data-role="channel-device"]'),
   channelEditor: $('[data-role="channel-editor"]'),
   saveChannels: $('[data-role="save-channels"]'),
+  modulePanel: $('[data-role="module-panel"]'),
+  settingsDevice: $('[data-role="settings-device"]'),
+  moduleSource: $('[data-role="module-source"]'),
+  sampleMs: $('[data-role="sample-ms"]'),
+  heartbeatS: $('[data-role="heartbeat-s"]'),
+  noiseSamples: $('[data-role="noise-samples"]'),
+  noiseGap: $('[data-role="noise-gap"]'),
+  emaAlpha: $('[data-role="ema-alpha"]'),
+  saveSettings: $('[data-role="save-settings"]'),
   wifiDevice: $('[data-role="wifi-device"]'),
   wifiSsid: $('[data-role="wifi-ssid"]'),
   wifiPassword: $('[data-role="wifi-password"]'),
@@ -22,12 +31,60 @@ const el = {
   sendOta: $('[data-role="send-ota"]'),
   sendRestart: $('[data-role="send-restart"]'),
   events: $('[data-role="events"]'),
+  dashboardPanel: $('[data-role="dashboard-panel"]'),
+  dashboardWindow: $('[data-role="dashboard-window"]'),
+  dashboardThreshold: $('[data-role="dashboard-threshold"]'),
+  dashboardNotice: $('[data-role="dashboard-notice"]'),
+  dashboardNoise: $('[data-role="dashboard-noise"]'),
+  saveDashboard: $('[data-role="save-dashboard"]'),
+  profilePanel: $('[data-role="profile-panel"]'),
+  profileDevice: $('[data-role="profile-device"]'),
+  profileName: $('[data-role="profile-name"]'),
+  profileLocation: $('[data-role="profile-location"]'),
+  profileNotes: $('[data-role="profile-notes"]'),
+  saveProfile: $('[data-role="save-profile"]'),
+  uploadChannel: $('[data-role="upload-channel"]'),
+  uploadVersion: $('[data-role="upload-version"]'),
+  uploadNotes: $('[data-role="upload-notes"]'),
+  uploadFiles: $('[data-role="upload-files"]'),
+  uploadFirmware: $('[data-role="upload-firmware"]'),
+  calChannel: $('[data-role="cal-channel"]'),
+  calReference: $('[data-role="cal-reference"]'),
+  calMeasured: $('[data-role="cal-measured"]'),
+  calApply: $('[data-role="cal-apply"]'),
+  statOnline: $('[data-role="stat-online"]'),
+  statOnlineHint: $('[data-role="stat-online-hint"]'),
+  statPending: $('[data-role="stat-pending"]'),
+  statBundles: $('[data-role="stat-bundles"]'),
+  statOffline: $('[data-role="stat-offline"]'),
+};
+
+const DEFAULT_SETTINGS = {
+  sample_ms: 100,
+  noise_samples: 5,
+  noise_gap_us: 6000,
+  ema_alpha: 0.35,
+  heartbeat_s: 15,
+};
+
+const DEFAULT_DASHBOARD = {
+  noise_enabled: true,
+  noise_threshold: 60,
+  default_window_s: 600,
+  notice: '',
+};
+
+const PRESETS = {
+  quiet: { sample_ms: 250, noise_samples: 9, noise_gap_us: 12000, ema_alpha: 0.2, heartbeat_s: 30 },
+  balanced: { sample_ms: 100, noise_samples: 5, noise_gap_us: 6000, ema_alpha: 0.35, heartbeat_s: 15 },
+  fast: { sample_ms: 50, noise_samples: 3, noise_gap_us: 3000, ema_alpha: 0.6, heartbeat_s: 10 },
 };
 
 const state = {
   devices: [],
   events: [],
   bundles: {},
+  dashboard: { ...DEFAULT_DASHBOARD },
   onlineAfter: 45000,
   selected: null,
 };
@@ -74,7 +131,7 @@ function fillSelect(select, value) {
   select.innerHTML = state.devices.length === 0
     ? '<option value="">No boards yet</option>'
     : state.devices.map((device) => (
-      `<option value="${escape(device.id)}">${escape(device.name)} · ${escape(device.id)}</option>`
+      `<option value="${escape(device.id)}">${escape(device.display_name || device.name)} · ${escape(device.id)}</option>`
     )).join('');
 
   if (state.devices.some((device) => device.id === current)) {
@@ -84,6 +141,79 @@ function fillSelect(select, value) {
 
 function deviceById(id) {
   return state.devices.find((device) => device.id === id) ?? null;
+}
+
+function settingsFor(device) {
+  const stored = device?.settings && typeof device.settings === 'object' ? device.settings : {};
+  const channels = Array.isArray(stored.channels) && stored.channels.length > 0
+    ? stored.channels
+    : (device?.channels ?? []).map((channel) => ({
+      channel: channel.channel,
+      enabled: channel.enabled,
+      offset: channel.offset ?? 0,
+    }));
+
+  return { ...DEFAULT_SETTINGS, ...stored, channels };
+}
+
+function editingInside(panel) {
+  const active = document.activeElement;
+  return Boolean(
+    panel
+    && active
+    && panel.contains(active)
+    && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName),
+  );
+}
+
+function renderDashboardEditor() {
+  if (!el.dashboardPanel || editingInside(el.dashboardPanel)) {
+    return;
+  }
+
+  const settings = { ...DEFAULT_DASHBOARD, ...(state.dashboard ?? {}) };
+  el.dashboardWindow.value = String(settings.default_window_s);
+  el.dashboardThreshold.value = settings.noise_threshold;
+  el.dashboardNotice.value = settings.notice ?? '';
+  el.dashboardNoise.checked = settings.noise_enabled !== false;
+}
+
+function renderProfileEditor(force = false) {
+  if (!el.profilePanel || (!force && editingInside(el.profilePanel))) {
+    return;
+  }
+
+  const device = deviceById(el.profileDevice.value);
+
+  if (!device) {
+    el.profileName.value = '';
+    el.profileLocation.value = '';
+    el.profileNotes.value = '';
+    return;
+  }
+
+  el.profileName.value = device.display_name ?? '';
+  el.profileLocation.value = device.location ?? '';
+  el.profileNotes.value = device.notes ?? '';
+}
+
+function renderModuleEditor() {
+  const active = document.activeElement;
+
+  if (active && active.tagName === 'INPUT' && el.modulePanel.contains(active)) {
+    return;
+  }
+
+  const device = deviceById(el.settingsDevice.value);
+  el.moduleSource.textContent = device?.source || 'not reported';
+
+  const settings = settingsFor(device);
+  el.sampleMs.value = settings.sample_ms;
+  el.heartbeatS.value = settings.heartbeat_s;
+  el.noiseSamples.value = settings.noise_samples;
+  el.noiseGap.value = settings.noise_gap_us;
+  el.emaAlpha.value = settings.ema_alpha;
+  el.modulePanel.dataset.ready = device ? '1' : '';
 }
 
 function selectedDevice(select) {
@@ -99,10 +229,12 @@ function renderDevices() {
 
   el.devices.innerHTML = state.devices.map((device) => {
     const online = device.age_ms <= state.onlineAfter;
+    const settings = settingsFor(device);
+    const profileName = device.display_name || device.name;
     const channels = device.channels.length > 0
       ? device.channels.map((channel) => (
         `<span class="tag ${channel.present ? 'tag--present' : ''} ${channel.enabled ? '' : 'tag--off'}">
-           ${channel.channel} · ${escape(channel.label)}
+           ${channel.channel} · ${escape(channel.label)} · ${Number(channel.offset ?? 0).toFixed(1)} °C
          </span>`
       )).join('')
       : '<span class="tag">no channels reported</span>';
@@ -115,8 +247,8 @@ function renderDevices() {
       <article class="panel device"${active}>
         <div class="device__head">
           <div>
-            <p class="device__name">${escape(device.name)}</p>
-            <p class="device__id">${escape(device.id)}</p>
+            <p class="device__name">${escape(profileName)}</p>
+            <p class="device__id">${escape(device.id)}${device.location ? ` · ${escape(device.location)}` : ''}</p>
           </div>
           <span class="device__state">
             <span class="dot ${online ? 'dot--online' : ''}" aria-hidden="true"></span>
@@ -126,6 +258,8 @@ function renderDevices() {
         <dl class="device__facts">
           <div><dt>Last seen</dt><dd>${age(device.age_ms)}</dd></div>
           <div><dt>Firmware</dt><dd>${escape(device.firmware || 'usb')}</dd></div>
+          <div><dt>Source</dt><dd>${escape(device.source || '—')}</dd></div>
+          <div><dt>Frame / filter</dt><dd>${settings.sample_ms} ms · ${settings.noise_samples}× · α ${settings.ema_alpha}</dd></div>
           <div><dt>IP</dt><dd>${escape(device.ip || '—')}</dd></div>
           <div><dt>Signal</dt><dd>${device.rssi === null ? '—' : `${device.rssi} dBm`}</dd></div>
           <div><dt>Uptime</dt><dd>${uptime(device.uptime_ms)}</dd></div>
@@ -137,7 +271,9 @@ function renderDevices() {
         <div class="device__actions">
           <button class="btn" type="button" data-action="furnaces" data-id="${escape(device.id)}">Furnaces</button>
           <button class="btn" type="button" data-action="wifi" data-id="${escape(device.id)}">Wi-Fi</button>
+          <button class="btn" type="button" data-action="module" data-id="${escape(device.id)}">Module</button>
           <button class="btn" type="button" data-action="firmware" data-id="${escape(device.id)}">Firmware</button>
+          <button class="btn" type="button" data-action="profile" data-id="${escape(device.id)}">Profile</button>
         </div>
       </article>
     `;
@@ -145,6 +281,12 @@ function renderDevices() {
 }
 
 function renderChannelEditor() {
+  const active = document.activeElement;
+
+  if (active && active.tagName === 'INPUT' && el.channelEditor.contains(active)) {
+    return;
+  }
+
   const device = deviceById(el.channelDevice.value);
 
   if (!device) {
@@ -152,14 +294,19 @@ function renderChannelEditor() {
     return;
   }
 
+  const settings = settingsFor(device);
+
   el.channelEditor.innerHTML = [1, 2, 3, 4].map((number) => {
     const channel = device.channels.find((entry) => entry.channel === number)
-      ?? { channel: number, label: `Furnace ${number}`, present: false, enabled: number <= 3 };
+      ?? { channel: number, label: `Furnace ${number}`, present: false, enabled: number <= 3, offset: 0 };
+    const stored = settings.channels.find((entry) => entry.channel === number);
+    const offset = stored?.offset ?? channel.offset ?? 0;
 
     return `
       <label class="channel-row">
         <input type="checkbox" data-channel="${number}" ${channel.enabled ? 'checked' : ''} aria-label="Enable furnace ${number}">
         <input type="text" maxlength="40" value="${escape(channel.label)}" data-label="${number}" aria-label="Label for furnace ${number}">
+        <input type="number" min="-200" max="200" step="0.1" value="${Number(offset).toFixed(1)}" data-offset="${number}" aria-label="Calibration offset for furnace ${number}">
         <span class="channel-row__meta">${channel.present ? 'probe' : 'no probe'}</span>
       </label>
     `;
@@ -167,6 +314,7 @@ function renderChannelEditor() {
 }
 
 function renderBundles() {
+  const current = el.otaChannel.value;
   const channels = Object.keys(state.bundles);
 
   el.otaChannel.innerHTML = channels.length === 0
@@ -175,11 +323,23 @@ function renderBundles() {
       `<option value="${escape(channel)}">${escape(channel)} · ${escape(state.bundles[channel].version)}</option>`
     )).join('');
 
+  if (state.bundles[current]) {
+    el.otaChannel.value = current;
+  }
+
   const chosen = el.otaChannel.value;
   const bundle = state.bundles[chosen];
-  el.bundleInfo.textContent = bundle
-    ? `${bundle.files} files · published ${escape(bundle.version)}`
-    : 'No bundle on the server yet. Run tools/publish.py and deploy the folder.';
+  const details = bundle
+    ? [
+      `${bundle.files} source files`,
+      bundle.version,
+      bundle.created_at,
+      bundle.notes ? `note: ${bundle.notes}` : '',
+    ].filter(Boolean).map(escape).join(' · ')
+    : '';
+  el.bundleInfo.innerHTML = bundle
+    ? `${details}<br><span class="bundle-files">${(bundle.names ?? []).map(escape).join(' · ') || 'manifest only'}</span>`
+    : 'No bundle on the server yet. Upload one above or run tools/publish.py and deploy the folder.';
 }
 
 function renderEvents() {
@@ -198,11 +358,33 @@ function renderEvents() {
   `).join('');
 }
 
+function renderOverview() {
+  const online = state.devices.filter((device) => device.age_ms <= state.onlineAfter).length;
+  const pending = state.devices.reduce(
+    (total, device) => total + (Number(device.pending_commands) || 0),
+    0,
+  );
+
+  el.statOnline.textContent = String(online);
+  el.statOnlineHint.textContent = state.devices.length === 0
+    ? 'waiting for boards'
+    : `${state.devices.length} board${state.devices.length === 1 ? '' : 's'} total`;
+  el.statPending.textContent = String(pending);
+  el.statBundles.textContent = String(Object.keys(state.bundles).length);
+  el.statOffline.textContent = String(Math.max(0, state.devices.length - online));
+}
+
 function render() {
   fillSelect(el.channelDevice);
   fillSelect(el.wifiDevice);
   fillSelect(el.otaDevice);
+  fillSelect(el.settingsDevice);
+  fillSelect(el.profileDevice);
+  renderOverview();
   renderDevices();
+  renderDashboardEditor();
+  renderProfileEditor();
+  renderModuleEditor();
   renderChannelEditor();
   renderBundles();
   renderEvents();
@@ -214,9 +396,17 @@ async function refresh({ quiet = false } = {}) {
   }
 
   try {
-    const [devices, events] = await Promise.all([api.devices(), api.events(40)]);
+    const [devices, events, dashboard] = await Promise.all([
+      api.devices(),
+      api.events(40),
+      // A missing public-settings endpoint must not hide the device list.
+      api.dashboard().catch(() => null),
+    ]);
     state.devices = Array.isArray(devices.devices) ? devices.devices : [];
     state.bundles = devices.bundles && typeof devices.bundles === 'object' ? devices.bundles : {};
+    state.dashboard = dashboard?.settings && typeof dashboard.settings === 'object'
+      ? dashboard.settings
+      : { ...DEFAULT_DASHBOARD };
     state.onlineAfter = Number(devices.online_after_ms) || 45000;
     state.events = Array.isArray(events.events) ? events.events : [];
     render();
@@ -255,11 +445,157 @@ async function saveChannels() {
     channel: Number(checkbox.dataset.channel),
     enabled: checkbox.checked,
     label: $(`[data-label="${checkbox.dataset.channel}"]`, el.channelEditor).value.trim(),
+    offset: Number($(`[data-offset="${checkbox.dataset.channel}"]`, el.channelEditor).value) || 0,
   }));
 
   try {
     await api.saveChannels(device.id, channels);
-    status('Channel labels saved.', 'ok');
+    status('Furnace labels, enabled state and offsets queued for the board.', 'ok');
+    await refresh({ quiet: true });
+  } catch (error) {
+    status(error.status === 401 ? 'Set the admin key (X-Admin-Key) to manage boards.' : error.message, 'error');
+  }
+}
+
+async function saveDashboard() {
+  const threshold = Number(el.dashboardThreshold.value);
+
+  if (!Number.isInteger(threshold) || threshold < 5 || threshold > 95) {
+    status('The drop threshold must be a whole number from 5 to 95.', 'error');
+    return;
+  }
+
+  try {
+    const payload = await api.saveDashboard({
+      noise_enabled: el.dashboardNoise.checked,
+      noise_threshold: threshold,
+      default_window_s: Number(el.dashboardWindow.value),
+      notice: el.dashboardNotice.value.trim(),
+    });
+    state.dashboard = payload.settings;
+    status('Public dashboard settings saved. Every visitor sees them on the next load.', 'ok');
+  } catch (error) {
+    status(error.status === 401 ? 'Set the admin key (X-Admin-Key) to save public settings.' : error.message, 'error');
+  }
+}
+
+async function saveProfile() {
+  const device = deviceById(el.profileDevice.value);
+
+  if (!device) {
+    status('Select a board first.', 'error');
+    return;
+  }
+
+  try {
+    await api.saveProfile(device.id, {
+      display_name: el.profileName.value.trim(),
+      location: el.profileLocation.value.trim(),
+      notes: el.profileNotes.value.trim(),
+    });
+    status('Board profile saved.', 'ok');
+    await refresh({ quiet: true });
+  } catch (error) {
+    status(error.status === 401 ? 'Set the admin key (X-Admin-Key) to save the profile.' : error.message, 'error');
+  }
+}
+
+async function uploadSourceBundle() {
+  const files = Array.from(el.uploadFiles.files ?? []);
+  const channel = el.uploadChannel.value.trim();
+
+  if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(channel)) {
+    status('Bundle name must contain lowercase letters, digits and dashes.', 'error');
+    return;
+  }
+
+  if (files.length === 0) {
+    status('Select the .py files for the bundle.', 'error');
+    return;
+  }
+
+  if (files.some((file) => !file.name.endsWith('.py'))) {
+    status('Only .py source files can be uploaded.', 'error');
+    return;
+  }
+
+  const form = new FormData();
+  form.append('channel', channel);
+  form.append('version', el.uploadVersion.value.trim());
+  form.append('notes', el.uploadNotes.value.trim());
+
+  for (const file of files) {
+    form.append('files[]', file, file.name);
+  }
+
+  el.uploadFirmware.disabled = true;
+  status('Uploading and verifying the source bundle…');
+
+  try {
+    const payload = await api.uploadFirmware(form);
+    status(`Uploaded ${payload.bundle.channel} ${payload.bundle.version} (${payload.bundle.files} files). Queue an OTA update when ready.`, 'ok');
+    el.uploadFiles.value = '';
+    el.uploadVersion.value = '';
+    el.uploadNotes.value = '';
+    await refresh({ quiet: true });
+  } catch (error) {
+    status(
+      error.status === 503
+        ? 'Source upload is disabled until FURNACE_ADMIN_KEY is set on the API server.'
+        : error.message,
+      'error',
+    );
+  } finally {
+    el.uploadFirmware.disabled = false;
+  }
+}
+
+function applyCalibration() {
+  const channel = Number(el.calChannel.value);
+  const reference = Number(el.calReference.value);
+  const measured = Number(el.calMeasured.value);
+  const offset = $(`[data-offset="${channel}"]`, el.channelEditor);
+
+  if (!offset) {
+    status('Select a board and open its furnaces first.', 'error');
+    return;
+  }
+
+  if (!Number.isFinite(reference) || !Number.isFinite(measured)) {
+    status('Enter both the reference and the displayed temperature.', 'error');
+    return;
+  }
+
+  const current = Number(offset.value) || 0;
+  const next = Math.max(-200, Math.min(200, current + reference - measured));
+  offset.value = next.toFixed(1);
+  status(`Furnace ${channel} offset set to ${offset.value} °C. Press Save furnaces to queue it.`, 'ok');
+}
+
+async function saveSettings() {
+  const device = deviceById(el.settingsDevice.value);
+
+  if (!device) {
+    status('Select a board first.', 'error');
+    return;
+  }
+
+  const settings = {
+    sample_ms: Number(el.sampleMs.value),
+    heartbeat_s: Number(el.heartbeatS.value),
+    noise_samples: Number(el.noiseSamples.value),
+    noise_gap_us: Number(el.noiseGap.value),
+    ema_alpha: Number(el.emaAlpha.value),
+  };
+
+  if (Object.values(settings).some((value) => !Number.isFinite(value))) {
+    status('Every module field must be a number.', 'error');
+    return;
+  }
+
+  try {
+    await api.saveSettings(device.id, settings);
+    status('Module settings queued; the board applies them on the next heartbeat.', 'ok');
     await refresh({ quiet: true });
   } catch (error) {
     status(error.status === 401 ? 'Set the admin key (X-Admin-Key) to manage boards.' : error.message, 'error');
@@ -296,6 +632,10 @@ function wire() {
       el.channelDevice.value = device.id;
       renderChannelEditor();
       el.channelDevice.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else if (button.dataset.action === 'module') {
+      el.settingsDevice.value = device.id;
+      renderModuleEditor();
+      el.settingsDevice.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } else if (button.dataset.action === 'wifi') {
       el.wifiDevice.value = device.id;
       el.wifiSsid.value = '';
@@ -305,6 +645,10 @@ function wire() {
     } else if (button.dataset.action === 'firmware') {
       el.otaDevice.value = device.id;
       el.otaDevice.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else if (button.dataset.action === 'profile') {
+      el.profileDevice.value = device.id;
+      renderProfileEditor(true);
+      el.profilePanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     renderDevices();
@@ -312,6 +656,30 @@ function wire() {
 
   el.channelDevice.addEventListener('change', renderChannelEditor);
   el.saveChannels.addEventListener('click', saveChannels);
+  el.settingsDevice.addEventListener('change', renderModuleEditor);
+  el.saveSettings.addEventListener('click', saveSettings);
+  el.saveDashboard.addEventListener('click', saveDashboard);
+  el.profileDevice.addEventListener('change', () => renderProfileEditor(true));
+  el.saveProfile.addEventListener('click', saveProfile);
+  el.uploadFirmware.addEventListener('click', uploadSourceBundle);
+  el.calApply.addEventListener('click', applyCalibration);
+
+  for (const button of $$('[data-preset]')) {
+    button.addEventListener('click', () => {
+      const preset = PRESETS[button.dataset.preset];
+
+      if (!preset) {
+        return;
+      }
+
+      el.sampleMs.value = preset.sample_ms;
+      el.heartbeatS.value = preset.heartbeat_s;
+      el.noiseSamples.value = preset.noise_samples;
+      el.noiseGap.value = preset.noise_gap_us;
+      el.emaAlpha.value = preset.ema_alpha;
+      status(`${button.textContent} preset filled. Review it, then press Save module settings.`, 'ok');
+    });
+  }
 
   el.sendWifi.addEventListener('click', () => {
     const ssid = el.wifiSsid.value.trim();

@@ -19,6 +19,15 @@ final class DeviceRepository
     /** A heartbeat gap longer than this is logged as a reconnect. */
     private const RECONNECT_GAP_MS = 90000;
 
+    /** Must match Settings.DEFAULTS in esp32-s3/common/settings.py. */
+    private const DEFAULT_SETTINGS = [
+        'sample_ms' => 100,
+        'noise_samples' => 5,
+        'noise_gap_us' => 6000,
+        'ema_alpha' => 0.35,
+        'heartbeat_s' => 15,
+    ];
+
     public function __construct(private readonly PDO $pdo)
     {
     }
@@ -26,8 +35,8 @@ final class DeviceRepository
     /**
      * Store a heartbeat and return the work for that device.
      *
-     * @param array{id: string, name: string, firmware: string, ip: string, rssi: ?int, uptime_ms: int, sent: int, pending: int, dropped: int, channels: list<int>} $device
-     * @return array{commands: list<array<string, mixed>>, channels: list<array<string, mixed>>}
+     * @param array{id: string, name: string, source: string, firmware: string, ip: string, rssi: ?int, uptime_ms: int, sent: int, pending: int, dropped: int, channels: list<int>} $device
+     * @return array{commands: list<array<string, mixed>>, channels: list<array<string, mixed>>, settings: ?array<string, mixed>}
      */
     public function heartbeat(array $device, int $now): array
     {
@@ -36,12 +45,13 @@ final class DeviceRepository
         if ($existing === null) {
             $statement = $this->pdo->prepare(
                 'INSERT INTO devices
-                    (id, name, firmware, ip, rssi, uptime_ms, sent, pending, dropped, created_at_ms, last_seen_ms)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    (id, name, source, firmware, ip, rssi, uptime_ms, sent, pending, dropped, created_at_ms, last_seen_ms)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             );
             $statement->execute([
                 $device['id'],
                 $device['name'],
+                $device['source'],
                 $device['firmware'],
                 $device['ip'],
                 $device['rssi'],
@@ -67,12 +77,13 @@ final class DeviceRepository
 
             $statement = $this->pdo->prepare(
                 'UPDATE devices SET
-                    name = ?, firmware = ?, ip = ?, rssi = ?, uptime_ms = ?,
+                    name = ?, source = ?, firmware = ?, ip = ?, rssi = ?, uptime_ms = ?,
                     sent = ?, pending = ?, dropped = ?, last_seen_ms = ?
                  WHERE id = ?',
             );
             $statement->execute([
                 $device['name'],
+                $device['source'],
                 $device['firmware'],
                 $device['ip'],
                 $device['rssi'],
@@ -91,6 +102,7 @@ final class DeviceRepository
         return [
             'commands' => $commands,
             'channels' => $this->channels($device['id']),
+            'settings' => $this->settings($device['id']),
         ];
     }
 
@@ -129,9 +141,15 @@ final class DeviceRepository
             );
             $pending->execute([$id]);
 
+            $profile = $this->profile($id);
+
             $devices[] = [
                 'id' => $id,
                 'name' => (string) $row['name'],
+                'display_name' => $profile['display_name'],
+                'location' => $profile['location'],
+                'notes' => $profile['notes'],
+                'source' => (string) ($row['source'] ?? ''),
                 'firmware' => (string) $row['firmware'],
                 'ip' => (string) $row['ip'],
                 'rssi' => $row['rssi'] === null ? null : (int) $row['rssi'],
@@ -142,6 +160,8 @@ final class DeviceRepository
                 'last_seen_ms' => (int) $row['last_seen_ms'],
                 'age_ms' => max(0, $now - (int) $row['last_seen_ms']),
                 'channels' => $this->channels($id),
+                'settings' => $this->settings($id),
+                'settings_at_ms' => $row['settings_at_ms'] === null ? null : (int) $row['settings_at_ms'],
                 'pending_commands' => (int) $pending->fetchColumn(),
                 'last_command' => $command === false ? null : [
                     'kind' => (string) $command['kind'],
@@ -162,7 +182,7 @@ final class DeviceRepository
     public function channels(string $deviceId): array
     {
         $statement = $this->pdo->prepare(
-            'SELECT channel, label, present, enabled FROM device_channels
+            'SELECT channel, label, present, enabled, offset FROM device_channels
              WHERE device_id = ? ORDER BY channel',
         );
         $statement->execute([$deviceId]);
@@ -174,10 +194,54 @@ final class DeviceRepository
                 'label' => (string) $row['label'],
                 'present' => (bool) $row['present'],
                 'enabled' => (bool) $row['enabled'],
+                'offset' => (float) $row['offset'],
             ];
         }
 
         return $channels;
+    }
+
+    /**
+     * Operator-owned board profile. Empty values mean "use the reported name
+     * and show no location/notes".
+     *
+     * @return array{display_name: string, location: string, notes: string}
+     */
+    public function profile(string $deviceId): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT display_name, location, notes FROM device_profiles WHERE device_id = ?',
+        );
+        $statement->execute([$deviceId]);
+        $row = $statement->fetch();
+
+        return [
+            'display_name' => $row === false ? '' : (string) $row['display_name'],
+            'location' => $row === false ? '' : (string) $row['location'],
+            'notes' => $row === false ? '' : (string) $row['notes'],
+        ];
+    }
+
+    /**
+     * Save the operator profile without touching the name reported by firmware.
+     *
+     * @return array{display_name: string, location: string, notes: string}
+     */
+    public function saveProfile(string $deviceId, string $name, string $location, string $notes, int $now): array
+    {
+        $statement = $this->pdo->prepare(
+            'INSERT INTO device_profiles (device_id, display_name, location, notes, updated_at_ms)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT (device_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                location = excluded.location,
+                notes = excluded.notes,
+                updated_at_ms = excluded.updated_at_ms',
+        );
+        $statement->execute([$deviceId, $name, $location, $notes, $now]);
+        $this->event($deviceId, 'profile', 'operator profile updated', $now);
+
+        return $this->profile($deviceId);
     }
 
     /**
@@ -206,22 +270,100 @@ final class DeviceRepository
     }
 
     /**
-     * @param list<array{channel: int, label: string, enabled: bool}> $channels
+     * @param list<array{channel: int, label: string, enabled: bool, offset: float}> $channels
      */
     public function setChannels(string $deviceId, array $channels): void
     {
         $statement = $this->pdo->prepare(
-            'UPDATE device_channels SET label = ?, enabled = ? WHERE device_id = ? AND channel = ?',
+            'UPDATE device_channels SET label = ?, enabled = ?, offset = ?
+             WHERE device_id = ? AND channel = ?',
         );
 
         foreach ($channels as $channel) {
             $statement->execute([
                 $channel['label'],
                 $channel['enabled'] ? 1 : 0,
+                $channel['offset'],
                 $deviceId,
                 $channel['channel'],
             ]);
         }
+    }
+
+    /**
+     * The snapshot last saved from the panel, with channels refreshed from the
+     * registry. Null means the operator has never saved settings, which lets a
+     * fresh board keep its config.py defaults instead of being overwritten.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function settings(string $deviceId): ?array
+    {
+        $statement = $this->pdo->prepare('SELECT settings FROM devices WHERE id = ?');
+        $statement->execute([$deviceId]);
+        $row = $statement->fetch();
+
+        if ($row === false || $row['settings'] === null || $row['settings'] === '') {
+            return null;
+        }
+
+        $stored = json_decode((string) $row['settings'], true);
+
+        if (!is_array($stored)) {
+            return null;
+        }
+
+        $values = self::DEFAULT_SETTINGS;
+
+        foreach (array_keys(self::DEFAULT_SETTINGS) as $key) {
+            if (array_key_exists($key, $stored)) {
+                $values[$key] = $stored[$key];
+            }
+        }
+
+        $values['channels'] = array_map(
+            static fn (array $channel): array => [
+                'channel' => (int) $channel['channel'],
+                'enabled' => (bool) $channel['enabled'],
+                'offset' => (float) $channel['offset'],
+            ],
+            $this->channels($deviceId),
+        );
+
+        return $values;
+    }
+
+    /**
+     * Store the desired snapshot and queue it for the board. The heartbeat also
+     * returns it, so a board that lost /settings.json recovers on its own.
+     *
+     * @param array<string, mixed> $globals
+     * @return array<string, mixed>
+     */
+    public function saveSettings(string $deviceId, array $globals, int $now): array
+    {
+        $current = $this->settings($deviceId) ?? self::DEFAULT_SETTINGS;
+        $values = [];
+
+        foreach (array_keys(self::DEFAULT_SETTINGS) as $key) {
+            $values[$key] = array_key_exists($key, $globals) ? $globals[$key] : $current[$key];
+        }
+
+        $values['channels'] = array_map(
+            static fn (array $channel): array => [
+                'channel' => (int) $channel['channel'],
+                'enabled' => (bool) $channel['enabled'],
+                'offset' => (float) $channel['offset'],
+            ],
+            $this->channels($deviceId),
+        );
+
+        $statement = $this->pdo->prepare(
+            'UPDATE devices SET settings = ?, settings_at_ms = ? WHERE id = ?',
+        );
+        $statement->execute([json_encode($values), $now, $deviceId]);
+
+        return $this->queue($deviceId, 'settings', ['settings' => $values], $now);
     }
 
     /**

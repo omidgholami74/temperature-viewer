@@ -122,15 +122,21 @@ Rules that make this safe to run unattended:
 
 ## Heartbeat and commands
 
-`device.py` reports every 15 s to `POST /api/device/heartbeat` with the firmware
-version, IP, RSSI, uptime and queue depth, and acknowledges each command with
-`POST /api/device/ack`. Three commands exist:
+`device.py` reports every 15 s to `POST /api/device/heartbeat` with the source
+(`max31855`/`max31865`), firmware version, IP, RSSI, uptime and queue depth, and
+acknowledges each command with `POST /api/device/ack`. Four commands exist:
 
 | Command | Effect on the board |
 | --- | --- |
 | `ota` | One bundle check; stage and reboot if the version differs |
 | `wifi` | Write `/wifi.json`, acknowledge, reboot; `wifi.py` prefers it over `config.py` |
 | `restart` | Acknowledge and reboot |
+| `settings` | Apply sample interval, noise filter, heartbeat and per-channel enabled/offset; save `/settings.json` |
+
+The heartbeat reply also carries the saved settings snapshot, so a board whose
+files were replaced recovers the operator's configuration on its next poll
+without a new command. A disabled channel is uploaded as `null` with fault `0`,
+exactly like a probe that is not installed.
 
 A command stays queued on the server until acknowledged, so a board that was
 offline applies it when it returns. The heartbeat thread never touches the
@@ -196,8 +202,9 @@ fresh boot is never discarded.
 
 ## Calibration
 
-* MAX31855: `CHANNEL_OFFSETS = [...]` in `max31855/main.py`, one value per CS
-  pin, added before serial/upload. See
+* MAX31855: set the offset per channel in the admin panel; it is stored in
+  `/settings.json` and applied before serial/upload. `CHANNEL_OFFSETS` in
+  `max31855/main.py` is only the first-boot/default fallback. See
   [`max31855/README.md`](../esp32-s3/max31855/README.md#per-furnace-offset-fixed-calibration).
 * MAX31865: `R_REF`, `R_NOMINAL`, `WIRE_MODE`, `FILTER_HZ` must match the board
   and probe. See [`max31865/README.md`](../esp32-s3/max31865/README.md).

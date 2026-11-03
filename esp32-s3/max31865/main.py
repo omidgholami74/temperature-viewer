@@ -15,12 +15,13 @@ Wiring (see README.md):
 
 Copy ``common/config.example.py`` to ``config.py``, edit it, then upload
 ``config.py``, ``wifi.py``, ``ingest.py``, ``supervisor.py``, ``ota.py``,
-``max31865.py`` and this ``main.py`` to the board root and run ``main.py``.
-``ota.py`` checks the API for a newer bundle in the background.
+``device.py``, ``settings.py``, ``max31865.py`` and this ``main.py`` to the
+board root and run ``main.py``. Settings and firmware updates come from the
+admin panel on demand; there is no periodic update check.
 
-With those six files at the board root the firmware also runs on its own from a
-USB charger: ``main.py`` starts at every power-up, the watchdog reboots a hung
-loop and ``supervisor.run_forever`` restarts a session that crashed.
+With those files at the board root the firmware also runs on its own from a USB
+charger: ``main.py`` starts at every power-up, the watchdog reboots a hung loop
+and ``supervisor.run_forever`` restarts a session that crashed.
 """
 
 import time
@@ -28,6 +29,7 @@ import time
 from machine import Pin, SPI
 
 import config
+import settings as settings_module
 import supervisor
 import wifi
 from ingest import Ingest
@@ -61,6 +63,20 @@ FILTER_HZ = 50      # Iran's mains frequency: keep the 50 Hz notch enabled
 
 CSV_HEADER = "ms,furnace1,furnace2,furnace3,furnace4"
 FAULT_SENTINEL = -1000.0
+
+# Live settings: frame interval, heartbeat and per-channel enabled/offset.
+# The admin panel can change them at runtime; /settings.json survives a reboot.
+runtime = settings_module.Settings(
+    defaults={
+        "sample_ms": SAMPLE_INTERVAL_MS,
+        "heartbeat_s": getattr(config, "HEARTBEAT_S", 15),
+    },
+    channels=[
+        {"channel": index + 1, "enabled": True, "offset": 0.0}
+        for index in range(len(CS_PINS))
+    ],
+    log=print,
+)
 
 # SPI configuration (a real MOSI line is required here). The MAX31865 samples
 # on the falling clock edge, which is SPI mode 1: CPOL 0, CPHA 1.
@@ -138,6 +154,8 @@ def session(watch):
             ingest,
             updater,
             channels=list(range(1, len(CS_PINS) + 1)),
+            settings=runtime,
+            source="max31865",
         )
 
         if link.start():
@@ -169,9 +187,30 @@ def session(watch):
             temperatures = []
             faults = []
 
-            # Read all four furnaces
-            for sensor in sensors:
+            frame_settings = runtime.snapshot()
+            channel_settings = {}
+
+            for entry in frame_settings["channels"]:
+                channel_settings[entry["channel"]] = entry
+
+            # Read every enabled furnace; a disabled channel is an empty slot
+            # (null with no fault), exactly like an uninstalled probe.
+            for index, sensor in enumerate(sensors):
+                channel = channel_settings.get(index + 1) or {
+                    "enabled": True,
+                    "offset": 0.0,
+                }
+
+                if not channel["enabled"]:
+                    temperatures.append(None)
+                    faults.append(0)
+                    continue
+
                 temperature, fault = read_channel(sensor)
+
+                if temperature is not None:
+                    temperature += channel["offset"]
+
                 temperatures.append(temperature)
                 faults.append(fault)
 
@@ -237,7 +276,7 @@ def session(watch):
                 last_report = now
                 print("# %s" % (ingest.stats(),))
 
-            next_tick = time.ticks_add(next_tick, SAMPLE_INTERVAL_MS)
+            next_tick = time.ticks_add(next_tick, frame_settings["sample_ms"])
             delay = time.ticks_diff(next_tick, time.ticks_ms())
 
             if delay > 0:

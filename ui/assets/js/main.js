@@ -24,11 +24,15 @@ const CHANNELS = [
 const WINDOWS = [60, 600, 3600, 21600, 86400, 0];
 const WINDOW_STORAGE_KEY = 'furnace.window';
 const THEME_STORAGE_KEY = 'furnace.theme';
-const DEFAULT_WINDOW = 600;
 const DEFAULT_RANGE = 86400;
-const MIN_THRESHOLD = 1;
-const MAX_THRESHOLD = 95;
 const PAUSED_AFTER_MS = 2500;
+const DEFAULT_WINDOW = 600;
+const DEFAULT_DASHBOARD = {
+  noise_enabled: true,
+  noise_threshold: 60,
+  default_window_s: DEFAULT_WINDOW,
+  notice: '',
+};
 const FAULT_BITS = [
   [1, 'Open thermocouple'],
   [2, 'Short to GND'],
@@ -120,9 +124,7 @@ const el = {
   exportRange: $('[data-role="export-range"]'),
   exportNote: $('[data-role="export-note"]'),
   dataStatus: $('[data-role="data-status"]'),
-  noiseEnabled: $('[data-role="noise-enabled"]'),
-  noiseThreshold: $('[data-role="noise-threshold"]'),
-  noiseStatus: $('[data-role="noise-status"]'),
+  notice: $('[data-role="notice"]'),
 };
 
 const state = {
@@ -135,6 +137,7 @@ const state = {
   failures: 0,
   reason: null,
   windowSeconds: DEFAULT_WINDOW,
+  windowStored: false,
   theme: document.documentElement.dataset.themePreference ?? 'system',
   bounds: null,
   boundsError: null,
@@ -160,7 +163,7 @@ const clock = { skewMs: 0 };
 const lastGoodTemps = [null, null, null, null];
 
 const noiseFilter = new TemperatureDropFilter();
-const NOISE_STORAGE_KEY = 'furnace.noise-filter';
+let dashboardSettings = { ...DEFAULT_DASHBOARD };
 
 let chart = null;
 let historyRequest = 0;
@@ -615,6 +618,8 @@ function selectWindow(seconds, { persist = true } = {}) {
   }
 
   if (persist) {
+    state.windowStored = true;
+
     try {
       localStorage.setItem(WINDOW_STORAGE_KEY, String(seconds));
     } catch {
@@ -709,52 +714,55 @@ function applyTheme(preference, { persist = true } = {}) {
   chart?.setTheme();
 }
 
-/** Keep the typed drop threshold a whole percentage inside the allowed range. */
-function normalizeThreshold(value, fallback = 60) {
-  const numeric = Number(value);
+/**
+ * Apply the operator's public-dashboard settings. The threshold is no longer
+ * read from localStorage and has no control on this page: an operator changes
+ * it once in the admin panel and every visitor gets the same filter.
+ */
+function applyDashboardSettings(settings) {
+  const threshold = Number(settings?.noise_threshold);
+  dashboardSettings = {
+    ...DEFAULT_DASHBOARD,
+    ...settings,
+    noise_threshold: Number.isFinite(threshold)
+      ? Math.min(95, Math.max(5, Math.round(threshold)))
+      : DEFAULT_DASHBOARD.noise_threshold,
+  };
+  noiseFilter.configure({
+    enabled: dashboardSettings.noise_enabled !== false,
+    threshold: dashboardSettings.noise_threshold,
+  });
 
-  return Number.isFinite(numeric)
-    ? Math.min(MAX_THRESHOLD, Math.max(MIN_THRESHOLD, Math.round(numeric)))
-    : fallback;
-}
-
-function noiseStatusText(enabled, threshold) {
-  return `${enabled ? 'Enabled' : 'Disabled'} · ${enabled ? `ignores isolated drops of ${threshold}% or more` : 'all readings shown'}; raw samples and timer are unchanged.`;
-}
-
-function loadNoiseSettings() {
-  let saved = null;
-  try {
-    saved = JSON.parse(localStorage.getItem(NOISE_STORAGE_KEY) ?? 'null');
-  } catch {
-    saved = null;
-  }
-  const enabled = saved?.enabled !== false;
-  const threshold = normalizeThreshold(saved?.threshold ?? 60);
-  noiseFilter.configure({ enabled, threshold });
-  el.noiseEnabled.checked = enabled;
-  el.noiseThreshold.value = String(threshold);
-  setText(el.noiseStatus, noiseStatusText(enabled, threshold));
-  return { enabled, threshold };
-}
-
-function saveNoiseSettings() {
-  const enabled = el.noiseEnabled.checked;
-  const threshold = normalizeThreshold(el.noiseThreshold.value);
-  el.noiseThreshold.value = String(threshold);
-  noiseFilter.configure({ enabled, threshold });
-
-  try {
-    localStorage.setItem(NOISE_STORAGE_KEY, JSON.stringify({ enabled, threshold }));
-  } catch {
-    // Keep applying settings for this page even if storage is unavailable.
+  if (el.notice) {
+    const notice = String(dashboardSettings.notice ?? '').trim();
+    el.notice.textContent = notice;
+    el.notice.hidden = notice === '';
   }
 
-  // Retain the displayed value as the new baseline. Changing settings during
-  // a pending spike won't suddenly reveal it; future frames use the new rule.
-  noiseFilter.reset(state.latest?.temps ?? []);
-  setText(el.noiseStatus, noiseStatusText(enabled, threshold));
-  toast(`Noise filter ${enabled ? 'enabled' : 'disabled'}`);
+  // A first visit follows the operator's default. A window the visitor chose
+  // stays put, including across reloads from localStorage.
+  const defaultWindow = Number(dashboardSettings.default_window_s);
+  if (!state.windowStored && WINDOWS.includes(defaultWindow) && defaultWindow !== state.windowSeconds) {
+    state.windowSeconds = defaultWindow;
+    for (const button of el.windowButtons) {
+      button.setAttribute('aria-pressed', String(Number(button.dataset.window) === defaultWindow));
+    }
+    if (state.run) {
+      loadHistory();
+    }
+  }
+}
+
+async function loadDashboardSettings() {
+  try {
+    const payload = await api.dashboard();
+    applyDashboardSettings(payload?.settings ?? DEFAULT_DASHBOARD);
+  } catch (error) {
+    // The live view must work even if this small settings request fails; the
+    // built-in defaults keep the filter conservative.
+    applyDashboardSettings(DEFAULT_DASHBOARD);
+    console.warn('[dashboard settings]', error.message);
+  }
 }
 
 lightQuery.addEventListener('change', () => {
@@ -1267,8 +1275,6 @@ async function startNewRun() {
     state.rawLatest = null;
     state.filteredLatest = null;
     state.lastPayload = null;
-    const noiseSettings = loadNoiseSettings();
-    noiseFilter.configure(noiseSettings);
     noiseFilter.reset();
     resetClock();
     chart?.clear();
@@ -1336,9 +1342,6 @@ function bindEvents() {
     button.addEventListener('click', () => applyTheme(button.dataset.themeChoice));
   }
 
-  el.noiseEnabled.addEventListener('change', saveNoiseSettings);
-  el.noiseThreshold.addEventListener('change', saveNoiseSettings);
-
   el.newRun.addEventListener('click', startNewRun);
 
   for (const button of el.rangePresets) {
@@ -1374,6 +1377,8 @@ function bindEvents() {
     button.addEventListener('click', () => selectWindow(Number(button.dataset.window)));
   }
 
+
+
   for (const button of el.legendButtons) {
     button.addEventListener('click', () => {
       const index = Number(button.dataset.legend);
@@ -1406,7 +1411,8 @@ function bindEvents() {
 
 function bootstrap() {
   applyTheme(state.theme, { persist: false });
-  loadNoiseSettings();
+  applyDashboardSettings(DEFAULT_DASHBOARD);
+  void loadDashboardSettings();
 
   try {
     chart = new TemperatureChart(el.canvas, CHANNELS);
@@ -1425,7 +1431,8 @@ function bootstrap() {
     storedWindow = null;
   }
 
-  state.windowSeconds = WINDOWS.includes(storedWindow) ? storedWindow : DEFAULT_WINDOW;
+  state.windowStored = WINDOWS.includes(storedWindow);
+  state.windowSeconds = state.windowStored ? storedWindow : DEFAULT_WINDOW;
 
   for (const button of el.windowButtons) {
     button.setAttribute(

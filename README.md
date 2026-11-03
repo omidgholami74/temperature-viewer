@@ -313,6 +313,10 @@ phones keep the old HTML.
 5. **Cron** — run `php backend/bin/maintenance.php --all` once a minute on the
    API host for rollups and retention.
 
+For a **single-origin** deployment that serves the dashboard and the API from
+one host (no CORS and one certificate), use the wrapper in
+[`fullstack/README.md`](fullstack/README.md).
+
 Detailed Apache/Nginx examples and security notes are in
 [backend/README.md](backend/README.md#deployment) and
 [ui/README.md](ui/README.md#hosting).

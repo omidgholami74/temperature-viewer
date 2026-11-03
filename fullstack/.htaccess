@@ -1,0 +1,34 @@
+# Point the virtual host DocumentRoot at this directory.
+#
+# Existing files are served directly (config.js). Everything else, including
+# /api/* and the UI assets, goes through index.php so the application has one
+# front door on one origin.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [QSA,L]
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set X-Frame-Options "DENY"
+</IfModule>
+
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css "access plus 5 minutes"
+    ExpiresByType text/javascript "access plus 5 minutes"
+    ExpiresByType image/png "access plus 1 hour"
+    ExpiresByType image/svg+xml "access plus 1 hour"
+</IfModule>
+
+<Files "config.js">
+    <IfModule mod_headers.c>
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+    </IfModule>
+</Files>
+
+Options -Indexes
+DirectoryIndex index.php

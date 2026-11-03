@@ -156,6 +156,42 @@ def split_url(url):
     return host, port, path, scheme == "https"
 
 
+def api_base_path(path):
+    """Root for heartbeat/OTA, also when API_URL includes ``/api/ingest``.
+
+    ``API_URL`` historically meant the API host, but many boards were flashed
+    with the complete ingest URL instead. Heartbeat and OTA must never turn
+    that into ``/api/ingest/api/...``. A proxy prefix (for example ``/furnace``)
+    is still kept as the API root.
+    """
+    prefix = "" if not path or path == "/" else path.rstrip("/")
+
+    if prefix.endswith(INGEST_PATH):
+        prefix = prefix[:-len(INGEST_PATH)]
+
+    if prefix.endswith("/api"):
+        prefix = prefix[:-4]
+
+    return prefix.rstrip("/")
+
+
+def api_ingest_path(path):
+    """The POST path, accepting a host, ``/api`` or the complete ingest URL."""
+    prefix = "" if not path or path == "/" else path.rstrip("/")
+
+    if prefix.endswith(INGEST_PATH):
+        return prefix
+
+    if prefix == "":
+        return INGEST_PATH
+
+    if prefix.endswith("/api"):
+        return prefix[:-4] + INGEST_PATH
+
+    # An arbitrary path is a proxy endpoint and keeps its old exact meaning.
+    return prefix
+
+
 def _clean(value):
     """A temperature for JSON: ``None`` for a fault, otherwise two decimals."""
     if value is None:
@@ -184,9 +220,9 @@ class Ingest:
         host, port, path, use_tls = split_url(config.API_URL)
         self.host = host
         self.port = port
-        # API_URL is the API host, so the endpoint is added here. A full path in
-        # API_URL (a proxy, another route) is used as given.
-        self.path = path if path not in ("", "/") else INGEST_PATH
+        # API_URL is usually the API host, so the endpoint is added here. A
+        # complete /api/ingest URL, /api, or a proxy path is accepted too.
+        self.path = api_ingest_path(path)
         self.use_tls = use_tls
         self.key = getattr(config, "API_KEY", "") or ""
         self.timeout = float(getattr(config, "API_TIMEOUT_S", 8))

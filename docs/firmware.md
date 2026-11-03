@@ -52,7 +52,8 @@ about 90 KB, modest for an ESP32-S3 but too much for an ESP8266.
 
 `ingest.py` (MicroPython) or `Uploader` (Arduino) keeps one TCP/TLS connection
 and a host-name cache, then posts `BATCH_SIZE` frames (10 = 1 s) to
-`/api/ingest`. The socket is deliberately short-lived (30 s by default) so a
+`/api/ingest`. `API_URL` can be the host or the complete `/api/ingest` URL;
+heartbeat and OTA normalise it to the API root. The socket is deliberately short-lived (30 s by default) so a
 server or access point that forgets an idle connection cannot leave the board
 writing into a half-open socket. The API anchors a batch without `at` on arrival
 and places the frames back on the 0.1 s grid by uptime, so batching does not

@@ -393,7 +393,8 @@ class Updater:
         self.host = host
         self.port = port
         self.use_tls = use_tls
-        self.prefix = "" if path in ("", "/") else path.rstrip("/")
+        # API_URL may be the host or the complete /api/ingest URL.
+        self.prefix = ingest.api_base_path(path)
 
         self.ready = ""          # version staged and waiting for a reboot
         self.last_error = ""

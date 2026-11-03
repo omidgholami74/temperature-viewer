@@ -146,7 +146,8 @@ class DeviceLink:
         self.host = host
         self.port = port
         self.use_tls = use_tls
-        self.prefix = "" if path in ("", "/") else path.rstrip("/")
+        # Accept API_URL as either the host or the complete /api/ingest URL.
+        self.prefix = ingest.api_base_path(path)
         self.acks = 0
         self.last_error = ""
         self._resolved = None

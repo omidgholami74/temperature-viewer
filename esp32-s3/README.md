@@ -333,6 +333,7 @@ a microcontroller.
 | `WIFI_TIMEOUT_S`| `20`                             | Association timeout at boot                    |
 | `WIFI_RETRY_S`  | `15`                             | Reconnect attempt interval while offline       |
 | `API_URL`       | `https://apitemp.futurefounderco.com` | API host; `/api/ingest` is appended       |
+| `API_URL` note  |                                  | `API_URL` may be the host or the complete `/api/ingest` URL |
 | `API_KEY`       | `""`                             | Must equal `FURNACE_INGEST_KEY` on the server  |
 | `API_TIMEOUT_S` | `8`                              | Socket timeout per request                     |
 | `API_KEEPALIVE_S` | `30`                           | Reuse one TCP/TLS connection for at most this long; `0` = new socket per request |
@@ -443,7 +444,8 @@ python3 -m unittest discover -s esp32-s3/tests -v
 | `Wi-Fi: no association…` | The network is 2.4 GHz, the password is right, the access point allows new clients. A 5 GHz-only SSID is invisible to this chip. |
 | `API: … not sent: [Errno 103] ECONNABORTED` / `-202` | The API host is unreachable from that network; check `API_URL` and DNS (`socket.getaddrinfo`), not the dashboard host. |
 | `API 401` | `API_KEY` does not match `FURNACE_INGEST_KEY`. The key is kept and retried, so fix the config and restart. |
-| `API 404` | `API_URL` points at the dashboard or at a path without `/api/ingest`. |
+| `API 404` | `API_URL` points at the dashboard (use the `apitemp` API host) or at a path without `/api/ingest`. A complete `/api/ingest` URL is accepted; heartbeat/OTA strip it automatically. |
+| `Source upload 503` / no bundles in Firmware | The server has no `FURNACE_ADMIN_KEY`. Set it in the PHP/LiteSpeed environment, then upload the bundle from the panel or deploy `tools/publish.py` output. Without it source upload is disabled by design. |
 | `API: TLS certificate not verified` | Expected with `TLS_VERIFY = False`; the connection is encrypted but unverified. A handshake failure instead means the CA is not in the axtls bundle — use `http://` or `TLS_VERIFY = False`. |
 | `API: … ENOMEM` / `heartbeat failed: ENOMEM` | The heap is short while mbedTLS opens a connection. The firmware now sends only `BATCH_SIZE` samples per request, runs one TLS session at a time and trims the oldest queued samples under memory pressure. If it repeats, use `http://` for a test, lower `BUFFER_LIMIT`, or reduce `BATCH_SIZE`. |
 | Board reports online but no new samples arrive | The Wi-Fi association can be half-open. The firmware retires keep-alive sockets after 30 s, bounds every read with `API_TIMEOUT_S`, and force-reassociates Wi-Fi after 60 s without a successful upload; watch for `# network: uploads stalled, resetting Wi-Fi` and `# API: check …` on the console. |

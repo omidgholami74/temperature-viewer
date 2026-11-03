@@ -211,6 +211,15 @@ class IngestTests(unittest.TestCase):
             ("box.local", 80, "/", False),
         )
 
+        for path in ("/", "", "/api", "/api/ingest"):
+            self.assertEqual(ingest.api_base_path(path), "", "base path for %r" % (path,))
+
+        self.assertEqual(ingest.api_base_path("/furnace/api/ingest"), "/furnace")
+        self.assertEqual(ingest.api_ingest_path("/"), "/api/ingest")
+        self.assertEqual(ingest.api_ingest_path("/api"), "/api/ingest")
+        self.assertEqual(ingest.api_ingest_path("/api/ingest"), "/api/ingest")
+        self.assertEqual(ingest.api_ingest_path("/furnace"), "/furnace")
+
         for bad in ("apitemp.example.com", "ftp://host/x", "http:///x"):
             with self.assertRaises(ValueError):
                 ingest.split_url(bad)
@@ -1171,6 +1180,11 @@ class OtaClientTests(unittest.TestCase):
 
         return ota.Updater(types.SimpleNamespace(**values), root=self.root, log=lambda *_: None)
 
+    def test_a_full_ingest_url_keeps_the_ota_endpoint_at_the_api_root(self):
+        updater = self.updater(API_URL="http://127.0.0.1:%d/api/ingest" % (self.port,))
+
+        self.assertEqual(updater.manifest_url(), "/api/firmware/manifest?channel=max31855")
+
     def test_a_bundle_is_downloaded_verified_and_staged(self):
         updater = self.updater()
 
@@ -1436,6 +1450,14 @@ class DeviceLinkTests(unittest.TestCase):
     def test_an_invalid_device_id_is_rejected(self):
         with self.assertRaises(ValueError):
             self.make(DEVICE_ID="../esp32")
+
+    def test_a_full_ingest_url_keeps_the_heartbeat_at_the_api_root(self):
+        # Boards are often flashed with the complete ingest URL. Heartbeat and
+        # OTA must not append their paths below /api/ingest.
+        link, _ = self.make(API_URL="http://127.0.0.1:9/api/ingest")
+
+        self.assertEqual(link._address("heartbeat"), "/api/device/heartbeat")
+        self.assertEqual(link._address("ack"), "/api/device/ack")
 
     def test_a_wifi_command_is_saved_and_acknowledged(self):
         link, _ = self.make()

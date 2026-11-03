@@ -10,8 +10,9 @@ WIFI_RETRY_S = 15                 # re-association attempt interval at runtime
 
 # --- API (the board talks to the PHP API directly) -----------------------
 # No PC in the middle: the firmware POSTs to /api/ingest itself.
-# Use the API host, not the dashboard host. "/api/ingest" is appended, so a
-# URL that already ends in a path (a proxy) is used exactly as written.
+# Use the API host, not the dashboard host. "/api/ingest" is appended, but the
+# complete endpoint (https://host/api/ingest) is accepted too. A different path
+# is treated as a proxy endpoint and used exactly as written.
 API_URL = "https://apitemp.futurefounderco.com"
 # Must equal FURNACE_INGEST_KEY on the server; empty when the API is open.
 API_KEY = ""

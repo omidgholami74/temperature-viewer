@@ -217,7 +217,7 @@ def session(watch):
                 temperature, fault = read_channel(sensor)
 
                 if temperature is not None:
-                    temperature += channel["offset"]
+                    temperature += settings_module.offset_for(channel, temperature)
 
                 temperatures.append(temperature)
                 faults.append(fault)

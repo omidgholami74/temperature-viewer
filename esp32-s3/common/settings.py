@@ -29,6 +29,7 @@ DEFAULTS = {
 }
 
 MAX_CHANNELS = 4
+MAX_OFFSET_RANGES = 12
 FILE_NAME = "settings.json"
 
 
@@ -111,10 +112,69 @@ class Settings:
                 raise SettingsError("channel %d enabled must be true or false" % (number,))
 
             offset = _number(entry.get("offset", 0.0), "channel %d offset" % (number,), -200.0, 200.0)
+            ranges = self._parse_ranges(entry.get("offset_ranges", []), number)
             seen[number] = True
-            parsed.append({"channel": number, "enabled": enabled, "offset": offset})
+            parsed.append({
+                "channel": number,
+                "enabled": enabled,
+                "offset": offset,
+                "offset_ranges": ranges,
+            })
 
         parsed.sort(key=lambda item: item["channel"])
+        return parsed
+
+    def _parse_ranges(self, raw, channel):
+        """Validate temperature-band overrides for one channel.
+
+        A band is half-open: ``min <= temperature < max``. Bands are sorted and
+        must not overlap, so a reading can never receive two corrections.
+        """
+        if raw is None:
+            return []
+
+        if not isinstance(raw, (list, tuple)):
+            raise SettingsError("channel %d offset_ranges must be a list" % (channel,))
+
+        if len(raw) > MAX_OFFSET_RANGES:
+            raise SettingsError("channel %d has too many offset ranges" % (channel,))
+
+        parsed = []
+
+        for entry in raw:
+            if not isinstance(entry, dict):
+                raise SettingsError("channel %d offset range must be an object" % (channel,))
+
+            low = _number(
+                entry.get("min"),
+                "channel %d offset range min" % (channel,),
+                -270.0,
+                1800.0,
+            )
+            high = _number(
+                entry.get("max"),
+                "channel %d offset range max" % (channel,),
+                -270.0,
+                1800.0,
+            )
+
+            if low >= high:
+                raise SettingsError("channel %d offset range min must be below max" % (channel,))
+
+            offset = _number(
+                entry.get("offset", 0.0),
+                "channel %d offset range offset" % (channel,),
+                -200.0,
+                200.0,
+            )
+            parsed.append({"min": low, "max": high, "offset": offset})
+
+        parsed.sort(key=lambda item: item["min"])
+
+        for index in range(1, len(parsed)):
+            if parsed[index]["min"] < parsed[index - 1]["max"]:
+                raise SettingsError("channel %d offset ranges must not overlap" % (channel,))
+
         return parsed
 
     def _normalize(self, data):
@@ -212,4 +272,23 @@ class Settings:
             if entry["channel"] == number:
                 return entry
 
-        return {"channel": number, "enabled": False, "offset": 0.0}
+        return {"channel": number, "enabled": False, "offset": 0.0, "offset_ranges": []}
+
+
+def offset_for(channel, temperature):
+    """Calibration offset for a channel at one raw reading.
+
+    A band replaces the scalar fallback; outside every band the channel's
+    normal offset applies. Faulted readings are filtered out by the sampler
+    before this function is called, so a bad frame is never made plausible.
+    """
+    try:
+        value = float(temperature)
+    except (TypeError, ValueError):
+        return 0.0
+
+    for band in channel.get("offset_ranges", []):
+        if band["min"] <= value < band["max"]:
+            return band["offset"]
+
+    return channel.get("offset", 0.0)

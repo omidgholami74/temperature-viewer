@@ -53,6 +53,12 @@ extreme, CSV export with its own date picker, and an installable PWA manifest.
 - Shows the four temperatures as colour-coded cards under the timer and as four
   live lines on the chart beneath them. Each card is outlined in its chart
   colour.
+- Calibrates each furnace with a base offset plus up to **12 temperature bands**,
+  so the correction can change across the working range; bands are edited in the
+  admin panel and applied on the board before serial and upload.
+- Keeps the **network, OTA and boot core** off-limits to browser uploads, so an
+  application or helper module can be replaced without removing the board's
+  recovery path. `boot.py` arms a watchdog before `main.py` is imported.
 - A **Settings** button opens a dialog with theme switching, per-furnace range
   analysis (coldest, hottest, average, min/max per furnace), CSV export with
   presets or custom date pickers, and the app-install action.

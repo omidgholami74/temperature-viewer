@@ -94,12 +94,21 @@ final class Database
             $pdo->exec('ALTER TABLE device_channels ADD COLUMN offset REAL NOT NULL DEFAULT 0');
         }
 
-        // Version 5 adds the operator profile table. It is created by
+        if (!in_array('offset_ranges', $channelNames, true)) {
+            $pdo->exec("ALTER TABLE device_channels ADD COLUMN offset_ranges TEXT NOT NULL DEFAULT '[]'");
+        }
+
+        // Version 5 adds the operator profile table. Version 6 adds the
+        // temperature-band calibration on each channel. Both are created by
         // schema.sql; the version marker is what makes the change auditable.
         $version = (int) (self::meta($pdo, 'schema_version') ?? 0);
 
         if ($version < 5) {
             self::setMeta($pdo, 'schema_version', '5');
+        }
+
+        if ($version < 6) {
+            self::setMeta($pdo, 'schema_version', '6');
         }
     }
 

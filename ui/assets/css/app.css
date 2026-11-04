@@ -1881,3 +1881,233 @@ input[type="datetime-local"]:focus-visible {
 :root[data-theme="light"] .dialog::backdrop {
   background: rgba(12, 25, 38, 0.38);
 }
+
+/* -------------------------------------------------------------------------
+   Control-deck finish
+   A warm industrial palette over the same one-screen layout. The rules below
+   are deliberately additive: the responsive grid and all behaviour stay in
+   the component rules above.
+   ------------------------------------------------------------------------- */
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(50% 36% at 50% 52%, transparent 45%, rgba(0, 0, 0, 0.2) 100%),
+    linear-gradient(180deg, transparent 70%, rgba(0, 0, 0, 0.16));
+}
+
+.app-shell {
+  max-width: 1680px;
+  gap: clamp(8px, 1.15vh, 18px);
+}
+
+.app-bar {
+  align-items: flex-start;
+  padding-bottom: clamp(5px, 0.8vh, 11px);
+  border-bottom: 1px solid var(--line-faint);
+}
+
+.brand {
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.brand__logo {
+  width: 48px;
+  height: 48px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+  object-fit: contain;
+  padding: 5px;
+}
+
+.brand h1 {
+  font-size: clamp(17px, 1.65vw, 24px);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.brand__tagline {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.brand__divider {
+  color: var(--accent);
+  opacity: 0.7;
+}
+
+.brand__text .eyebrow {
+  color: color-mix(in srgb, var(--accent) 78%, var(--text-2));
+  letter-spacing: 0.16em;
+}
+
+.status {
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
+  background: color-mix(in srgb, var(--surface-2) 58%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
+}
+
+.panel {
+  border-color: color-mix(in srgb, var(--line) 82%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 28px 60px -38px rgba(0, 0, 0, 0.95);
+}
+
+.timer-card {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 28%),
+    var(--panel-bg);
+}
+
+.timer-card::after {
+  content: "LIVE THERMAL WINDOW";
+  position: absolute;
+  top: clamp(10px, 1.5vh, 21px);
+  right: clamp(14px, 2vw, 28px);
+  color: color-mix(in srgb, var(--accent) 56%, transparent);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  pointer-events: none;
+}
+
+.timer-display {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    inset 0 -36px 70px -42px rgba(0, 0, 0, 0.95),
+    0 0 48px -26px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.counter__digits {
+  color: color-mix(in srgb, var(--text-1) 88%, var(--accent));
+  text-shadow: 0 0 52px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.furnace-grid {
+  gap: clamp(7px, 0.85vw, 14px);
+}
+
+.furnace-card {
+  --heat: color-mix(in srgb, var(--channel) 9%, transparent);
+  isolation: isolate;
+  border-radius: 17px;
+  background:
+    radial-gradient(130% 95% at 100% 0%, var(--heat), transparent 62%),
+    linear-gradient(158deg, var(--surface-2), var(--surface-1) 72%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 18px 34px -28px rgba(0, 0, 0, 0.95);
+}
+
+.furnace-card::before {
+  height: 2px;
+  opacity: 0.95;
+}
+
+.furnace-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(180deg, transparent 55%, var(--heat));
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.furnace-card[data-level="hot"] {
+  --heat: color-mix(in srgb, var(--ch-1) 23%, transparent);
+}
+
+.furnace-card[data-level="warm"] {
+  --heat: color-mix(in srgb, var(--ch-3) 14%, transparent);
+}
+
+.furnace-card[data-level="cool"] {
+  --heat: color-mix(in srgb, var(--ch-2) 12%, transparent);
+}
+
+.furnace-card.is-fault {
+  border-color: color-mix(in srgb, var(--danger) 52%, var(--line));
+}
+
+.furnace-card__value {
+  font-size: clamp(26px, min(3.25vw, 4.8vh), 46px);
+  font-weight: 650;
+}
+
+.furnace-card__name {
+  letter-spacing: 0.14em;
+}
+
+.alarm-bar {
+  margin: 0;
+  padding: 8px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 42%, transparent);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--danger) 13%, transparent), transparent),
+    color-mix(in srgb, var(--surface-2) 80%, transparent);
+  color: color-mix(in srgb, var(--danger) 82%, var(--text-1));
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
+.chart-card {
+  border-color: color-mix(in srgb, var(--info) 12%, var(--line));
+}
+
+.legend__item {
+  background: color-mix(in srgb, var(--surface-2) 48%, transparent);
+}
+
+.legend__item[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--channel) 30%, var(--line));
+}
+
+@media (max-width: 720px) {
+  .brand__tagline,
+  .timer-card::after {
+    display: none;
+  }
+
+  .brand__logo {
+    width: 42px;
+    height: 42px;
+  }
+}
+
+@media (max-height: 760px) {
+  .brand__tagline {
+    display: none;
+  }
+}
+
+:root[data-theme="light"] .brand__logo {
+  background: #ffffff;
+}
+
+:root[data-theme="light"] .alarm-bar {
+  color: #9f1239;
+}
+
+:root[data-theme="light"] .status,
+:root[data-theme="light"] .legend__item {
+  background: rgba(255, 255, 255, 0.72);
+}

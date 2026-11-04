@@ -103,13 +103,20 @@ ms,furnace1,furnace2,furnace3
 - One frame per 100 ms, batched as described in the
   [ESP32-S3 README](../README.md#behaviour).
 
-## Per-furnace offset (fixed calibration)
+## Per-furnace offset and temperature bands
 
-A probe rarely reads the exact temperature, and the error is usually constant:
-a cold-junction error, a probe lying against the wall of the chamber, or a long
-lead. Set the offset per furnace in the **Furnaces** panel of
+A probe rarely reads the exact temperature, and the error is often not constant
+across the whole furnace range: a cold-junction error, a probe lying against the
+wall of the chamber, or a long lead can change its contribution as the furnace
+heats. Set the **base offset** per furnace in the **Furnaces** panel of
 [`ui/admin.html`](../../ui/admin.html); the board stores it in `/settings.json`
 and applies it to the CSV, the uploaded sample and the dashboard.
+
+If one offset is not enough, add up to 12 **temperature bands** in the same
+panel. Each band is `{min, max, offset}`; its range is half-open
+(`min <= reading < max`) and it replaces the base offset inside that range.
+Bands may touch but not overlap. This lets a cold furnace and a hot furnace use
+different corrections without reflashing.
 
 `CHANNEL_OFFSETS` in [`main.py`](main.py) is now only the first-boot/default
 fallback, useful when the board runs without the server:

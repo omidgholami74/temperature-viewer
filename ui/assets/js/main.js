@@ -1,5 +1,5 @@
 import { API_LABEL, api, probeApi } from './api.js';
-import { TemperatureChart } from './chart-panel.js?v=10';
+import { TemperatureChart } from './chart-panel.js?v=11';
 import { LiveFeed } from './feed.js';
 import { TemperatureDropFilter } from './drop-filter.js';
 import {
@@ -15,10 +15,10 @@ import {
 } from './format.js';
 
 const CHANNELS = [
-  { name: 'Furnace 1', fallback: '#38e0a5' },
-  { name: 'Furnace 2', fallback: '#49bdf0' },
-  { name: 'Furnace 3', fallback: '#f3b45a' },
-  { name: 'Furnace 4', fallback: '#b491ff' },
+  { name: 'Furnace 1', fallback: '#ffb257' },
+  { name: 'Furnace 2', fallback: '#5ad7ff' },
+  { name: 'Furnace 3', fallback: '#ff7d8a' },
+  { name: 'Furnace 4', fallback: '#b999ff' },
 ];
 
 const WINDOWS = [60, 600, 3600, 21600, 86400, 0];
@@ -125,6 +125,7 @@ const el = {
   exportNote: $('[data-role="export-note"]'),
   dataStatus: $('[data-role="data-status"]'),
   notice: $('[data-role="notice"]'),
+  alarm: $('[data-role="alarm"]'),
 };
 
 const state = {
@@ -316,6 +317,14 @@ function renderCards(latest) {
 
     setText(card.value, formatTemp(value));
     card.root.classList.toggle('is-held', held);
+    card.root.classList.toggle('is-fault', fault !== 0);
+    card.root.dataset.level = value === null || value === undefined
+      ? 'empty'
+      : Number(value) >= 1000
+        ? 'hot'
+        : Number(value) >= 400
+          ? 'warm'
+          : 'cool';
     // The fault reason lives in the tooltip instead of the card face.
     card.root.title = fault ? faultText(fault) : '';
     card.fault.hidden = !held;
@@ -339,6 +348,24 @@ function renderCards(latest) {
       : '';
     setText(card.delta, Number.isFinite(delta) ? `10 s ${formatDelta(delta)}` : '10 s change —');
   });
+
+  updateAlarm(latest);
+}
+
+function updateAlarm(latest) {
+  if (!el.alarm) {
+    return;
+  }
+
+  const faults = Array.isArray(latest?.faults) ? latest.faults : [];
+  const active = faults
+    .map((bits, index) => (Number(bits) ? `Furnace ${index + 1}: ${faultText(Number(bits))}` : ''))
+    .filter(Boolean);
+
+  el.alarm.hidden = active.length === 0;
+  el.alarm.textContent = active.length
+    ? `Sensor attention · ${active.join('  /  ')}`
+    : '';
 }
 
 function updateLegend(latest) {
@@ -719,7 +746,7 @@ function applyTheme(preference, { persist = true } = {}) {
   document.documentElement.dataset.themePreference = safe;
 
   if (el.themeColor) {
-    el.themeColor.content = resolved === 'light' ? '#eef3f9' : '#04080d';
+    el.themeColor.content = resolved === 'light' ? '#f5efe7' : '#070a0e';
   }
 
   for (const button of el.themeButtons) {

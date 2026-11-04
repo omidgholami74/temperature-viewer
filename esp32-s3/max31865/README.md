@@ -98,10 +98,12 @@ mpremote connect COM6 repl
 
 ## Live settings and driver
 
-Frame interval, heartbeat, and each channel's enabled flag/offset can be changed
-from the **Module** and **Furnaces** panels in [`ui/admin.html`](../../ui/admin.html);
-the board saves them in `/settings.json`. The RTD driver keeps its own 50/60 Hz
-notch filter, so the MAX31855 noise settings do not apply here.
+Frame interval, heartbeat, and each channel's enabled flag, base offset and
+temperature bands can be changed from the **Module** and **Furnaces** panels in
+[`ui/admin.html`](../../ui/admin.html); the board saves them in `/settings.json`.
+A band is half-open and replaces the base offset inside its range. The RTD
+driver keeps its own 50/60 Hz notch filter, so the MAX31855 noise settings do
+not apply here.
 
 [`max31865.py`](max31865.py) is self-contained (no `mip install`):
 
@@ -131,7 +133,8 @@ notch filter, so the MAX31855 noise settings do not apply here.
   air that is negligible; in a probe pocket it is well below the sensor's limit.
 - The board's `R_REF` tolerance is usually 0.1 %; for a real calibration offset,
   put the probe in ice water (0 °C) and boiling water (~100 °C at your altitude)
-  and note the error. Correct it in the dashboard or subtract it from `read()`.
+  and note the error. Correct the base offset in the dashboard, or add a
+  temperature band when the error differs between those points.
 
 ## Troubleshooting
 

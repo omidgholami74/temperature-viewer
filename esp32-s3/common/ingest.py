@@ -616,7 +616,10 @@ class Ingest:
 
         self._low_memory = False
 
-        if status == 200:
+        # Proxies and LiteSpeed sometimes answer a successful write with 202
+        # (Accepted) or 204 (No Content). The old code demanded exactly 200,
+        # which kept a successfully stored batch in the queue forever.
+        if 200 <= status < 300:
             self.sent += len(samples)
             self.failures = 0
             self.last_error = ""

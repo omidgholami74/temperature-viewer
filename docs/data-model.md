@@ -54,9 +54,16 @@ default) after raw rows are pruned.
 
 ### `devices`, `device_channels`, `device_commands`, `device_events`
 
-The board registry, operator labels/offsets, queued commands and the connection
-log. `devices.last_seen_ms` drives online/offline; the settings snapshot is
-returned on every heartbeat so a reflashed board can recover it.
+The board registry, operator labels, calibration, queued commands and the
+connection log. `devices.last_seen_ms` drives online/offline; the settings
+snapshot is returned on every heartbeat so a reflashed board can recover it.
+
+`device_channels.offset` is the base calibration offset. `offset_ranges` is a
+JSON list of `{min, max, offset}` temperature bands: the first band containing
+the raw reading replaces the base offset, and the range is half-open
+(`min <= t < max`). Bands are sorted, may touch but not overlap, and are limited
+to 12 per channel. This keeps one probe accurate across a nonlinear working
+range without storing a correction for every sample.
 
 ### `device_profiles`
 
@@ -149,9 +156,9 @@ newest **recorded** sample, not to `now`.
 ## Migrations and backups
 
 * The schema is created idempotently at boot and versioned in `meta`
-  (`schema_version = 5`, which adds the device registry, live settings,
-  per-channel offsets and operator profiles). Schema changes run before the API
-  serves a request.
+  (`schema_version = 6`, which adds the device registry, live settings,
+  per-channel base offsets, temperature-band offsets and operator profiles).
+  Schema changes run before the API serves a request.
 * Back up by copying the SQLite file while the API is idle, or with
   `sqlite3 backend/var/furnace.sqlite ".backup backup.sqlite"`.
 * `--vacuum` in the maintenance job reclaims space after a large prune; it needs

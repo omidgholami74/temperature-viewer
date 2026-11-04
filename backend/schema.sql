@@ -84,6 +84,9 @@ CREATE TABLE IF NOT EXISTS device_channels (
     present   INTEGER NOT NULL DEFAULT 0,
     enabled   INTEGER NOT NULL DEFAULT 1,
     offset    REAL NOT NULL DEFAULT 0,
+    -- JSON list of {min, max, offset} bands. The first matching band wins;
+    -- the scalar offset above remains the fallback outside every band.
+    offset_ranges TEXT NOT NULL DEFAULT '[]',
     PRIMARY KEY (device_id, channel)
 );
 
@@ -123,5 +126,5 @@ CREATE TABLE IF NOT EXISTS device_profiles (
     updated_at_ms  INTEGER NOT NULL
 );
 
-INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '5');
+INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '6');
 INSERT OR IGNORE INTO meta (key, value) VALUES ('last_rollup_ms', '0');

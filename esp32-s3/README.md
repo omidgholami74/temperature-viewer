@@ -353,11 +353,13 @@ a microcontroller.
 
 The panel can change the frame interval (`50–60000 ms`), noise filter window
 (`1–9` reads), read gap (`0–50000 µs`), EMA alpha (`0.05–1.0`), heartbeat
-(`5–3600 s`) and each channel's enabled flag/offset without a reflash. The board
-writes `/settings.json` and applies the change on the next frame; the file
-survives a reboot, and the heartbeat re-sends the snapshot if the file is lost.
-`config.py` and the constants in `main.py` remain the fallback defaults. A
-faulted or disabled channel is never offset.
+(`5–3600 s`) and each channel's enabled flag, base offset and up to 12
+temperature bands without a reflash. The board writes `/settings.json` and
+applies the change on the next frame; the file survives a reboot, and the
+heartbeat re-sends the snapshot if the file is lost. A band is half-open
+(`min <= t < max`) and replaces the base offset inside that range. `config.py`
+and the constants in `main.py` remain the fallback defaults. A faulted or
+disabled channel is never offset.
 | `HEARTBEAT_S`   | `15`                             | Report + command interval                      |
 | `OTA_ENABLED`   | `True`                           | Allow remote updates                           |
 | `OTA_CHANNEL`   | `max31855`                       | Which published bundle this board runs         |
@@ -411,11 +413,14 @@ CA is in the bundle. `http://` also works and skips TLS entirely.
 - **Wi-Fi.** A dropped link is retried every `WIFI_RETRY_S`; sampling and
   buffering never stop. When the link comes back and NTP was never synced, the
   clock is fetched at that moment.
-- **Unattended.** The hardware watchdog is fed once per sample and during Wi-Fi
-  waits, so a hang reboots the board instead of freezing it; a crash inside a
-  session is logged and the session is rebuilt with a 5–60 s backoff; a dead or
-  stalled upload/heartbeat thread is restarted by the loop. No keyboard, no reset
-  button and no computer are needed after the first upload of the five files.
+- **Unattended.** `boot.py` arms the hardware watchdog before `main.py` is
+  imported, so even an import-time syntax/runtime error cannot freeze the board
+  at a REPL. `supervisor.py` reuses that one WDT and feeds it once per sample and
+  during Wi-Fi waits; a hang reboots the board instead of freezing it. A crash
+  inside a session is logged and the session is rebuilt with a 5–60 s backoff; a
+  dead or stalled upload/heartbeat thread is restarted by the loop. No keyboard,
+  no reset button and no computer are needed after the first upload of the
+  application files.
 - **One board per run.** Two boards streaming into the same run interleave
   their frames on the same 0.1 s grid and both count toward the working rate,
   so keep one board per run (or a separate database per furnace group).

@@ -77,8 +77,19 @@ class Watchdog:
         if machine is None or not hasattr(machine, "WDT"):
             return
 
+        # boot.py arms a watchdog before importing main.py, so an import-time
+        # crash cannot freeze the board. The ESP32 WDT is one-shot: a second
+        # constructor would fail or leave that first watchdog unfed. Reuse the
+        # boot instance and let this loop feed it.
+        existing = getattr(machine, "_boot_wdt", None)
+
+        if existing is not None:
+            self.wdt = existing
+            return
+
         try:
             self.wdt = machine.WDT(timeout=int(seconds * 1000))
+            machine._boot_wdt = self.wdt
         except Exception as error:  # a build without the WDT module
             log("# watchdog off: %s" % (error,))
 

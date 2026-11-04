@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#04080d">
+  <meta name="theme-color" content="#06090d">
   <meta name="robots" content="noindex">
   <title>Control room — Furnace Monitor</title>
-  <link rel="stylesheet" href="assets/css/tokens.css">
-  <link rel="stylesheet" href="assets/css/admin.css?v=8">
+  <link rel="stylesheet" href="assets/css/tokens.css?v=8">
+  <link rel="stylesheet" href="assets/css/admin.css?v=10">
   <script src="assets/js/theme-boot.js"></script>
 </head>
 <body>
@@ -188,7 +188,7 @@
     <section class="panel admin-panel admin-panel--wide" id="upload" data-section="04 · Source delivery" data-role="upload-panel" aria-labelledby="upload-title">
       <header class="admin-panel__head">
         <h2 id="upload-title">Upload source bundle</h2>
-        <p>Upload the complete set of <code>.py</code> files for one board variant. The server verifies names and hashes, then swaps the bundle atomically; the board only receives it when you queue an OTA update.</p>
+        <p>Upload application and helper <code>.py</code> files for one board variant. The server verifies names and hashes, then swaps the bundle atomically; the board only receives it when you queue an OTA update. Network and boot core files stay on the board and are refused by the browser uploader, so an accidental bad app upload cannot remove the recovery path.</p>
       </header>
       <div class="settings-grid">
         <label class="field">
@@ -207,12 +207,13 @@
           <span>Release note</span>
           <input class="input" type="text" maxlength="200" placeholder="e.g. quieter MAX31855 filter" data-role="upload-notes">
         </label>
-        <label class="field field--wide">
+        <label class="field field--wide upload-drop">
           <span>Source files</span>
           <input class="input input--file" type="file" accept=".py" multiple data-role="upload-files">
+          <small data-role="upload-list">Choose <code>main.py</code>, a driver or any helper <code>.py</code> module.</small>
         </label>
       </div>
-      <p class="admin-warning">Requires <code>FURNACE_ADMIN_KEY</code>. A bundle must include <code>boot.py</code>, <code>wifi.py</code>, <code>ingest.py</code>, <code>supervisor.py</code>, <code>ota.py</code>, <code>device.py</code>, <code>settings.py</code> and <code>main.py</code>; <code>config.py</code> is never accepted. Uploaded code runs on the board, so only upload files you trust.</p>
+      <p class="admin-warning">Requires <code>FURNACE_ADMIN_KEY</code>. Application files are accepted; <code>boot.py</code>, <code>wifi.py</code>, <code>ingest.py</code>, <code>supervisor.py</code>, <code>ota.py</code>, <code>device.py</code>, <code>settings.py</code> and <code>config.py</code> are protected. The board keeps its working network core, applies the uploaded app, and rolls back if it cannot confirm itself.</p>
       <div class="admin-buttons">
         <button class="btn btn--primary" type="button" data-role="upload-firmware">Upload bundle</button>
       </div>
@@ -222,19 +223,19 @@
       <section class="panel admin-panel" id="furnaces" data-section="05 · Furnaces" aria-labelledby="furnaces-title">
         <header class="admin-panel__head">
           <h2 id="furnaces-title">Furnaces</h2>
-          <p>Labels live on the server and are shown by the dashboard. Enabled and offset are queued to the board: a disabled furnace is an empty slot with no fault, and the offset is added to every valid reading.</p>
+          <p>Labels live on the server and are shown by the dashboard. Enabled and calibration are queued to the board: a disabled furnace is an empty slot with no fault. The base offset applies outside every band; a temperature band replaces it between its min and max.</p>
         </header>
         <label class="field">
           <span>Board</span>
           <select class="input" data-role="channel-device"></select>
         </label>
         <div class="channel-row channel-row--head" aria-hidden="true">
-          <span></span><span>Name</span><span>Offset °C</span><span>Probe</span>
+          <span></span><span>Name</span><span>Base offset °C</span><span>Probe</span>
         </div>
         <div class="channel-editor" data-role="channel-editor"></div>
         <details class="calibrator">
           <summary>Calibration helper</summary>
-          <p class="admin-hint">Enter the real temperature from a reference thermometer and the value currently shown. The new offset is added to the existing offset, so two-point checks can be repeated.</p>
+          <p class="admin-hint">Enter the real temperature from a reference thermometer and the value currently shown. The new offset is added to the base offset, so two-point checks can be repeated. For a nonlinear probe, add one band per working range above.</p>
           <div class="calibrator__grid">
             <label class="field">
               <span>Furnace</span>
@@ -318,6 +319,6 @@
   </div>
 
   <script src="config.js"></script>
-  <script type="module" src="assets/js/admin.js?v=8"></script>
+  <script type="module" src="assets/js/admin.js?v=10"></script>
 </body>
 </html>

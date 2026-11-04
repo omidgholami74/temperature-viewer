@@ -237,6 +237,7 @@ function handleApi(string $method, string $route, array $config): never
             $seen[$number] = true;
             $label = isset($entry['label']) && is_string($entry['label']) ? trim($entry['label']) : '';
             $offset = isset($existing[$number]) ? (float) $existing[$number]['offset'] : 0.0;
+            $offsetRanges = isset($existing[$number]) ? ($existing[$number]['offset_ranges'] ?? []) : [];
 
             if (array_key_exists('offset', $entry)) {
                 if (!is_int($entry['offset']) && !is_float($entry['offset'])) {
@@ -252,11 +253,16 @@ function handleApi(string $method, string $route, array $config): never
                 $offset = round($offset, 2);
             }
 
+            if (array_key_exists('offset_ranges', $entry)) {
+                $offsetRanges = validateOffsetRanges($entry['offset_ranges']);
+            }
+
             $clean[] = [
                 'channel' => $number,
                 'label' => cutString($label === '' ? sprintf('Furnace %d', $number) : $label, 40),
                 'enabled' => !empty($entry['enabled']),
                 'offset' => $offset,
+                'offset_ranges' => $offsetRanges,
             ];
         }
 
@@ -1014,7 +1020,10 @@ function handleFirmwareUpload(array $config, int $now): array
         throw new ApiError(422, sprintf('A bundle must contain 1 to %d files', $maxFiles));
     }
 
-    $required = [
+    // The network/boot core is intentionally not replaceable from the browser
+    // uploader. It is the path the board uses to receive updates and recover
+    // after a crash; application code and arbitrary helper modules are allowed.
+    $protected = [
         'boot.py',
         'wifi.py',
         'ingest.py',
@@ -1022,12 +1031,7 @@ function handleFirmwareUpload(array $config, int $now): array
         'ota.py',
         'device.py',
         'settings.py',
-        'main.py',
     ];
-
-    if ($channel === 'max31865') {
-        $required[] = 'max31865.py';
-    }
 
     $maxFileBytes = (int) ($config['max_firmware_file_bytes'] ?? 524288);
     $maxTotalBytes = (int) ($config['max_firmware_bytes'] ?? 2097152);
@@ -1043,6 +1047,10 @@ function handleFirmwareUpload(array $config, int $now): array
 
         if ($name === 'config.py' || $name === 'manifest.json') {
             throw new ApiError(422, 'config.py and manifest.json cannot be uploaded');
+        }
+
+        if (in_array($name, $protected, true)) {
+            throw new ApiError(422, sprintf('%s is protected network/boot core and cannot be replaced from the browser uploader', $name));
         }
 
         if (isset($accepted[$name])) {
@@ -1069,12 +1077,6 @@ function handleFirmwareUpload(array $config, int $now): array
         }
 
         $accepted[$name] = ['tmp' => $temporary, 'size' => $size];
-    }
-
-    $missing = array_values(array_diff($required, array_keys($accepted)));
-
-    if ($missing !== []) {
-        throw new ApiError(422, 'The bundle is missing required files', ['missing' => $missing]);
     }
 
     $root = firmwareDirectory($config);
@@ -1209,6 +1211,8 @@ function removeTree(string $path): void
  */
 function validateDeviceSettings(array $body): array
 {
+    // Per-channel temperature bands are validated by validateOffsetRanges()
+    // and stored through DeviceRepository::setChannels().
     $raw = $body['settings'] ?? $body;
 
     if (!is_array($raw) || (array_is_list($raw) && $raw !== [])) {
@@ -1259,6 +1263,85 @@ function validateDeviceSettings(array $body): array
 
     if ($clean === []) {
         throw new ApiError(422, 'settings must contain sample_ms, noise_samples, noise_gap_us, ema_alpha or heartbeat_s');
+    }
+
+    return $clean;
+}
+
+/**
+ * Validate temperature-band calibration for one channel.
+ *
+ * Ranges are half-open ([min, max)) and sorted by min. They may touch at a
+ * boundary but must not overlap, so exactly one band can claim a reading.
+ *
+ * @return list<array{min: float, max: float, offset: float}>
+ */
+function validateOffsetRanges(mixed $raw): array
+{
+    if ($raw === null) {
+        return [];
+    }
+
+    if (!is_array($raw) || !array_is_list($raw)) {
+        throw new ApiError(422, 'offset_ranges must be a list');
+    }
+
+    if (count($raw) > 12) {
+        throw new ApiError(422, 'offset_ranges may contain at most 12 bands');
+    }
+
+    $clean = [];
+
+    foreach ($raw as $index => $entry) {
+        if (!is_array($entry) || array_is_list($entry)) {
+            throw new ApiError(422, sprintf('offset_ranges[%d] must be an object', $index));
+        }
+
+        $min = $entry['min'] ?? null;
+        $max = $entry['max'] ?? null;
+        $offset = $entry['offset'] ?? 0.0;
+
+        if (!is_int($min) && !is_float($min)) {
+            throw new ApiError(422, sprintf('offset_ranges[%d].min must be a number', $index));
+        }
+
+        if (!is_int($max) && !is_float($max)) {
+            throw new ApiError(422, sprintf('offset_ranges[%d].max must be a number', $index));
+        }
+
+        if (!is_int($offset) && !is_float($offset)) {
+            throw new ApiError(422, sprintf('offset_ranges[%d].offset must be a number', $index));
+        }
+
+        $min = (float) $min;
+        $max = (float) $max;
+        $offset = (float) $offset;
+
+        if (!is_finite($min) || !is_finite($max) || !is_finite($offset)) {
+            throw new ApiError(422, sprintf('offset_ranges[%d] must be finite', $index));
+        }
+
+        if ($min < -270.0 || $max > 1800.0 || $min >= $max) {
+            throw new ApiError(422, sprintf('offset_ranges[%d] must satisfy -270 <= min < max <= 1800', $index));
+        }
+
+        if ($offset < -200.0 || $offset > 200.0) {
+            throw new ApiError(422, sprintf('offset_ranges[%d].offset must be between -200 and 200 °C', $index));
+        }
+
+        $clean[] = [
+            'min' => round($min, 2),
+            'max' => round($max, 2),
+            'offset' => round($offset, 2),
+        ];
+    }
+
+    usort($clean, static fn (array $left, array $right): int => $left['min'] <=> $right['min']);
+
+    for ($index = 1; $index < count($clean); $index += 1) {
+        if ($clean[$index]['min'] < $clean[$index - 1]['max']) {
+            throw new ApiError(422, 'offset_ranges must not overlap');
+        }
     }
 
     return $clean;

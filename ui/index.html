@@ -4,17 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark light">
-  <meta name="description" content="Live four-channel furnace temperature monitoring with a run timer, analysis and CSV export.">
-  <title>Furnace Monitor · Razi Applied Science Foundation</title>
-  <meta name="theme-color" content="#04080d" data-role="theme-color">
+  <meta name="description" content="Live thermal telemetry for the Razi Applied Science Foundation: furnace temperatures, sensor health, run timing and analysis.">
+  <title>Thermal Command · Razi Applied Science Foundation</title>
+  <meta name="theme-color" content="#070a0e" data-role="theme-color">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Razi Furnace">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="assets/img/icon-180.png">
-  <link rel="stylesheet" href="assets/css/tokens.css?v=7">
-  <link rel="stylesheet" href="assets/css/app.css?v=8">
+  <link rel="stylesheet" href="assets/css/tokens.css?v=8">
+  <link rel="stylesheet" href="assets/css/app.css?v=9">
   <!-- Resolve the saved theme before the first paint, so a light-mode phone
        never flashes the dark dashboard. -->
   <script src="assets/js/theme-boot.js?v=7"></script>
@@ -27,8 +27,9 @@
       <div class="brand">
         <img class="brand__logo" src="assets/img/logo-razi.svg" alt="" width="44" height="44">
         <div class="brand__text">
-          <p class="eyebrow">MAX31855 · 4 channels</p>
-          <h1>Razi Applied Science Foundation</h1>
+          <p class="eyebrow">Razi · Thermal systems <span class="brand__divider">/</span> Live telemetry</p>
+          <h1>Furnace command deck</h1>
+          <p class="brand__tagline">Four-channel temperature intelligence · Razi Applied Science Foundation</p>
         </div>
       </div>
 
@@ -53,6 +54,7 @@
 
     <main id="main">
       <p class="notice-bar" data-role="notice" role="status" hidden></p>
+      <p class="alarm-bar" data-role="alarm" role="alert" hidden></p>
 
       <section class="timer-card panel" aria-labelledby="timer-title">
         <header class="timer-card__head">
@@ -86,8 +88,8 @@
           </div>
         </div>
 
-        <p class="counter__human"><span class="counter__human-label">Equivalent</span> <span data-role="human">—</span></p>
-        <p class="timer-card__hint">The counter follows the run's own clock: it keeps counting whether or not samples arrive, and stops when the run is closed.</p>
+        <p class="counter__human"><span class="counter__human-label">Elapsed window</span> <span data-role="human">—</span></p>
+        <p class="timer-card__hint">Run clock · follows the server timeline, not the sample count. It keeps moving through a network gap and stops when the run closes.</p>
 
         <div class="timer-card__stats">
           <span class="stat"><span class="stat__label">Samples</span><b class="stat__value" data-role="samples">0</b></span>
@@ -425,6 +427,6 @@
        bump it whenever config.js or main.js changes meaning. -->
   <script src="config.js?v=7"></script>
   <script src="assets/vendor/chart.umd.min.js"></script>
-  <script type="module" src="assets/js/main.js?v=10"></script>
+  <script type="module" src="assets/js/main.js?v=11"></script>
 </body>
 </html>

@@ -427,7 +427,7 @@ def session(watch):
                 temperature = _smooth(index, temperature, frame_settings["ema_alpha"])
 
                 if temperature is not None:
-                    temperature += channel["offset"]
+                    temperature += settings_module.offset_for(channel, temperature)
 
                 temperatures.append(temperature)
                 faults.append(fault)

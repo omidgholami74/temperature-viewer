@@ -47,6 +47,7 @@ const el = {
   uploadVersion: $('[data-role="upload-version"]'),
   uploadNotes: $('[data-role="upload-notes"]'),
   uploadFiles: $('[data-role="upload-files"]'),
+  uploadList: $('[data-role="upload-list"]'),
   uploadFirmware: $('[data-role="upload-firmware"]'),
   calChannel: $('[data-role="cal-channel"]'),
   calReference: $('[data-role="cal-reference"]'),
@@ -151,6 +152,7 @@ function settingsFor(device) {
       channel: channel.channel,
       enabled: channel.enabled,
       offset: channel.offset ?? 0,
+      offset_ranges: channel.offset_ranges ?? [],
     }));
 
   return { ...DEFAULT_SETTINGS, ...stored, channels };
@@ -280,6 +282,19 @@ function renderDevices() {
   }).join('');
 }
 
+function rangeRow(channel, index, band = {}) {
+  return `
+    <div class="range-line" data-range-row>
+      <input type="number" step="1" placeholder="min" value="${band.min ?? ''}" data-range-min aria-label="Furnace ${channel} band minimum">
+      <span class="range-line__sep">→</span>
+      <input type="number" step="1" placeholder="max" value="${band.max ?? ''}" data-range-max aria-label="Furnace ${channel} band maximum">
+      <span class="range-line__unit">°C</span>
+      <input type="number" step="0.1" placeholder="offset" value="${band.offset ?? 0}" data-range-offset aria-label="Furnace ${channel} band offset">
+      <button type="button" class="range-line__remove" data-remove-range="${channel}" aria-label="Remove band">×</button>
+    </div>
+  `;
+}
+
 function renderChannelEditor() {
   const active = document.activeElement;
 
@@ -287,6 +302,11 @@ function renderChannelEditor() {
     return;
   }
 
+  // The panel refreshes every five seconds. Keep a calibration band section
+  // open while the operator is reading it instead of snapping it shut.
+  const openDetails = new Set(
+    $$('.range-editor[open]', el.channelEditor).map((node) => node.dataset.channelDetails),
+  );
   const device = deviceById(el.channelDevice.value);
 
   if (!device) {
@@ -301,16 +321,89 @@ function renderChannelEditor() {
       ?? { channel: number, label: `Furnace ${number}`, present: false, enabled: number <= 3, offset: 0 };
     const stored = settings.channels.find((entry) => entry.channel === number);
     const offset = stored?.offset ?? channel.offset ?? 0;
+    const ranges = Array.isArray(stored?.offset_ranges)
+      ? stored.offset_ranges
+      : (Array.isArray(channel.offset_ranges) ? channel.offset_ranges : []);
 
     return `
-      <label class="channel-row">
-        <input type="checkbox" data-channel="${number}" ${channel.enabled ? 'checked' : ''} aria-label="Enable furnace ${number}">
-        <input type="text" maxlength="40" value="${escape(channel.label)}" data-label="${number}" aria-label="Label for furnace ${number}">
-        <input type="number" min="-200" max="200" step="0.1" value="${Number(offset).toFixed(1)}" data-offset="${number}" aria-label="Calibration offset for furnace ${number}">
-        <span class="channel-row__meta">${channel.present ? 'probe' : 'no probe'}</span>
-      </label>
+      <div class="channel-item">
+        <label class="channel-row">
+          <input type="checkbox" data-channel="${number}" ${channel.enabled ? 'checked' : ''} aria-label="Enable furnace ${number}">
+          <input type="text" maxlength="40" value="${escape(channel.label)}" data-label="${number}" aria-label="Label for furnace ${number}">
+          <input type="number" min="-200" max="200" step="0.1" value="${Number(offset).toFixed(1)}" data-offset="${number}" aria-label="Base calibration offset for furnace ${number}">
+          <span class="channel-row__meta">${channel.present ? 'probe' : 'no probe'}</span>
+        </label>
+        <details class="range-editor" data-channel-details="${number}" ${openDetails.has(String(number)) ? 'open' : ''}>
+          <summary>
+            Temperature bands
+            <span>${ranges.length ? `${ranges.length} configured` : 'base offset everywhere'}</span>
+          </summary>
+          <p class="range-editor__hint">Each band replaces the base offset between its min and max (max exclusive). Bands must not overlap.</p>
+          <div class="range-list" data-range-list="${number}">
+            ${ranges.length ? ranges.map((band, index) => rangeRow(number, index, band)).join('') : '<p class="range-empty">No temperature bands. The base offset is used at every temperature.</p>'}
+          </div>
+          <button class="btn btn--compact range-add" type="button" data-add-range="${number}">+ Add temperature band</button>
+        </details>
+      </div>
     `;
   }).join('');
+}
+
+function collectRanges(channel) {
+  const list = $(
+    `[data-range-list="${channel}"]`,
+    el.channelEditor,
+  );
+
+  if (!list) {
+    return [];
+  }
+
+  return $$('.range-line', list).map((row) => ({
+    min: Number($('[data-range-min]', row).value),
+    max: Number($('[data-range-max]', row).value),
+    offset: Number($('[data-range-offset]', row).value),
+  }));
+}
+
+function updateRangeSummary(list) {
+  const details = list?.closest('.range-editor');
+  const summary = details ? $('summary span', details) : null;
+
+  if (!summary) {
+    return;
+  }
+
+  const count = $$('.range-line', list).length;
+  summary.textContent = count ? `${count} configured` : 'base offset everywhere';
+}
+
+function validRanges(ranges) {
+  if (ranges.length > 12) {
+    return 'A furnace can have at most 12 temperature bands.';
+  }
+
+  const sorted = [...ranges].sort((left, right) => left.min - right.min);
+
+  for (const [index, band] of sorted.entries()) {
+    if (![band.min, band.max, band.offset].every(Number.isFinite)) {
+      return 'Every temperature band needs finite min, max and offset numbers.';
+    }
+
+    if (band.min < -270 || band.max > 1800 || band.min >= band.max) {
+      return 'A band must satisfy -270 ≤ min < max ≤ 1800 °C.';
+    }
+
+    if (band.offset < -200 || band.offset > 200) {
+      return 'A band offset must be between -200 and 200 °C.';
+    }
+
+    if (index > 0 && band.min < sorted[index - 1].max) {
+      return 'Temperature bands must not overlap.';
+    }
+  }
+
+  return '';
 }
 
 function renderBundles() {
@@ -441,16 +534,34 @@ async function saveChannels() {
     return;
   }
 
-  const channels = $$('[data-channel]', el.channelEditor).map((checkbox) => ({
-    channel: Number(checkbox.dataset.channel),
-    enabled: checkbox.checked,
-    label: $(`[data-label="${checkbox.dataset.channel}"]`, el.channelEditor).value.trim(),
-    offset: Number($(`[data-offset="${checkbox.dataset.channel}"]`, el.channelEditor).value) || 0,
-  }));
+  let channels;
+
+  try {
+    channels = $$('[data-channel]', el.channelEditor).map((checkbox) => {
+      const channel = Number(checkbox.dataset.channel);
+      const offsetRanges = collectRanges(channel);
+      const error = validRanges(offsetRanges);
+
+      if (error) {
+        throw new Error(`Furnace ${channel}: ${error}`);
+      }
+
+      return {
+        channel,
+        enabled: checkbox.checked,
+        label: $(`[data-label="${channel}"]`, el.channelEditor).value.trim(),
+        offset: Number($(`[data-offset="${channel}"]`, el.channelEditor).value) || 0,
+        offset_ranges: offsetRanges,
+      };
+    });
+  } catch (error) {
+    status(error.message, 'error');
+    return;
+  }
 
   try {
     await api.saveChannels(device.id, channels);
-    status('Furnace labels, enabled state and offsets queued for the board.', 'ok');
+    status('Furnace labels, enabled state and calibration bands queued for the board.', 'ok');
     await refresh({ quiet: true });
   } catch (error) {
     status(error.status === 401 ? 'Set the admin key (X-Admin-Key) to manage boards.' : error.message, 'error');
@@ -516,6 +627,16 @@ async function uploadSourceBundle() {
 
   if (files.some((file) => !file.name.endsWith('.py'))) {
     status('Only .py source files can be uploaded.', 'error');
+    return;
+  }
+
+  const core = new Set([
+    'boot.py', 'wifi.py', 'ingest.py', 'supervisor.py', 'ota.py', 'device.py', 'settings.py', 'config.py',
+  ]);
+  const protectedFile = files.find((file) => core.has(file.name));
+
+  if (protectedFile) {
+    status(`${protectedFile.name} is protected network/boot core. Upload only application files.`, 'error');
     return;
   }
 
@@ -662,6 +783,39 @@ function wire() {
   el.profileDevice.addEventListener('change', () => renderProfileEditor(true));
   el.saveProfile.addEventListener('click', saveProfile);
   el.uploadFirmware.addEventListener('click', uploadSourceBundle);
+  el.uploadFiles.addEventListener('change', () => {
+    const names = Array.from(el.uploadFiles.files ?? []).map((file) => file.name);
+    el.uploadList.innerHTML = names.length
+      ? names.map((name) => `<code>${escape(name)}</code>`).join(' · ')
+      : 'Choose <code>main.py</code>, a driver or any helper <code>.py</code> module.';
+  });
+  el.channelEditor.addEventListener('click', (event) => {
+    const remove = event.target.closest('[data-remove-range]');
+
+    if (remove) {
+      const list = remove.closest('[data-range-list]');
+      remove.closest('.range-line')?.remove();
+      updateRangeSummary(list);
+      return;
+    }
+
+    const add = event.target.closest('[data-add-range]');
+
+    if (!add) {
+      return;
+    }
+
+    const channel = add.dataset.addRange;
+    const list = $(`[data-range-list="${channel}"]`, el.channelEditor);
+
+    if (!list) {
+      return;
+    }
+
+    $('.range-empty', list)?.remove();
+    list.insertAdjacentHTML('beforeend', rangeRow(channel, list.children.length));
+    updateRangeSummary(list);
+  });
   el.calApply.addEventListener('click', applyCalibration);
 
   for (const button of $$('[data-preset]')) {

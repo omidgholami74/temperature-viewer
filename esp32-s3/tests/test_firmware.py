@@ -299,6 +299,17 @@ class IngestTests(unittest.TestCase):
         self.assertEqual(client.pending, [])
         self.assertEqual(client.dropped, 1)
 
+    def test_202_is_a_successful_store_not_a_retry(self):
+        # LiteSpeed/proxies may answer a completed write with 202 Accepted.
+        Recorder.status = 202
+        client = self.make(BATCH_SIZE=1)
+        client.add(100, [1, 2, 3, 4], [0, 0, 0, 0])
+
+        self.assertEqual(client.pending, [])
+        self.assertEqual(client.sent, 1)
+        self.assertEqual(client.failures, 0)
+        self.assertEqual(client.last_error, "")
+
     def test_buffer_limit_drops_the_oldest_samples(self):
         Recorder.status = 503
         client = self.make(BATCH_SIZE=2, BUFFER_LIMIT=4)
@@ -775,6 +786,33 @@ class BootTests(unittest.TestCase):
         self.assertEqual(boot.missing(list(boot.REQUIRED)), [])
         # os.listdir() also returns the log files and the folders on the board.
         self.assertEqual(boot.missing(["data", "README.md"] + list(boot.REQUIRED)), [])
+
+    def test_boot_watchdog_is_reused_by_the_supervisor(self):
+        class FakeWDT:
+            def __init__(self, timeout=None):
+                self.timeout = timeout
+                self.feeds = 0
+
+            def feed(self):
+                self.feeds += 1
+
+        fake_machine = types.SimpleNamespace(WDT=FakeWDT)
+        fake_config = types.SimpleNamespace(WATCHDOG_S=30)
+
+        with mock.patch.dict(sys.modules, {"machine": fake_machine, "config": fake_config}):
+            self.assertTrue(boot.arm_watchdog())
+
+        self.assertIs(fake_machine._boot_wdt.__class__, FakeWDT)
+        self.assertEqual(fake_machine._boot_wdt.timeout, 50000)
+
+        # Once main.py starts, supervisor must feed that same hardware timer
+        # rather than create a second one that the first one cannot stop.
+        with mock.patch.object(supervisor, "machine", fake_machine):
+            watch = supervisor.Watchdog(30)
+
+        self.assertIs(watch.wdt, fake_machine._boot_wdt)
+        watch.feed()
+        self.assertEqual(fake_machine._boot_wdt.feeds, 1)
 
 
 class SupervisorTests(unittest.TestCase):
@@ -1388,6 +1426,48 @@ class SettingsTests(unittest.TestCase):
         runtime = self.make()
         self.assertFalse(runtime.apply(runtime.snapshot()))
 
+    def test_temperature_bands_replace_the_base_offset(self):
+        runtime = self.make()
+        runtime.apply({"channels": [
+            {
+                "channel": 1,
+                "enabled": True,
+                "offset": 4.0,
+                "offset_ranges": [
+                    {"min": 500, "max": 1000, "offset": 2.5},
+                    {"min": 0, "max": 500, "offset": -1.5},
+                ],
+            },
+            {"channel": 2, "enabled": True, "offset": 0.0},
+            {"channel": 3, "enabled": True, "offset": 0.0},
+        ]})
+
+        channel = runtime.channel(1)
+        self.assertEqual([band["min"] for band in channel["offset_ranges"]], [0, 500])
+        self.assertEqual(settings_module.offset_for(channel, -10), 4.0)
+        self.assertEqual(settings_module.offset_for(channel, 0), -1.5)
+        self.assertEqual(settings_module.offset_for(channel, 499.9), -1.5)
+        self.assertEqual(settings_module.offset_for(channel, 500), 2.5)
+        self.assertEqual(settings_module.offset_for(channel, 1000), 4.0)
+
+    def test_overlapping_temperature_bands_are_rejected(self):
+        runtime = self.make()
+
+        with self.assertRaises(settings_module.SettingsError):
+            runtime.apply({"channels": [
+                {
+                    "channel": 1,
+                    "enabled": True,
+                    "offset": 0.0,
+                    "offset_ranges": [
+                        {"min": 0, "max": 600, "offset": 1},
+                        {"min": 500, "max": 800, "offset": 2},
+                    ],
+                },
+            ]})
+
+        self.assertEqual(runtime.channel(1)["offset_ranges"], [])
+
 
 class DeviceLinkTests(unittest.TestCase):
     """Heartbeat payload and the commands the admin panel can send."""
@@ -1456,6 +1536,14 @@ class DeviceLinkTests(unittest.TestCase):
     def test_an_invalid_device_id_is_rejected(self):
         with self.assertRaises(ValueError):
             self.make(DEVICE_ID="../esp32")
+
+    def test_a_202_heartbeat_is_success(self):
+        link, _ = self.make()
+        link._post = lambda *_: (202, b'{"commands": [], "settings": null}')
+
+        link.heartbeat()
+
+        self.assertEqual(link.last_error, "")
 
     def test_a_full_ingest_url_keeps_the_heartbeat_at_the_api_root(self):
         # Boards are often flashed with the complete ingest URL. Heartbeat and

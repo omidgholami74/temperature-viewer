@@ -124,8 +124,14 @@ and dashboard all show the corrected value. Fill it as
 disabled channel is never offset: it stays `-1000.00` on serial and `null` in
 JSON.
 
-The RTD path has no offset table; its error is dominated by `R_REF`,
-`R_NOMINAL` and wire mode, which are configured in `max31865/main.py`.
+For a probe whose error changes across its working range, add temperature bands
+in the same **Furnaces** panel. Each band has a minimum, maximum and replacement
+offset; the range is half-open and the first matching band wins. Bands may touch
+but not overlap, and the base offset remains the fallback outside them.
+
+The RTD path uses the same runtime settings and temperature bands. Its absolute
+error is also dominated by `R_REF`, `R_NOMINAL` and wire mode, which are
+configured in `max31865/main.py`.
 
 ## Choosing a sensor
 

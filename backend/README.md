@@ -152,8 +152,9 @@ the rest of the dashboard API.
 - `POST /api/device/ack` — firmware only. `{id, command_id, status: done|failed,
   result}`; the result appears in the connection log.
 - `GET /api/devices` — boards with online age, source, firmware, IP, RSSI,
-  channel labels/offsets, operator profile, live settings, queue depth and the
-  last command, plus the published source bundles and their file names.
+  channel labels, base offsets, temperature bands, operator profile, live
+  settings, queue depth and the last command, plus the published source bundles
+  and their file names.
 - `POST /api/devices/<id>/profile` — save the operator-owned `display_name`,
   `location` and `notes`. The heartbeat keeps updating the firmware-reported
   name, so it can never overwrite this profile.
@@ -166,21 +167,27 @@ the rest of the dashboard API.
 - `POST /api/devices/<id>/commands` — queue `{"kind":"wifi","ssid",…,
   "password":…}`, `{"kind":"ota","channel":"max31855"}` or
   `{"kind":"restart"}`.
-- `POST /api/devices/<id>/channels` — set `label`, `enabled` and `offset` for
-  channels 1–4, then queue the resulting settings for the board. Presence comes
-  from the heartbeat and is never overwritten by this call.
+- `POST /api/devices/<id>/channels` — set `label`, `enabled`, `offset` and the
+  optional `offset_ranges` list for channels 1–4, then queue the resulting
+  settings for the board. Each band is `{min, max, offset}`; bands are sorted,
+  half-open (`min <= t < max`), must not overlap and are capped at 12. Presence
+  comes from the heartbeat and is never overwritten by this call.
 - `POST /api/devices/<id>/settings` — set `sample_ms`, `noise_samples`,
   `noise_gap_us`, `ema_alpha` and `heartbeat_s`. The server stores the desired
   snapshot, returns it in later heartbeats and queues a `settings` command.
   Ranges: 50–60000 ms, 1–9 reads, 0–50000 µs, 0.05–1.0, 5–3600 s.
-- `POST /api/firmware/upload` — multipart upload of a complete `.py` source
-  bundle from the admin panel. Set `FURNACE_ADMIN_KEY` or this endpoint returns
-  `503`; `config.py` is refused. Files are validated, hashed and swapped into
-  the channel folder atomically. The board still compiles and verifies the
-  bundle before staging it during the next OTA command.
+- `POST /api/firmware/upload` — multipart upload of application and helper
+  `.py` source files from the admin panel. Set `FURNACE_ADMIN_KEY` or this
+  endpoint returns `503`. `config.py`, `boot.py`, `wifi.py`, `ingest.py`,
+  `supervisor.py`, `ota.py`, `device.py` and `settings.py` are refused so the
+  network, OTA and recovery core cannot be replaced from a browser. Files are
+  validated, hashed and swapped into the channel folder atomically. The board
+  still compiles and verifies the bundle before staging it during the next OTA
+  command.
 
 Public settings are stored in `meta`; `device_profiles` holds the operator
-profile. Both are created by the idempotent schema migration (version 5).
+profile. The schema migration is currently version 6 (device registry, live
+settings, base and per-temperature-band offsets, operator profiles).
 
 A Wi-Fi password is stored in the command row until the board acknowledges it,
 and no endpoint returns the payload. Use a dedicated network for the furnace and

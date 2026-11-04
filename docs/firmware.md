@@ -62,6 +62,8 @@ distort the timeline.
 * `BACKGROUND_UPLOAD = True` runs the POST on a thread, so a TLS handshake
   cannot stretch a sample gap.
 * A failed POST keeps the batch and retries on the next flush.
+* Any `2xx` response (`200`, `202 Accepted`, `204 No Content`) is a successful
+  store; a proxy in front of the API may rewrite a 200 to 202.
 * `400/413/422` are permanent: the batch is dropped instead of blocking the queue.
 * `401/403` and DNS failures retry with a bounded exponential backoff, with a
   console hint.
@@ -143,11 +145,12 @@ acknowledges each command with `POST /api/device/ack`. Four commands exist:
 | `ota` | One bundle check; stage and reboot if the version differs |
 | `wifi` | Write `/wifi.json`, acknowledge, reboot; `wifi.py` prefers it over `config.py` |
 | `restart` | Acknowledge and reboot |
-| `settings` | Apply sample interval, noise filter, heartbeat and per-channel enabled/offset; save `/settings.json` |
+| `settings` | Apply sample interval, noise filter, heartbeat, per-channel enabled/base offset and temperature bands; save `/settings.json` |
 
 The heartbeat reply also carries the saved settings snapshot, so a board whose
 files were replaced recovers the operator's configuration on its next poll
-without a new command. A disabled channel is uploaded as `null` with fault `0`,
+without a new command. A `2xx` heartbeat is accepted as success, including a
+proxy's `202 Accepted`. A disabled channel is uploaded as `null` with fault `0`,
 exactly like a probe that is not installed.
 
 A command stays queued on the server until acknowledged, so a board that was
@@ -161,8 +164,12 @@ layout and the console lines.
 ## Boot and supervision
 
 `boot.py` runs before the application and prints the reset cause and any missing
-module. A `WDT_RESET` in the banner means the application stopped feeding the
-watchdog, which is the fastest way to tell a crash from a power cut.
+module. It also arms the hardware watchdog before importing `main.py`, so a
+syntax error or failed import cannot leave a charger-powered board frozen at a
+REPL with no network. `supervisor.py` reuses that boot instance and feeds it
+from the sampling loop; it does not create a second WDT, which the ESP32 cannot
+reconfigure safely. A `WDT_RESET` in the banner means the application stopped
+feeding the watchdog, which is the fastest way to tell a crash from a power cut.
 
 `supervisor.py` wraps a session:
 
@@ -214,10 +221,12 @@ fresh boot is never discarded.
 
 ## Calibration
 
-* MAX31855: set the offset per channel in the admin panel; it is stored in
-  `/settings.json` and applied before serial/upload. `CHANNEL_OFFSETS` in
-  `max31855/main.py` is only the first-boot/default fallback. See
-  [`max31855/README.md`](../esp32-s3/max31855/README.md#per-furnace-offset-fixed-calibration).
+* MAX31855: set the base offset per channel in the admin panel; it is stored in
+  `/settings.json` and applied before serial/upload. Add up to 12 temperature
+  bands where the error changes with temperature; a band replaces the base
+  offset inside `[min, max)`. `CHANNEL_OFFSETS` in `max31855/main.py` is only the
+  first-boot/default fallback. See
+  [`max31855/README.md`](../esp32-s3/max31855/README.md#per-furnace-offset-and-temperature-bands).
 * MAX31865: `R_REF`, `R_NOMINAL`, `WIRE_MODE`, `FILTER_HZ` must match the board
   and probe. See [`max31865/README.md`](../esp32-s3/max31865/README.md).
 * Arduino: the same options live in `config.h`; the maths is identical.

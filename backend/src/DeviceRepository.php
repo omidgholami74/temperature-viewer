@@ -182,7 +182,7 @@ final class DeviceRepository
     public function channels(string $deviceId): array
     {
         $statement = $this->pdo->prepare(
-            'SELECT channel, label, present, enabled, offset FROM device_channels
+            'SELECT channel, label, present, enabled, offset, offset_ranges FROM device_channels
              WHERE device_id = ? ORDER BY channel',
         );
         $statement->execute([$deviceId]);
@@ -195,10 +195,54 @@ final class DeviceRepository
                 'present' => (bool) $row['present'],
                 'enabled' => (bool) $row['enabled'],
                 'offset' => (float) $row['offset'],
+                'offset_ranges' => self::ranges($row['offset_ranges'] ?? null),
             ];
         }
 
         return $channels;
+    }
+
+    /**
+     * Decode the band-calibration JSON, tolerating a row written before the
+     * column existed or a hand-edited database.
+     *
+     * @return list<array{min: float, max: float, offset: float}>
+     */
+    private static function ranges(?string $raw): array
+    {
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $ranges = [];
+
+        foreach ($decoded as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $min = isset($entry['min']) ? (float) $entry['min'] : null;
+            $max = isset($entry['max']) ? (float) $entry['max'] : null;
+            $offset = isset($entry['offset']) ? (float) $entry['offset'] : 0.0;
+
+            if ($min === null || $max === null || !is_finite($min) || !is_finite($max) || $min >= $max) {
+                continue;
+            }
+
+            $ranges[] = [
+                'min' => round($min, 2),
+                'max' => round($max, 2),
+                'offset' => round($offset, 2),
+            ];
+        }
+
+        return $ranges;
     }
 
     /**
@@ -275,7 +319,7 @@ final class DeviceRepository
     public function setChannels(string $deviceId, array $channels): void
     {
         $statement = $this->pdo->prepare(
-            'UPDATE device_channels SET label = ?, enabled = ?, offset = ?
+            'UPDATE device_channels SET label = ?, enabled = ?, offset = ?, offset_ranges = ?
              WHERE device_id = ? AND channel = ?',
         );
 
@@ -284,6 +328,7 @@ final class DeviceRepository
                 $channel['label'],
                 $channel['enabled'] ? 1 : 0,
                 $channel['offset'],
+                json_encode($channel['offset_ranges'] ?? []),
                 $deviceId,
                 $channel['channel'],
             ]);
@@ -326,6 +371,7 @@ final class DeviceRepository
                 'channel' => (int) $channel['channel'],
                 'enabled' => (bool) $channel['enabled'],
                 'offset' => (float) $channel['offset'],
+                'offset_ranges' => $channel['offset_ranges'] ?? [],
             ],
             $this->channels($deviceId),
         );
@@ -354,6 +400,7 @@ final class DeviceRepository
                 'channel' => (int) $channel['channel'],
                 'enabled' => (bool) $channel['enabled'],
                 'offset' => (float) $channel['offset'],
+                'offset_ranges' => $channel['offset_ranges'] ?? [],
             ],
             $this->channels($deviceId),
         );

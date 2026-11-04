@@ -434,7 +434,9 @@ class DeviceLink:
         """Send one heartbeat and run whatever the server queued."""
         status, reply = self._post(self._address("heartbeat"), self.payload())
 
-        if status != 200:
+        # A reverse proxy may answer 202 Accepted for a request that the API
+        # processed. Treat every 2xx as success instead of retrying forever.
+        if not 200 <= status < 300:
             raise OSError("heartbeat answered HTTP %d" % (status,))
 
         data = json.loads(reply.decode("utf-8"))

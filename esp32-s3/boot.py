@@ -15,6 +15,62 @@ imports the firmware itself, so it cannot start the sampler twice.
 # board that is missing either of them cannot start at all.
 REQUIRED = ("boot.py", "config.py", "wifi.py", "ingest.py", "supervisor.py", "settings.py", "main.py")
 
+
+def arm_watchdog():
+    """Arm a boot-time safety net before ``main.py`` is imported.
+
+    The application's own watchdog only exists after its imports succeed. A
+    bad upload with a syntax/runtime error at import time can therefore leave
+    the board sitting at a REPL with no network. This watchdog is armed first
+    and is replaced/fed by main.py once the sampler starts; until then it
+    reboots the board into the OTA rollback path.
+    """
+    try:
+        import machine
+        import config
+    except Exception:
+        return False
+
+    try:
+        seconds = float(getattr(config, "WATCHDOG_S", 30) or 0)
+    except (TypeError, ValueError):
+        seconds = 30.0
+
+    if seconds <= 0 or not hasattr(machine, "WDT"):
+        return False
+
+    existing = getattr(machine, "_boot_wdt", None)
+
+    if existing is not None:
+        # A soft reset can keep the module object and its running WDT. Feeding
+        # it is enough; a second constructor would fail because the ESP32 WDT
+        # is already active and cannot be reconfigured.
+        try:
+            existing.feed()
+        except Exception:
+            pass
+
+        return True
+
+    # main.py builds supervisor.Watchdog after its imports. That class looks
+    # for this handoff so it feeds one hardware timer instead of trying to
+    # create a second one. Test the handoff before arming: if this build will
+    # not accept the attribute, leave the watchdog to main.py rather than
+    # starting a timer that nobody can feed.
+    try:
+        machine._boot_wdt = None
+    except Exception:
+        print("# boot: watchdog handoff unavailable; leaving it to main.py")
+        return False
+
+    try:
+        watchdog = machine.WDT(timeout=int((seconds + 20) * 1000))
+        machine._boot_wdt = watchdog
+        return True
+    except Exception as error:
+        print("# boot: watchdog unavailable: %s" % (error,))
+        return False
+
 _RESET_NAMES = (
     "PWRON_RESET",
     "HARD_RESET",
@@ -78,6 +134,7 @@ def apply_update():
 
 def main():
     apply_update()
+    arm_watchdog()
 
     cause = reset_cause()
 

@@ -294,6 +294,17 @@ responses: offline, the last screen renders with a *Backend offline* banner.
 Bump `CACHE_VERSION` in `ui/sw.js` whenever the shell changes, or installed
 phones keep the old HTML.
 
+## Android app
+
+[`application/`](application/README.md) is a React Native (bare) Android app
+called **اتوماسیون هوشمند رازی** for the Razi Applied Science Foundation. It
+opens on an animated splash screen, then shows the four channels with an
+animated arc gauge, channel cards and a multi-series SVG chart in Persian. It
+polls `/api/live` every 1.5 s and, when the API cannot be reached, switches to
+a clearly labelled demo feed. Build the signed APK with
+`cd application/android && ./gradlew assembleRelease`; the README in that
+folder covers the SDK requirements and the internal signing key.
+
 ## Production deployment
 
 1. **API** — point `apitemp.futurefounderco.com` at `backend/` with PHP-FPM and

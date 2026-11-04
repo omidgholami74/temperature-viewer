@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Razi Smart Automation round icon">
+  <defs>
+    <linearGradient id="bg" x1="120" y1="60" x2="900" y2="980" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0C2242"/>
+      <stop offset="0.55" stop-color="#071326"/>
+      <stop offset="1" stop-color="#040A14"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.78" cy="0.14" r="0.75">
+      <stop offset="0" stop-color="#2E7BFF" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#2E7BFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="mark" x1="90" y1="60" x2="430" y2="470" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#B7E1FF"/>
+      <stop offset="0.45" stop-color="#4E97FF"/>
+      <stop offset="1" stop-color="#1F62CE"/>
+    </linearGradient>
+  </defs>
+
+  <circle cx="512" cy="512" r="512" fill="url(#bg)"/>
+  <circle cx="512" cy="512" r="512" fill="url(#glow)"/>
+  <circle cx="512" cy="512" r="494" fill="none" stroke="#3E8CFF" stroke-opacity="0.28" stroke-width="6"/>
+
+  <g transform="translate(212 200) scale(1.17)">
+    <g fill="url(#mark)">
+      <path d="M268 212C196 208 118 228 44 288C118 282 196 268 268 246Z" opacity="0.92"/>
+      <path d="M262 256C190 264 116 300 48 366C120 342 194 314 266 288Z" opacity="0.96"/>
+      <path d="M270 298C212 320 154 368 96 442C160 402 220 360 282 330Z" opacity="0.9"/>
+      <path d="M300 342C268 384 232 432 198 492C244 448 282 402 314 366Z" opacity="0.84"/>
+      <path d="M276 96C372 104 444 184 448 286C452 372 408 448 332 496C372 430 392 368 386 306C380 224 336 152 276 112Z"/>
+      <path d="M262 122C306 120 330 152 326 186C322 218 296 238 266 240C250 241 238 236 230 227L190 236L214 206C210 176 224 140 262 122Z"/>
+      <circle cx="236" cy="56" r="11"/>
+      <circle cx="296" cy="50" r="10"/>
+      <circle cx="328" cy="82" r="9"/>
+    </g>
+    <g stroke="url(#mark)" stroke-width="9" stroke-linecap="round" fill="none">
+      <path d="M258 118C252 96 246 80 238 64"/>
+      <path d="M271 116C277 92 285 74 295 60"/>
+      <path d="M283 124C295 106 309 94 325 86"/>
+    </g>
+  </g>
+</svg>

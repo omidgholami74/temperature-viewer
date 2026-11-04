@@ -9,7 +9,7 @@ multi-series chart, in Persian, on a dark glass-style surface.
 | App name (launcher) | اتوماسیون هوشمند رازی |
 | Company | بنیاد علوم کاربردی رازی (Razi Applied Science Foundation) |
 | Package | `com.raziautomation` |
-| Version | 1.2.0 (versionCode 3) |
+| Version | 1.2.1 (versionCode 4) |
 | Min / target SDK | 24 / 34 |
 | JS engine | Hermes, old architecture |
 
@@ -100,7 +100,7 @@ export ANDROID_HOME=/path/to/android-sdk        # platform 35 + build-tools 35.0
 
 The APK lands in
 `android/app/build/outputs/apk/release/app-release.apk` (arm64-v8a + armeabi-v7a,
-roughly 47 MB, version 1.2.0). Install it with:
+roughly 47 MB, version 1.2.1). Install it with:
 
 ```bash
 adb install -r android/app/build/outputs/apk/release/app-release.apk

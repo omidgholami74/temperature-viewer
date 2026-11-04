@@ -238,18 +238,20 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: space(5),
   },
-  cardTitle: {color: colors.text, fontSize: 16, fontWeight: '800'},
+  cardTitle: {color: colors.text, fontSize: 16, fontWeight: '800', textAlign: 'right'},
   cardHint: {
     color: colors.muted,
     fontSize: 11,
     marginTop: space(1.5),
     lineHeight: 18,
+    textAlign: 'right',
   },
   label: {
     color: colors.textSoft,
     fontSize: 11,
     marginTop: space(5),
     marginBottom: space(2),
+    textAlign: 'right',
   },
   input: {
     backgroundColor: colors.surfaceAlt,
@@ -262,13 +264,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   passwordRow: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     backgroundColor: colors.surfaceAlt,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingRight: space(3.5),
+    paddingLeft: space(3.5),
   },
   passwordInput: {
     flex: 1,

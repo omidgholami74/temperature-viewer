@@ -248,8 +248,12 @@ export function DashboardScreen({session, onSignOut}: Props) {
                 <Text style={styles.eyebrow}>پایش زنده دما</Text>
                 <View style={styles.heroTitleRow}>
                   <View style={[styles.channelDot, {backgroundColor: meta.color}]} />
-                  <Text style={styles.heroTitle}>{meta.name}</Text>
-                  <Text style={styles.heroRoom}>{meta.room}</Text>
+                  <Text style={styles.heroTitle} numberOfLines={1}>
+                    {meta.name}
+                  </Text>
+                  <Text style={styles.heroRoom} numberOfLines={1}>
+                    {meta.room}
+                  </Text>
                 </View>
               </View>
 
@@ -259,7 +263,9 @@ export function DashboardScreen({session, onSignOut}: Props) {
                   {borderColor: `${accent}66`, backgroundColor: `${accent}1A`},
                 ]}>
                 <View style={[styles.statusDot, {backgroundColor: accent}]} />
-                <Text style={[styles.statusText, {color: accent}]}>{trendLabel[trend]}</Text>
+                <Text style={[styles.statusText, {color: accent}]} numberOfLines={1}>
+                  {trendLabel[trend]}
+                </Text>
               </View>
             </View>
 
@@ -398,7 +404,7 @@ const styles = StyleSheet.create({
     paddingBottom: space(10),
   },
   header: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'center',
     marginBottom: space(5),
   },
@@ -412,13 +418,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderStrong,
   },
-  brandText: {flex: 1, marginLeft: space(3)},
-  brandName: {color: colors.text, fontSize: 15.5, fontWeight: '800'},
+  brandText: {flex: 1, marginRight: space(3), alignItems: 'flex-end'},
+  brandName: {
+    color: colors.text,
+    fontSize: 15.5,
+    fontWeight: '800',
+    textAlign: 'right',
+  },
   brandCompany: {
     color: colors.muted,
     fontSize: 10.5,
     marginTop: 2,
     letterSpacing: 0.5,
+    textAlign: 'right',
   },
   pill: {
     flexDirection: 'row',
@@ -442,17 +454,39 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   heroTop: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'flex-start',
-    justifyContent: 'space-between',
+    gap: space(3),
   },
-  heroTitleBlock: {flex: 1},
-  eyebrow: {color: colors.muted, fontSize: 10.5, letterSpacing: 1.2},
-  heroTitleRow: {flexDirection: 'row', alignItems: 'center', marginTop: space(2)},
-  channelDot: {width: 9, height: 9, borderRadius: 4.5, marginRight: space(2)},
-  heroTitle: {color: colors.text, fontSize: 18, fontWeight: '800'},
-  heroRoom: {color: colors.muted, fontSize: 11, marginLeft: space(2), marginTop: 3},
+  heroTitleBlock: {flex: 1, minWidth: 0, alignItems: 'flex-end'},
+  eyebrow: {
+    color: colors.muted,
+    fontSize: 10.5,
+    letterSpacing: 1.2,
+    textAlign: 'right',
+  },
+  heroTitleRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    marginTop: space(2),
+    maxWidth: '100%',
+  },
+  channelDot: {width: 9, height: 9, borderRadius: 4.5, marginLeft: space(2)},
+  heroTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+  heroRoom: {
+    color: colors.muted,
+    fontSize: 11,
+    marginRight: space(2),
+    marginTop: 3,
+    flexShrink: 1,
+  },
   statusChip: {
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
@@ -461,7 +495,7 @@ const styles = StyleSheet.create({
     paddingVertical: space(1.5),
   },
   statusDot: {width: 6, height: 6, borderRadius: 3, marginRight: space(1.5)},
-  statusText: {fontSize: 10, fontWeight: '700'},
+  statusText: {fontSize: 10, fontWeight: '700', textAlign: 'right'},
   gaugeWrap: {alignItems: 'center', marginTop: space(2)},
   gaugeValue: {
     ...tabular,
@@ -490,13 +524,13 @@ const styles = StyleSheet.create({
   statLabel: {color: colors.muted, fontSize: 10},
   statValue: {...tabular, color: colors.text, fontSize: 16, fontWeight: '700', marginTop: space(1)},
   sectionHead: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     alignItems: 'baseline',
     justifyContent: 'space-between',
     marginTop: space(7),
     marginBottom: space(3),
   },
-  sectionTitle: {color: colors.text, fontSize: 14, fontWeight: '700'},
+  sectionTitle: {color: colors.text, fontSize: 14, fontWeight: '700', textAlign: 'right'},
   sectionHint: {color: colors.muted, fontSize: 10},
   grid: {flexDirection: 'row', flexWrap: 'wrap', gap: CARD_GAP},
   chartCard: {
@@ -513,16 +547,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  cardTitle: {color: colors.text, fontSize: 14, fontWeight: '700'},
-  cardSubtitle: {color: colors.muted, fontSize: 10.5, marginTop: 2},
-  windowRow: {flexDirection: 'row', marginTop: space(3), marginBottom: space(2)},
+  cardTitle: {color: colors.text, fontSize: 14, fontWeight: '700', textAlign: 'right'},
+  cardSubtitle: {
+    color: colors.muted,
+    fontSize: 10.5,
+    marginTop: 2,
+    textAlign: 'right',
+  },
+  windowRow: {flexDirection: 'row-reverse', marginTop: space(3), marginBottom: space(2)},
   windowChip: {
     paddingHorizontal: space(3),
     paddingVertical: space(1.5),
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.border,
-    marginRight: space(2),
+    marginLeft: space(2),
     backgroundColor: 'rgba(124, 176, 255, 0.04)',
   },
   windowChipActive: {
@@ -531,7 +570,12 @@ const styles = StyleSheet.create({
   },
   windowText: {color: colors.textSoft, fontSize: 10.5, fontWeight: '600'},
   windowTextActive: {color: '#FFFFFF'},
-  legend: {flexDirection: 'row', flexWrap: 'wrap', gap: space(2), marginTop: space(3)},
+  legend: {
+    flexDirection: 'row-reverse',
+    flexWrap: 'wrap',
+    gap: space(2),
+    marginTop: space(3),
+  },
   legendChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -541,22 +585,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  legendDot: {width: 6, height: 6, borderRadius: 3, marginRight: space(1.5)},
-  legendText: {color: colors.textSoft, fontSize: 10},
+  legendDot: {width: 6, height: 6, borderRadius: 3, marginLeft: space(1.5)},
+  legendText: {color: colors.textSoft, fontSize: 10, textAlign: 'right'},
   footer: {marginTop: space(6), alignItems: 'center'},
   footerText: {color: colors.muted, fontSize: 10.5, textAlign: 'center'},
   footerTime: {...tabular, color: colors.muted, fontSize: 10, marginTop: space(1.5)},
   accountRow: {
-    flexDirection: 'row',
     alignItems: 'center',
+    flexDirection: 'row-reverse',
     gap: space(3),
     marginTop: space(4),
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-    paddingLeft: space(2),
-    paddingRight: space(4),
+    paddingHorizontal: space(4),
     paddingVertical: space(2),
   },
   accountText: {color: colors.textSoft, fontSize: 10.5},

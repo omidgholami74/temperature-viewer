@@ -1,7 +1,8 @@
 # Firmware
 
-Three implementations, one contract: read the installed channels every 100 ms
-and hand a `{u, t[4], f[4]}` frame to a transport. Unused slots are `null` with
+Three implementations, one contract: read the installed channels on a
+configurable frame (400 ms by default on the ESP32-S3, 100 ms on the Pico) and
+hand a `{u, t[4], f[4]}` frame to a transport. Unused slots are `null` with
 fault `0`, never a fabricated temperature. The differences are the toolchain, the
 sensor driver and how a frame leaves the board.
 
@@ -15,11 +16,11 @@ sensor driver and how a frame leaves the board.
 | Toolchain | Thonny / `mpremote` | Arduino IDE 2.x / `arduino-cli` | Thonny |
 | Sensor | 3× MAX31855 or 4× MAX31865 | MAX31855 or MAX31865 | MAX31855 |
 | Transport | HTTP batch | HTTP batch | CSV over USB (+ flash log) |
-| Buffer | 600 frames (60 s) | 60 s ring | none on the wire; flash log rotates at 1 MB |
+| Buffer | 600 frames (4 min at 400 ms) | 60 s ring | none on the wire; flash log rotates at 1 MB |
 | Clock | NTP, `at` per batch | NTP, `at` per batch | none; collector stamps time |
 | Watchdog | hardware WDT + supervisor | task watchdog + retry loop | none (PC is expected) |
 
-## The 100 ms loop
+## The sampling loop
 
 ```
 slot N                      slot N+1
@@ -35,8 +36,9 @@ slot N                      slot N+1
 The MicroPython MAX31855 build spends most of the slot on its noise filter:
 five reads per channel at 500 kHz, per-frame validation (reserved bits and the
 internal cold-junction range), a majority quorum, a median per channel, then an
-EMA across samples (≈76 ms for three furnaces). The MAX31865 and Arduino builds
-take one reading per channel and rely on the probe's own filtering.
+EMA across samples (≈76 ms for three furnaces), well inside the 400 ms default.
+The MAX31865 and Arduino builds take one reading per channel and rely on the
+probe's own filtering.
 
 The next slot is computed from the *previous slot*, so jitter does not
 accumulate: a slow serial write delays one sample, not every following one.
@@ -51,13 +53,14 @@ about 90 KB, modest for an ESP32-S3 but too much for an ESP8266.
 ### HTTP batch
 
 `ingest.py` (MicroPython) or `Uploader` (Arduino) keeps one TCP/TLS connection
-and a host-name cache, then posts `BATCH_SIZE` frames (10 = 1 s) to
-`/api/ingest`. `API_URL` can be the host or the complete `/api/ingest` URL;
-heartbeat and OTA normalise it to the API root. The socket is deliberately short-lived (30 s by default) so a
-server or access point that forgets an idle connection cannot leave the board
-writing into a half-open socket. The API anchors a batch without `at` on arrival
-and places the frames back on the 0.1 s grid by uptime, so batching does not
-distort the timeline.
+and a host-name cache, then posts up to `BATCH_SIZE` frames (`1` on the ESP32-S3
+MicroPython firmware) to `/api/ingest`. `API_URL` can be the host or the complete
+`/api/ingest` URL; heartbeat and OTA normalise it to the API root. The heartbeat
+posts over this same socket instead of opening a second TLS context. The socket
+is deliberately short-lived (30 s by default) so a server or access point that
+forgets an idle connection cannot leave the board writing into a half-open
+socket. The API anchors a frame without `at` on arrival and places the rest on
+the frame grid by uptime, so delivery does not distort the timeline.
 
 * `BACKGROUND_UPLOAD = True` runs the POST on a thread, so a TLS handshake
   cannot stretch a sample gap.
@@ -213,7 +216,7 @@ flat line plus the held marker; the fault reason is in the card tooltip.
 | Pico | none | Omitted; the collector maps uptime to PC time |
 
 Wall-clock time is the *newest* frame in the batch. The bridge and the API place
-earlier frames by their uptime distance, which preserves the 0.1 s grid.
+earlier frames by their uptime distance, which preserves the frame grid.
 
 A reboot resets uptime to 0. The API only uses differences within a batch, and
 MQTT deduplication treats a backward jump larger than 1000 as a reboot, so a
@@ -235,7 +238,7 @@ fresh boot is never discarded.
 
 A new driver only has to return, for each channel, a temperature in °C or
 `null`, plus a fault mask. Everything downstream (offsets, CSV, JSON, batching,
-storage, dashboards) works unchanged. Keep the read inside the 100 ms slot: at
+storage, dashboards) works unchanged. Keep the read inside the frame slot (400 ms by default): at
 0.5–1 MHz a 4-byte transfer is ~0.2 ms, but the stock MAX31855 filter already
 uses ~76 ms of the slot, so there is room for a slightly longer frame, not for
 a blocking network call.

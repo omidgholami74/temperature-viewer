@@ -61,7 +61,7 @@ const el = {
 };
 
 const DEFAULT_SETTINGS = {
-  sample_ms: 100,
+  sample_ms: 400,
   noise_samples: 5,
   noise_gap_us: 6000,
   ema_alpha: 0.35,
@@ -76,9 +76,9 @@ const DEFAULT_DASHBOARD = {
 };
 
 const PRESETS = {
-  quiet: { sample_ms: 250, noise_samples: 9, noise_gap_us: 12000, ema_alpha: 0.2, heartbeat_s: 30 },
-  balanced: { sample_ms: 100, noise_samples: 5, noise_gap_us: 6000, ema_alpha: 0.35, heartbeat_s: 15 },
-  fast: { sample_ms: 50, noise_samples: 3, noise_gap_us: 3000, ema_alpha: 0.6, heartbeat_s: 10 },
+  quiet: { sample_ms: 800, noise_samples: 9, noise_gap_us: 12000, ema_alpha: 0.2, heartbeat_s: 30 },
+  balanced: { sample_ms: 400, noise_samples: 5, noise_gap_us: 6000, ema_alpha: 0.35, heartbeat_s: 15 },
+  fast: { sample_ms: 200, noise_samples: 3, noise_gap_us: 3000, ema_alpha: 0.6, heartbeat_s: 10 },
 };
 
 const state = {

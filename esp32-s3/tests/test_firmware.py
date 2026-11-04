@@ -507,6 +507,45 @@ class KeepAliveTests(unittest.TestCase):
             client.close()
             server.close()
 
+    def test_a_heartbeat_uses_the_uploaders_keepalive_socket(self):
+        # A second TLS session every heartbeat is what exhausted the heap with
+        # ENOMEM. Control traffic must ride the connection that is already up.
+        server = ScriptedServer()
+        client = ingest.Ingest(self.config(server.port, BATCH_SIZE=1), log=lambda *_: None)
+        link = device.DeviceLink(
+            types.SimpleNamespace(
+                API_URL="http://127.0.0.1:%d" % (server.port,),
+                API_KEY="",
+                DEVICE_ID="esp32-1",
+                DEVICE_NAME="Furnace monitor",
+                HEARTBEAT_S=15,
+                HEARTBEAT_DELAY_S=0,
+                API_TIMEOUT_S=5,
+                TLS_VERIFY=False,
+            ),
+            types.SimpleNamespace(
+                ifconfig=lambda: ("192.168.1.42", "255.255.255.0", "192.168.1.1", "1.1.1.1"),
+                status=lambda *_: -57,
+            ),
+            client,
+            channels=[1],
+            log=lambda *_: None,
+        )
+
+        try:
+            status, _ = link._post("/api/device/heartbeat", {"id": "esp32-1"})
+            self.assertEqual(status, 200)
+            self.assertEqual(server.payloads[0]["id"], "esp32-1")
+
+            client.add(100, [1.0, 2.0, 3.0, 4.0], [0, 0, 0, 0])
+
+            self.assertEqual(len(server.payloads), 2)
+            self.assertEqual(server.connections, 1, "heartbeat opened a second TCP/TLS connection")
+            self.assertEqual(client.pending, [])
+        finally:
+            client.close()
+            server.close()
+
     def test_a_closed_idle_socket_is_redialled(self):
         server = ScriptedServer(requests_per_connection=1)
         client = ingest.Ingest(self.config(server.port), log=lambda *_: None)
@@ -1647,7 +1686,7 @@ class DeviceLinkTests(unittest.TestCase):
         self.assertEqual(len(acks), 1)
         self.assertEqual(acks[0][0], 12)
         self.assertEqual(acks[0][1], "failed")
-        self.assertEqual(self.runtime.snapshot()["sample_ms"], 100)
+        self.assertEqual(self.runtime.snapshot()["sample_ms"], 400)
 
 
 if __name__ == "__main__":

@@ -19,8 +19,8 @@ command.
 A command stays queued on the server until it is acknowledged, so a board that
 is offline for a while still receives it when it comes back.
 
-The heartbeat runs in its own thread: a slow request cannot stretch the 100 ms
-sampling grid.
+The heartbeat runs in its own thread and posts over the uploader's kept-alive
+socket, so it cannot stretch the sampling grid or open a second TLS session.
 """
 
 import json
@@ -138,7 +138,7 @@ class DeviceLink:
         self.name = str(getattr(config, "DEVICE_NAME", "Furnace monitor"))
         self.heartbeat_s = max(5.0, float(getattr(config, "HEARTBEAT_S", 15)))
         self._sync_heartbeat()
-        self.delay_s = max(0.0, float(getattr(config, "HEARTBEAT_DELAY_S", 5)))
+        self.delay_s = max(0.0, float(getattr(config, "HEARTBEAT_DELAY_S", 0)))
         self.timeout = float(getattr(config, "API_TIMEOUT_S", 8))
         self.key = getattr(config, "API_KEY", "") or ""
         self.verify = bool(getattr(config, "TLS_VERIFY", False))
@@ -173,7 +173,19 @@ class DeviceLink:
         self._connect_failures = 0
 
     def _post(self, path, payload):
-        """Send one heartbeat/ack, sharing the TLS memory with the uploader."""
+        """Send one heartbeat/ack over the uploader's live socket.
+
+        A separate socket per beat means a second mbedTLS context every 15 s;
+        on a small heap that handshake is the usual source of ENOMEM. Reusing
+        the uploader's keep-alive connection also removes a DNS lookup and a
+        TLS handshake from the control path.
+        """
+        shared = getattr(self.ingest, "post_json", None)
+
+        if shared is not None:
+            return shared(path, payload, max_reply=MAX_REPLY_BYTES)
+
+        # Compatibility fallback for an older ingest.py on the board.
         lock = getattr(ingest, "NETWORK_LOCK", None)
 
         if lock is None:
@@ -204,6 +216,8 @@ class DeviceLink:
 
         sock = None
         raw = b""
+
+        _collect()
 
         try:
             address = self._remote()
@@ -432,6 +446,7 @@ class DeviceLink:
 
     def heartbeat(self):
         """Send one heartbeat and run whatever the server queued."""
+        _collect()
         status, reply = self._post(self._address("heartbeat"), self.payload())
 
         # A reverse proxy may answer 202 Accepted for a request that the API
@@ -439,7 +454,10 @@ class DeviceLink:
         if not 200 <= status < 300:
             raise OSError("heartbeat answered HTTP %d" % (status,))
 
-        data = json.loads(reply.decode("utf-8"))
+        if isinstance(reply, bytes):
+            reply = reply.decode("utf-8")
+
+        data = json.loads(reply)
 
         # Commands first, so a freshly queued settings change is acknowledged
         # as applied. The saved snapshot then covers a board that lost its

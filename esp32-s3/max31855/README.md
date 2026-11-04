@@ -93,14 +93,14 @@ ms,furnace1,furnace2,furnace3
   in, and values outside −270…1800 °C are treated as spikes. At least three of
   the five frames must be valid, so one lucky floating-bus frame cannot make a
   disconnected furnace look alive. Tune `NOISE_SAMPLES`, `NOISE_GAP_US` and
-  `NOISE_EMA_ALPHA` at the top of [`main.py`](main.py); five reads still fit
-  the 100 ms slot.
+  `NOISE_EMA_ALPHA` at the top of [`main.py`](main.py); five reads take about
+  76 ms, well inside the 400 ms frame.
 - **Frame validation.** MISO is pulled up while no MAX31855 is selected, so a
   disconnected module normally reads `0xFFFFFFFF`. Frames with either reserved
   bit set, or an internal cold-junction temperature outside −45…130 °C, are
   rejected as read errors (`fault` 8) instead of being uploaded as plausible
   furnace temperatures.
-- One frame per 100 ms, batched as described in the
+- One frame per 400 ms by default; see the
   [ESP32-S3 README](../README.md#behaviour).
 
 ## Per-furnace offset and temperature bands

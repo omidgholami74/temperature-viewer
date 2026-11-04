@@ -1,10 +1,11 @@
 # ESP32-S3 firmware — Wi-Fi straight to the API
 
 > Pins, probe wiring and power: [docs/hardware.md](../docs/hardware.md).
-> The 100 ms loop, watchdog and fault handling: [docs/firmware.md](../docs/firmware.md).
+> The sampling loop, watchdog and fault handling: [docs/firmware.md](../docs/firmware.md).
 
-Firmware for an **ESP32-S3** that samples the furnace channels at 10 Hz and
-uploads them **directly to the PHP API** over Wi-Fi. There is no middle layer:
+Firmware for an **ESP32-S3** that samples the furnace channels at a configurable
+frame interval (400 ms by default) and uploads them **directly to the PHP API**
+over Wi-Fi. There is no middle layer:
 no PC, no `collector/`, no USB cable, and no file on a flash drive. The board is
 the collector.
 
@@ -45,7 +46,7 @@ PC with `g++`. Details: [`arduino/README.md`](arduino/README.md).
 ```
    ESP32-S3 (Wi-Fi)                        API                    Browser
  ┌──────────────────────┐   POST    ┌──────────────────┐   GET   ┌──────────┐
- │ 4 x sensor @ 10 Hz   │ ────────▶ │ /api/ingest      │ ──────▶ │  ui/     │
+ │ 4 x sensor @ 400 ms  │ ────────▶ │ /api/ingest      │ ──────▶ │  ui/     │
  │ buffer → JSON batch   │  X-Api-Key│ SQLite + runs    │  JSON   │ dashboard│
  └──────────────────────┘           └──────────────────┘         └──────────┘
 ```
@@ -59,7 +60,7 @@ the API, the database and the dashboard need no change:
 ]}
 ```
 
-- `u` — milliseconds since the board booted (the 100 ms grid inside a batch).
+- `u` — milliseconds since the board booted (the frame grid inside a batch).
 - `at` — optional absolute Unix time in ms, sent when NTP synced. It is what
   keeps the history correct after a reboot or a Wi-Fi outage.
 - `t` — four slots in °C. A faulted channel is `null` (never `NaN`), and so is
@@ -197,8 +198,8 @@ Check what is really at the root with `mpremote connect COM6 ls`.
 ### 5. Confirm the dashboard sees it
 
 Open the dashboard (`ui/`, production <https://temp.futurefounderco.com>). The
-cards fill within one batch (= `BATCH_SIZE` samples, 1 s by default) and the
-chip switches from *Paused* to *Recording*.
+cards fill within one frame (400 ms by default) and the chip switches from
+*Paused* to *Recording*.
 
 ## Running from a charger (no computer)
 
@@ -228,7 +229,7 @@ the admin panel.
 
 **What a reboot costs.** The queue lives in RAM, so a watchdog reboot or a
 power cut drops the samples that had not been POSTed yet — at most
-`BUFFER_LIMIT`, which is one minute at 10 Hz. Everything already sent is stored
+`BUFFER_LIMIT`, which is about four minutes at 400 ms. Everything already sent is stored
 on the server. Under genuine heap pressure the firmware may trim to a smaller
 low-water mark to keep the TLS uploader alive; the console logs the number
 dropped.
@@ -338,7 +339,7 @@ a microcontroller.
 | `API_KEY`       | `""`                             | Must equal `FURNACE_INGEST_KEY` on the server  |
 | `API_TIMEOUT_S` | `8`                              | Socket timeout per request                     |
 | `API_KEEPALIVE_S` | `30`                           | Reuse one TCP/TLS connection for at most this long; `0` = new socket per request |
-| `BATCH_SIZE`    | `10`                             | Samples per POST (max 600); 10 = 1 s of data   |
+| `BATCH_SIZE`    | `1`                              | Frames per POST (max 600); one frame keeps latency at the 400 ms interval |
 | `BACKGROUND_UPLOAD` | `True`                       | Send from a thread so sampling never waits     |
 | `BUFFER_LIMIT`  | `600`                            | Samples kept while the API is down (60 s)      |
 | `WATCHDOG_S`    | `30`                             | Reboot when the loop stops feeding it; `0` = off |
@@ -348,6 +349,7 @@ a microcontroller.
 | `TLS_VERIFY`    | `False`                          | Validate the `https` certificate (see below)   |
 | `DEVICE_ID`     | `esp32-1`                        | Name the admin panel uses; keep it unique      |
 | `DEVICE_NAME`   | `Furnace monitor`                | Label shown in the panel                       |
+| `HEARTBEAT_DELAY_S` | `0`                         | Wait before the first heartbeat; `0` reports immediately |
 
 ### Live settings from the admin panel
 
@@ -356,7 +358,10 @@ The panel can change the frame interval (`50–60000 ms`), noise filter window
 (`5–3600 s`) and each channel's enabled flag, base offset and up to 12
 temperature bands without a reflash. The board writes `/settings.json` and
 applies the change on the next frame; the file survives a reboot, and the
-heartbeat re-sends the snapshot if the file is lost. A band is half-open
+heartbeat re-sends the snapshot if the file is lost. An existing
+`/settings.json` (or the server snapshot) wins over the 400 ms code default;
+press **Balanced** and **Save module settings** once on a board that still has
+the old 100 ms value. A band is half-open
 (`min <= t < max`) and replaces the base offset inside that range. `config.py`
 and the constants in `main.py` remain the fallback defaults. A faulted or
 disabled channel is never offset.
@@ -367,7 +372,8 @@ disabled channel is never offset.
 | `OTA_API_KEY`   | `""`                            | Different key for bundles; empty = `API_KEY`   |
 
 Each queued sample costs roughly 150 bytes of RAM, so the default 600-sample
-buffer is about 90 KB — fine on an ESP32-S3, too much for a plain ESP8266.
+buffer is about 90 KB (four minutes at 400 ms) — fine on an ESP32-S3, too much
+for a plain ESP8266.
 
 ### TLS
 
@@ -380,26 +386,29 @@ CA is in the bundle. `http://` also works and skips TLS entirely.
 
 ## Behaviour
 
-- **10 Hz grid.** Each pass reads every installed channel, prints the CSV
-  line, queues the frame and sleeps until the next 100 ms slot. The time column is
-  *measured* (`ticks_ms`), so nothing makes it drift.
+- **Continuous frame grid.** Each pass reads every installed channel, prints
+  the CSV line, queues the frame and sleeps until the next 400 ms slot. The
+  time column is *measured* (`ticks_ms`), so nothing makes it drift.
 - **Uploads never pause sampling.** With `BACKGROUND_UPLOAD = True` (default) a
   worker thread does the POST while the main loop keeps reading sensors, so the
-  serial column stays on a clean 100 ms grid even during a TLS handshake. The
+  serial column stays on a clean 400 ms grid even during a TLS handshake. The
   queue is shared under a lock and trimmed to `BUFFER_LIMIT`. Without
   `_thread` in the build (or with the setting off) the firmware sends inline as
   before, and a slow request then stretches the sample gap by its duration.
-- **Batching.** One request carries `BATCH_SIZE` samples (10 by default, so
-  the server has a sample about a second after it was read). The API anchors a
-  batch without `at` on its arrival time and places the rest on the 0.1 s grid,
-  so the chart and the working rate are unaffected by batching.
+- **Immediate delivery.** One request carries one frame (`BATCH_SIZE = 1`) by
+  default, so the API receives each reading as soon as the uploader can send
+  it. A backlog is sent in several requests instead of one huge JSON/TLS
+  allocation. The API anchors a frame without `at` on its arrival time, so the
+  timeline stays correct without waiting for a batch.
 - **One connection, one lookup.** The TCP socket (and its TLS session) stays
-  open between batches, and the host name is resolved once instead of per
+  open between requests, and the host name is resolved once instead of per
   request: a handshake plus a DNS lookup costs several hundred milliseconds on
-  this chip. The socket is retired after `API_KEEPALIVE_S` (30 s by default),
-  after a failure, or when the server closes it. A failed dial keeps the cached
-  address for two retries, then resolves it again so a DHCP change is picked up
-  without a DNS lookup on every request.
+  this chip. The heartbeat and its acknowledgements use this same socket, so
+  they do not open a second mbedTLS context. The socket is retired after
+  `API_KEEPALIVE_S` (30 s by default), after a failure, or when the server
+  closes it. A failed dial keeps the cached address for two retries, then
+  resolves it again so a DHCP change is picked up without a DNS lookup on
+  every request.
 - **Outages.** A failed upload keeps the batch and retries with a bounded
   exponential backoff (250 ms to 5 s). A `400/413/422` is a refused payload and
   is dropped instead of blocking the queue; `401/403` and a wrong URL are
@@ -422,7 +431,7 @@ CA is in the bundle. `http://` also works and skips TLS entirely.
   no reset button and no computer are needed after the first upload of the
   application files.
 - **One board per run.** Two boards streaming into the same run interleave
-  their frames on the same 0.1 s grid and both count toward the working rate,
+  their frames on the same frame grid and both count toward the working rate,
   so keep one board per run (or a separate database per furnace group).
 - **Console.** The USB serial line is identical to `module/`, so Thonny, Serial
   Studio and [`serial-web/`](../serial-web/README.md) still work while the
@@ -453,9 +462,9 @@ python3 -m unittest discover -s esp32-s3/tests -v
 | `API 404` | `API_URL` points at the dashboard (use the `apitemp` API host) or at a path without `/api/ingest`. A complete `/api/ingest` URL is accepted; heartbeat/OTA strip it automatically. |
 | `Source upload 503` / no bundles in Firmware | The server has no `FURNACE_ADMIN_KEY`. Set it in the PHP/LiteSpeed environment, then upload the bundle from the panel or deploy `tools/publish.py` output. Without it source upload is disabled by design. |
 | `API: TLS certificate not verified` | Expected with `TLS_VERIFY = False`; the connection is encrypted but unverified. A handshake failure instead means the CA is not in the axtls bundle — use `http://` or `TLS_VERIFY = False`. |
-| `API: … ENOMEM` / `heartbeat failed: ENOMEM` | The heap is short while mbedTLS opens a connection. The firmware now sends only `BATCH_SIZE` samples per request, runs one TLS session at a time and trims the oldest queued samples under memory pressure. If it repeats, use `http://` for a test, lower `BUFFER_LIMIT`, or reduce `BATCH_SIZE`. |
+| `API: … ENOMEM` / `heartbeat failed: ENOMEM` | The heap is short while mbedTLS opens a connection. Heartbeats now post over the uploader's live socket, one frame per request (`BATCH_SIZE = 1`) and one TLS session at a time; the queue is trimmed under pressure. Update `ingest.py` and `device.py` together, then restart the board. If it still repeats, use `http://` for a test or lower `BUFFER_LIMIT`. |
 | Board reports online but no new samples arrive | The Wi-Fi association can be half-open. The firmware retires keep-alive sockets after 30 s, bounds every read with `API_TIMEOUT_S`, and force-reassociates Wi-Fi after 60 s without a successful upload; watch for `# network: uploads stalled, resetting Wi-Fi` and `# API: check …` on the console. |
-| Data arrives with a delay | `BATCH_SIZE` samples are buffered before each POST; lower it (for example 5) for faster updates at more requests per second. |
+| Data arrives with a delay | The default `BATCH_SIZE = 1` sends each frame immediately. A larger `BATCH_SIZE` trades latency for fewer requests; check `pending` in the heartbeat and the `# API:` stats. |
 | Serial gaps of ~1 s every few seconds | Not the upload: it runs in its own thread (`# upload runs in a background thread` at boot). A gap that size means the loop itself is slow — check the SPI wiring/power and the sensor reads. |
 | All four channels `--.-` / `-1000` | Wiring: 3V3, GND, SCK and MISO (and MOSI on the MAX31865), one CS per board, thermocouple polarity. Run `module/check.py`-style spot checks or the serial console. |
 | A disconnected channel still reads a plausible temperature | The MAX31855 is not being selected and floating MISO noise looks like a frame. The MAX31855 build pulls MISO up, validates reserved/internal bits and requires three of five good frames; check that channel's CS, 3V3 and GND wiring and replace the module if it persists. |

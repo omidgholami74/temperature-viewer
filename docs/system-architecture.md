@@ -12,7 +12,7 @@ loses a frame.
 | Layer | Components | Owns | Fails visibly as |
 | --- | --- | --- | --- |
 | **Sensing** | MAX31855 / MAX31865 ×4 | 0.25 °C / 0.03 °C conversion, fault bits | A channel goes `null` plus a fault bit |
-| **Firmware** | ESP32-S3 MicroPython, Arduino sketch, Pico module | 10 Hz schedule, buffering, upload | Console banner, watchdog reboot, retained state topic |
+| **Firmware** | ESP32-S3 MicroPython, Arduino sketch, Pico module | Configurable schedule (400 ms default on ESP32), buffering, upload | Console banner, watchdog reboot, retained state topic |
 | **Transport** | Wi-Fi HTTP, MQTT bridge, USB collector | Delivery and retry | API offline banner, bridge `queued` counter, collector spool |
 | **Storage** | PHP API + SQLite | Validation, run boundaries, retention | HTTP 4xx/5xx, `ingest.last_received_at_ms` stopping |
 | **Presentation** | `ui/`, `serial-web/`, MQTT dashboard | Rendering only | Stale chip, held cards, gap-free chart |
@@ -29,7 +29,7 @@ board ──POST /api/ingest (batch of 10)──▶ PHP ──▶ SQLite
 ```
 
 The board keeps one TCP/TLS connection and batches ten frames per request. The
-API anchors the batch on arrival and places the frames back on the 0.1 s grid
+API anchors the batch on arrival and places the frames back on the frame grid
 using `u`, so network latency does not distort the timeline. The board buffers
 600 frames (60 s) if the API is unreachable.
 
@@ -58,8 +58,8 @@ timestamps.
 
 ## A frame's journey
 
-1. **Sample.** Three (MAX31855) or four (MAX31865) SPI channels in one 100 ms
-   slot; the MAX31855 build medians five reads per channel before smoothing
+1. **Sample.** Three (MAX31855) or four (MAX31865) SPI channels in one frame
+   (400 ms on the ESP32-S3); the MAX31855 build medians five reads per channel before smoothing
    them with an EMA. The MAX31855 returns 14 bits plus three fault flags; the
    MAX31865 returns a resistance ratio, converted with the Callendar–Van Dusen
    polynomial.
@@ -127,7 +127,7 @@ comfortable; beyond that the API transaction, not the transport, is the limit.
 
 ## Design principles
 
-1. **Sample first, deliver second.** No network call sits inside the 100 ms loop.
+1. **Sample first, deliver second.** No network call sits inside the sampling loop.
 2. **The database is the truth.** Broker persistence, board buffers and spools
    are caches with a documented size, not a second source of truth.
 3. **A missing value is not zero.** `null` travels end to end and renders as

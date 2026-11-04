@@ -26,17 +26,17 @@ API_TIMEOUT_S = 8
 # hiccup; 30 s still amortises the handshake across ~30 batches.
 API_KEEPALIVE_S = 30
 
-# One request carries BATCH_SIZE samples: 10 at 10 Hz means the server has
-# each sample about a second after it was read. The socket is kept open between
-# batches, so a smaller batch does not cost a TLS handshake every time.
+# Each request carries at most BATCH_SIZE frames. One frame keeps latency to
+# the 400 ms sampling interval and the JSON body small enough for a tight heap;
+# the socket is kept open, so this does not add a TLS handshake per request.
 # The API accepts at most 600 samples per request.
-BATCH_SIZE = 10
-# Send from a background thread, so the 100 ms sampling grid never waits for a
+BATCH_SIZE = 1
+# Send from a background thread, so the 400 ms sampling grid never waits for a
 # request (or a TLS handshake, which costs 0.5-1 s on this board). The counter
-# keeps sampling while a batch is in flight. Set False to send inline again.
+# keeps sampling while a frame is in flight. Set False to send inline again.
 BACKGROUND_UPLOAD = True
-# Samples kept while the API is unreachable: 600 samples are one minute at
-# 10 Hz. Beyond this the oldest samples are dropped, so a long outage cannot
+# Frames kept while the API is unreachable: 600 frames are about four minutes
+# at 400 ms. Beyond this the oldest samples are dropped, so a long outage cannot
 # exhaust the board's RAM. If the heap is genuinely short (for example while
 # mbedTLS opens a connection), the firmware trims further to a small low-water
 # mark so the uploader can recover instead of failing with ENOMEM.
@@ -66,7 +66,7 @@ WATCHDOG_S = 30
 DEVICE_ID = "esp32-1"
 DEVICE_NAME = "Furnace monitor"
 HEARTBEAT_S = 15
-HEARTBEAT_DELAY_S = 5
+HEARTBEAT_DELAY_S = 0           # report immediately after boot
 
 # --- Remote firmware updates (OTA) ---------------------------------------
 # An operator presses "Update" in the admin panel; the heartbeat delivers that

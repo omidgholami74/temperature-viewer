@@ -34,7 +34,7 @@ look at it:
   shapes, failure domains, capacity.
 * [Hardware](hardware.md) — pin maps for both ESP32-S3 variants and the Pico,
   probe wiring, power, grounding, sensor selection, calibration.
-* [Firmware](firmware.md) — the 100 ms loop, upload thread, supervisor and
+* [Firmware](firmware.md) — the sampling loop, upload thread, supervisor and
   watchdog, fault codes, batching, clock handling.
 * [Data model](data-model.md) — tables, run lifecycle, time anchoring, rollup
   and retention arithmetic.

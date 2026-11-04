@@ -47,9 +47,9 @@ exposes both, plus the frame interval and read gap.
 
 | Preset | Frame | Reads | Gap | EMA | Use |
 | --- | ---: | ---: | ---: | ---: | --- |
-| Fast | 50 ms | 3 | 3000 µs | 0.60 | Fast response, more visible noise |
-| Balanced | 100 ms | 5 | 6000 µs | 0.35 | Default |
-| Quiet | 250 ms | 9 | 12000 µs | 0.20 | Noisy wiring; slower response |
+| Fast | 200 ms | 3 | 3000 µs | 0.60 | Fast response, more visible noise |
+| Balanced | 400 ms | 5 | 6000 µs | 0.35 | Default |
+| Quiet | 800 ms | 9 | 12000 µs | 0.20 | Noisy wiring; slower response |
 
 Rules of thumb:
 

@@ -21,7 +21,7 @@ final class DeviceRepository
 
     /** Must match Settings.DEFAULTS in esp32-s3/common/settings.py. */
     private const DEFAULT_SETTINGS = [
-        'sample_ms' => 100,
+        'sample_ms' => 400,
         'noise_samples' => 5,
         'noise_gap_us' => 6000,
         'ema_alpha' => 0.35,

@@ -4,7 +4,7 @@ The admin panel sends a ``settings`` command (or the heartbeat returns the saved
 snapshot). ``DeviceLink`` applies it here, writes ``/settings.json`` and the
 sampling loop picks it up on the next frame:
 
-* ``sample_ms``      -- frame interval; 100 ms is the 10 Hz default.
+* ``sample_ms``      -- frame interval; 400 ms is the default.
 * ``noise_samples``  -- median window per MAX31855 channel.
 * ``noise_gap_us``   -- gap between those reads.
 * ``ema_alpha``      -- smoothing factor, 1.0 disables it.
@@ -21,7 +21,7 @@ import json
 import os
 
 DEFAULTS = {
-    "sample_ms": 100,
+    "sample_ms": 400,
     "noise_samples": 5,
     "noise_gap_us": 6000,
     "ema_alpha": 0.35,

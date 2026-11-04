@@ -103,7 +103,7 @@
           <input class="input" type="number" min="0.05" max="1" step="0.05" data-role="ema-alpha">
         </label>
       </div>
-      <p class="admin-hint">A 100 ms frame with 5 reads and a 6000 µs gap fits three MAX31855 channels in one slot (~75 ms). Lower the sample rate before increasing the read gap.</p>
+      <p class="admin-hint">The 400 ms default leaves room for five reads per channel and a 6000 µs gap (~76 ms for three MAX31855s). Lower the sample rate before increasing the read gap.</p>
       <details class="calibrator">
         <summary>Noise checklist</summary>
         <p class="admin-hint">If readings still jump: use a twisted, shielded K-type pair with the shield grounded at one end; keep thermocouple leads away from mains and SSR wiring; add 100 nF at the MAX31855 supply and a 1 kΩ + 0.1 µF RC at T+/T−; power the board from a clean 5 V supply. In firmware, try <b>Quiet</b> (9 reads, 12 ms gap, EMA 0.2) and a slower frame. Do not filter so hard that the furnace response looks delayed.</p>
@@ -322,6 +322,6 @@
   </div>
 
   <script src="config.js"></script>
-  <script type="module" src="assets/js/admin.js?v=10"></script>
+  <script type="module" src="assets/js/admin.js?v=11"></script>
 </body>
 </html>

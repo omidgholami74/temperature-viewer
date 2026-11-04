@@ -1,6 +1,6 @@
 """ESP32-S3 + 4x MAX31865 (PT100/PT1000), Wi-Fi, straight to the PHP API.
 
-Same shape as the MAX31855 firmware: a fitment probe is read every 100 ms, the
+Same shape as the MAX31855 firmware: a fitment probe is read every 400 ms, the
 ``ms,f1,f2,f3,f4`` line goes out on USB serial for Thonny / Serial Studio /
 ``serial-web``, and every frame is POSTed to ``/api/ingest`` from the board
 itself — no PC collector in the middle.
@@ -58,7 +58,7 @@ FURNACE_CHANNELS = max(
 )
 CS_PINS = CS_GPIO_PINS[:FURNACE_CHANNELS]
 
-SAMPLE_INTERVAL_MS = 100
+SAMPLE_INTERVAL_MS = 400
 API_CHANNELS = 4
 
 # --- probe settings ------------------------------------------------------
@@ -139,7 +139,7 @@ def session(watch):
     ingest = Ingest(config)
 
     # Upload from a thread: a request (or a TLS handshake) takes 0.5-1 s here,
-    # and the sampling loop must stay on the 100 ms grid while it happens.
+    # and the sampling loop must stay on the frame grid while it happens.
     if ingest.start():
         print("# upload runs in a background thread")
 

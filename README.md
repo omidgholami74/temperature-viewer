@@ -59,7 +59,7 @@ extreme, CSV export with its own date picker, and an installable PWA manifest.
 - Keeps the **network, OTA and boot core** off-limits to browser uploads, so an
   application or helper module can be replaced without removing the board's
   recovery path. `boot.py` arms a watchdog before `main.py` is imported.
-- A **Settings** button opens a dialog with theme switching, per-furnace range
+- A **Settings** button opens a dialog with session controls, per-furnace range
   analysis (coldest, hottest, average, min/max per furnace), CSV export with
   presets or custom date pickers, and the app-install action.
 - Fits one screen at every size: the page never scrolls, the chart absorbs the
@@ -94,14 +94,14 @@ extreme, CSV export with its own date picker, and an installable PWA manifest.
 | `backend/`  | PHP API only: JSON endpoints, SQLite schema, CLI tools, tests    |
 | `ui/`       | Static dashboard: HTML, design tokens, CSS, ES modules, config   |
 | `module/`   | Pico firmware: serial + flash log at 10 Hz, no network, simulator |
-| `esp32-s3/` | ESP32-S3 firmware: Wi-Fi, 10 Hz, **direct** `POST /api/ingest`, OTA updates — MicroPython (3× MAX31855) and Arduino/C++ |
+| `esp32-s3/` | ESP32-S3 firmware: Wi-Fi, 400 ms default, **direct** `POST /api/ingest`, OTA updates — MicroPython (3× MAX31855) and Arduino/C++ |
 | `collector/`| PC console app: serial/file capture, checkpointed upload to API   |
 | `serial-web/`| Browser dashboard reading the COM port directly (Web Serial)     |
 | `tests/`    | Node unit tests for the timer and formatting helpers             |
 | `artifacts/`| Dashboard, settings and serial screenshots                      |
 
 The ESP32-S3 firmware removes the PC from that diagram: the board itself posts
-the same 10 Hz payload to `/api/ingest` over Wi-Fi.
+the same payload to `/api/ingest` over Wi-Fi (400 ms frames by default).
 
 ## Documentation
 
@@ -110,7 +110,7 @@ explains how they fit:
 
 - [`docs/system-architecture.md`](docs/system-architecture.md) — layers, the three transports, deployment shapes
 - [`docs/hardware.md`](docs/hardware.md) — pin maps for both ESP32-S3 variants and the Pico, probe wiring, calibration
-- [`docs/firmware.md`](docs/firmware.md) — the 100 ms loop, upload thread, watchdog, fault codes
+- [`docs/firmware.md`](docs/firmware.md) — the sampling loop, upload thread, watchdog, fault codes
 - [`docs/data-model.md`](docs/data-model.md) — tables, run lifecycle, retention arithmetic
 - [`docs/testing.md`](docs/testing.md) — every suite and what it proves without hardware
 - [`MQTT/README.md`](MQTT/README.md) — the MQTT transport, bridge and design system

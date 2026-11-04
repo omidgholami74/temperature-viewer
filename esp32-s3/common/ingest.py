@@ -1,4 +1,4 @@
-"""Direct upload of 10 Hz samples to the PHP API.
+"""Direct upload of furnace samples to the PHP API.
 
 This replaces ``collector/collector.py`` for the ESP32-S3: the board talks to
 ``POST /api/ingest`` itself, so no PC has to sit next to the furnace. The
@@ -255,7 +255,7 @@ class Ingest:
             keepalive_s = KEEPALIVE_MAX_S
         self.keepalive_ms = max(0, min(int(keepalive_s * 1000), 300000))
         self.verify = bool(getattr(config, "TLS_VERIFY", False))
-        batch = int(getattr(config, "BATCH_SIZE", 10))
+        batch = int(getattr(config, "BATCH_SIZE", 1))
         self.batch = max(1, min(batch, MAX_SAMPLES_PER_REQUEST))
         limit = int(getattr(config, "BUFFER_LIMIT", 600))
         self.limit = max(self.batch, min(limit, 20 * MAX_SAMPLES_PER_REQUEST))
@@ -364,8 +364,8 @@ class Ingest:
 
     def _trim_memory(self):
         """Free queue space before a low-memory TLS allocation fails."""
-        # Do not run a collection on every 100 ms sample when the queue is
-        # already small: that would slow the sampling loop for no benefit.
+        # Do not run a collection on every frame when the queue is already
+        # small: that would slow the sampling loop for no benefit.
         if len(self.pending) <= self._low_water():
             return 0
 
@@ -573,6 +573,38 @@ class Ingest:
 
     # -- transport --------------------------------------------------------
 
+    def post_json(self, path, payload, max_reply=MAX_RESPONSE_BYTES):
+        """POST a JSON control message on the uploader's live connection.
+
+        Heartbeats and acknowledgements use this instead of opening a second
+        TLS session. mbedTLS needs a large contiguous allocation for every
+        handshake; opening one beside the uploader every 15 s is what turned a
+        tight heap into ``ENOMEM``. The shared socket also keeps the heartbeat
+        alive across batches without a new DNS lookup or TLS setup.
+        """
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "esp32-s3-furnace/1.0",
+        }
+
+        if self.key:
+            headers["X-Api-Key"] = self.key
+
+        lock = self._send_lock if self._send_lock is not None else _NO_LOCK
+
+        try:
+            body = json.dumps(payload)
+
+            with lock:
+                with NETWORK_LOCK:
+                    return self._request(body, headers, path=path, max_reply=max_reply)
+        except Exception as error:
+            if _is_memory_error(error):
+                # Let the caller retry after the heartbeat thread collects.
+                self._low_memory = True
+                _collect()
+            raise
+
     def _send(self, samples):
         """True when the samples are done with (stored or refused for good)."""
         headers = {
@@ -727,15 +759,17 @@ class Ingest:
         self._connect_failures = 0
         return sock
 
-    def _request(self, body, headers):
+    def _request(self, body, headers, path=None, max_reply=MAX_RESPONSE_BYTES):
         """POST over the kept-alive socket; returns (status, body text).
 
         A TCP + TLS handshake costs a few hundred milliseconds on an ESP32,
-        which is several skipped samples on the 10 Hz grid, so the socket is
-        reopened only after an error or when the server closes it. A request
-        that fails on a reused socket is retried once on a fresh one: the
-        server had almost certainly closed an idle connection.
+        which is several skipped frames, so the socket is reopened only after
+        an error or when the server closes it. A request that fails on a
+        reused socket is retried once on a fresh one: the server had almost
+        certainly closed an idle connection.
         """
+        path = self.path if path is None else path
+
         if self._keepalive_expired():
             self.close()
 
@@ -748,7 +782,7 @@ class Ingest:
             self._sock_started_ms = _ticks_ms()
 
         try:
-            return self._exchange(sock, body, headers)
+            return self._exchange(sock, body, headers, path, max_reply)
         except Exception:
             self.close()
 
@@ -761,15 +795,15 @@ class Ingest:
         self._sock_started_ms = _ticks_ms()
 
         try:
-            return self._exchange(sock, body, headers)
+            return self._exchange(sock, body, headers, path, max_reply)
         except Exception:
             self.close()
             raise
 
-    def _exchange(self, sock, body, headers):
+    def _exchange(self, sock, body, headers, path, max_reply):
         """Write one POST and read the whole reply so the socket stays usable."""
         lines = [
-            "POST %s HTTP/1.1" % (self.path,),
+            "POST %s HTTP/1.1" % (path,),
             "Host: %s" % (self.host,),
             "Connection: keep-alive",
         ]
@@ -784,9 +818,9 @@ class Ingest:
         # sendall/recv are the two calls MicroPython and CPython share.
         sock.sendall("\r\n".join(lines).encode("utf-8"))
 
-        return self._read_response(sock)
+        return self._read_response(sock, max_reply)
 
-    def _read_response(self, sock):
+    def _read_response(self, sock, max_reply=MAX_RESPONSE_BYTES):
         """Read one complete response: status, headers and the whole body."""
         raw = b""
 
@@ -798,14 +832,14 @@ class Ingest:
 
             raw += chunk
 
-            if len(raw) > MAX_RESPONSE_BYTES:
+            if len(raw) > max_reply:
                 raise OSError("response headers are too large")
 
         head, _, body = raw.partition(b"\r\n\r\n")
         status, fields = parse_head(head)
 
         if "chunked" in fields.get("transfer-encoding", "").lower():
-            body = read_chunked(sock, body)
+            body = read_chunked(sock, body, max_reply)
         else:
             length = fields.get("content-length")
 
@@ -819,7 +853,7 @@ class Ingest:
 
                     body += chunk
 
-                    if len(body) > MAX_RESPONSE_BYTES:
+                    if len(body) > max_reply:
                         break
 
                 self.close()
@@ -828,6 +862,9 @@ class Ingest:
                     expected = int(length)
                 except (TypeError, ValueError):
                     raise OSError("bad Content-Length: %r" % (length,))
+
+                if expected > max_reply:
+                    raise OSError("response body is too large")
 
                 while len(body) < expected:
                     chunk = sock.recv(expected - len(body))
@@ -871,7 +908,7 @@ def parse_head(head):
     return status, fields
 
 
-def read_chunked(sock, buffered):
+def read_chunked(sock, buffered, limit=MAX_RESPONSE_BYTES):
     """De-chunk a ``Transfer-Encoding: chunked`` body (small replies only)."""
     body = b""
     raw = buffered
@@ -920,7 +957,7 @@ def read_chunked(sock, buffered):
         body += raw[:size]
         raw = raw[size + 2:]
 
-        if len(body) > MAX_RESPONSE_BYTES:
+        if len(body) > limit:
             return body
 
 

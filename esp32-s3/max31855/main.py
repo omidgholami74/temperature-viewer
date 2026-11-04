@@ -1,6 +1,6 @@
 """ESP32-S3 + 3x MAX31855, Wi-Fi, straight to the PHP API.
 
-Three furnaces are read every 100 ms, each through a median/EMA noise filter;
+Three furnaces are read every 400 ms, each through a median/EMA noise filter;
 the ``ms,f1,f2,f3`` line goes out on USB serial for Thonny / Serial Studio /
 ``serial-web``, and every frame is POSTed to ``/api/ingest`` from the board
 itself — no PC collector in the middle.
@@ -52,7 +52,7 @@ MISO_PIN = 12
 # every list below follows this length.
 CS_PINS = [15, 16, 17]
 
-SAMPLE_INTERVAL_MS = 100
+SAMPLE_INTERVAL_MS = 400
 
 # The wire format is fixed at four channels by the API. Unused slots are sent
 # as null (temperature) and 0 (fault), so they read as "no probe installed".
@@ -66,10 +66,9 @@ FAULT_SENTINEL = -1000.0  # CSV value for a channel that reported a fault
 # ---------------------------------------------------------------------------
 # Every channel is read several times per slot and the median is used, so one
 # corrupt SPI frame (the usual cause of a sudden ±6 °C spike) is thrown away
-# instead of averaged into the result. Five reads 6 ms apart keep three
-# furnaces inside the 100 ms slot: 3 × (4 × 6 ms + 5 reads) ≈ 76 ms. Raising
-# NOISE_GAP_US without also raising SAMPLE_INTERVAL_MS makes the loop miss
-# slots.
+# instead of averaged into the result. Five reads 6 ms apart take about 76 ms
+# for three furnaces. The 400 ms default leaves plenty of headroom, so serial
+# output and the uploader cannot push the sampling loop behind.
 NOISE_SAMPLES = 5
 NOISE_GAP_US = 6000
 CHANNEL_GAP_US = 500        # pause between channels on the shared SCK/MISO bus
@@ -340,7 +339,7 @@ def session(watch):
     ingest = Ingest(config)
 
     # Upload from a thread: a request (or a TLS handshake) takes 0.5-1 s here,
-    # and the sampling loop must stay on the 100 ms grid while it happens.
+    # and the sampling loop must stay on the frame grid while it happens.
     if ingest.start():
         print("# upload runs in a background thread")
 

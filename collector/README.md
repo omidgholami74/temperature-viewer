@@ -48,6 +48,7 @@ Sent 100 samples (total 200) | temperatures:  781.4   660.1   940.4   545.6
 | `CHECKPOINT_FILE` | `<DATA_DIR>/checkpoint.json`| Accepted byte offset per file               |
 | `API_URL`         | `http://127.0.0.1:8080`     | Backend base URL, no trailing slash         |
 | `API_KEY`         | `""`                        | Must equal `FURNACE_INGEST_KEY` when set    |
+| `USER_AGENT`      | `FurnaceCollector/1.0 ...`  | Sent to avoid Cloudflare's Python-UA block |
 | `BATCH_SIZE`      | `100`                       | Samples per request                         |
 | `POLL_INTERVAL_S` | `1.0`                       | Idle wait between upload checks             |
 | `RETRY_DELAYS_S`  | `(1, 2, 5, 10, 30)`         | Backoff between failed uploads              |
@@ -251,6 +252,24 @@ samples that had not been uploaded yet.
   certificate for a different domain, the collector reports
   `TLS certificate problem ...` and keeps the data; install SSL for the domain
   (AutoSSL / Let's Encrypt) rather than disabling verification.
+
+### Cloudflare `403` / `error code: 1010`
+
+Cloudflare's Browser Integrity Check rejects Python's stock
+`Python-urllib/<version>` user agent with HTTP 403 and the HTML text
+`error code: 1010`. The collector now identifies itself as
+`FurnaceCollector/1.0` and sends `Accept: application/json`.
+
+If the error remains after restarting the collector:
+
+- Confirm `API_URL` points at the API host, not the dashboard host. A dashboard
+  hostname can be protected by a different Cloudflare rule.
+- In Cloudflare, add a WAF skip/exception for `Browser Integrity Check` on the
+  `/api/ingest` path, or allow the collector's user agent. Keep the API key
+  check and TLS verification enabled; `403` is not an API-key error and should
+  not be worked around with `verify=False`.
+- The samples are safe in `DATA_DIR/samples.jsonl`. Fix the edge rule and
+  restart; the checkpoint resumes from the first unsent line.
 
 ### Windows: `PermissionError: [WinError 5]` on `checkpoint.json`
 

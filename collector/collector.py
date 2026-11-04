@@ -51,6 +51,11 @@ CHECKPOINT_FILE = os.path.join(DATA_DIR, "checkpoint.json")  # accepted offset
 API_URL = "http://127.0.0.1:8080"  # backend base URL, no trailing slash
 API_KEY = ""  # must match FURNACE_INGEST_KEY when the API requires a key
 
+# Cloudflare's Browser Integrity Check blocks Python's stock urllib user agent
+# with HTTP 403 / error 1010. Identify the program instead of looking like a
+# browser; the contact URL also gives an operator something to match on.
+USER_AGENT = "FurnaceCollector/1.0 (+https://github.com/omidgholami74/temperature-viewer)"
+
 BATCH_SIZE = 100  # samples per request
 POLL_INTERVAL_S = 1.0  # pause when there is nothing new to upload
 RETRY_DELAYS_S = (1, 2, 5, 10, 30)  # backoff between failed uploads
@@ -353,7 +358,11 @@ def read_batch(path, offset):
 
 def post_batch(samples):
     """Return True, "rejected" (HTTP 4xx) or False (retry later)."""
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": USER_AGENT,
+    }
 
     if API_KEY:
         headers["X-Api-Key"] = API_KEY
@@ -375,6 +384,14 @@ def post_batch(samples):
     except urllib.error.HTTPError as error:
         body = error.read(200).decode("utf-8", "ignore")
         print(f"API {error.code}: {body}", flush=True)
+
+        if error.code == 403 and "1010" in body:
+            print(
+                "Cloudflare error 1010: allow /api/ingest through Browser "
+                "Integrity Check or the WAF, or check that API_URL points at "
+                "the API rather than the dashboard host.",
+                flush=True,
+            )
 
         # Only a refused payload is dropped. 401/403/404/405 mean the URL or
         # the key is wrong, so the data is kept and retried instead of lost.

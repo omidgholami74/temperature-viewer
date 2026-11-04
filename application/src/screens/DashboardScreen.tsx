@@ -368,9 +368,7 @@ export function DashboardScreen() {
 
         <Reveal delay={380} style={styles.footer}>
           <Text style={styles.footerText}>
-            {feed.source === 'live'
-              ? 'داده زنده از سرور پایش دما'
-              : feed.note ?? 'در حال اتصال به سرور…'}
+            {feed.note ?? 'داده زنده از سرور پایش دما'}
           </Text>
           <Text style={styles.footerTime}>
             آخرین به‌روزرسانی: {formatClock(feed.lastUpdate)}

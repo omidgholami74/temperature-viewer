@@ -26,11 +26,15 @@ multi-series chart, in Persian, on a dark glass-style surface.
 - **Animated chart** drawn with `react-native-svg`: smooth curves, gradient
   areas, grid, per-series legend toggles, 1 / 5 / 15 minute windows and an
   animated stroke reveal when the window changes.
-- **Data feed** reads `http://apitemp.futurefounderco.com/api/live` every 1.5 s.
-  The app contains no simulated data: every number on screen comes from the
-  controller. If the link drops, the last readings stay visible, the pill turns
-  to **قطع** with a retry note in the footer, and polling resumes every 4 s.
-  Channels the controller reports as `null` show `--` instead of a stale value.
+- **Data feed** reads `http://apitemp.futurefounderco.com/api/live?since=<id>`
+  every second. The cursor means every stored frame is plotted — a 10 Hz burst
+  lands as a dense segment instead of one point per poll — and each row is placed
+  at its real run time, so a pause between bursts shows as a gap instead of the
+  chart restarting. On launch the last 15 minutes are seeded from `/api/history`.
+  There is no simulated data: a channel the controller reports as `null` shows
+  `--`, and if the board stops sending for 15 s the footer names the time of the
+  last frame. A dropped link keeps the last curve behind an **offline** pill and
+  retries every 3 s.
 - **RTL-friendly Persian copy**, fixed-width digits so values never shift the
   layout, and a soft blue glow background instead of flat black.
 

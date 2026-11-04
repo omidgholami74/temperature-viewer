@@ -9,7 +9,7 @@ multi-series chart, in Persian, on a dark glass-style surface.
 | App name (launcher) | اتوماسیون هوشمند رازی |
 | Company | بنیاد علوم کاربردی رازی (Razi Applied Science Foundation) |
 | Package | `com.raziautomation` |
-| Version | 1.1.0 (versionCode 2) |
+| Version | 1.2.0 (versionCode 3) |
 | Min / target SDK | 24 / 34 |
 | JS engine | Hermes, old architecture |
 
@@ -18,6 +18,10 @@ multi-series chart, in Persian, on a dark glass-style surface.
 - **Animated splash screen** with the foundation mark, a rotating dashed halo,
   the app and company name, and a progress bar. The native launch theme is the
   same navy, so there is no white flash before React Native paints.
+- **Sign-in panel** before the dashboard: the foundation mark, RTL username and
+  password fields with a show/hide toggle, inline Persian errors, a shake on a
+  failed attempt and a spinner while it checks. The signed-in user and role sit
+  in the footer next to a sign-out button.
 - **Live dashboard**: a 270° arc gauge for the selected furnace, heating /
   cooling / holding state, 10-second delta, and min / average / max for the
   selected window.
@@ -49,13 +53,27 @@ multi-series chart, in Persian, on a dark glass-style surface.
 ## Screens
 
 ```
-SplashScreen  ──2.5 s──▶  DashboardScreen
+SplashScreen ──2.5 s──▶ LoginScreen ──sign in──▶ DashboardScreen
                           ├── brand header + live/offline pill
                           ├── hero gauge card (selected furnace + stats)
                           ├── 4 channel cards (tap to select)
                           ├── chart card (window chips + legend)
                           └── source / last-update footer
 ```
+
+## Sign-in
+
+The controller API only protects ingestion with an API key, so the dashboard is
+gated locally in `src/data/auth.ts`:
+
+| Username | Password | Role |
+| --- | --- | --- |
+| `admin` | `razi1400` | مدیر |
+| `operator` | `kore1400` | اپراتور |
+
+Replace that account list with the operator accounts, or point `signIn()` at a
+real endpoint once the backend grows one. The session lives in memory, so
+closing the app asks for the password again.
 
 ## Run it
 
@@ -82,7 +100,7 @@ export ANDROID_HOME=/path/to/android-sdk        # platform 35 + build-tools 35.0
 
 The APK lands in
 `android/app/build/outputs/apk/release/app-release.apk` (arm64-v8a + armeabi-v7a,
-roughly 47 MB, version 1.1.0). Install it with:
+roughly 47 MB, version 1.2.0). Install it with:
 
 ```bash
 adb install -r android/app/build/outputs/apk/release/app-release.apk
@@ -104,7 +122,9 @@ App.tsx                     splash → dashboard switch, status bar
 src/theme.ts                palette, radii, spacing, shadows
 src/data/channels.ts        channel names, colours, gauge scales
 src/data/feed.ts            API polling + useTemperatureFeed()
-src/components/BrandLogo    vector peacock mark (header, splash)
+src/data/auth.ts            local accounts + signIn()
+src/screens/LoginScreen     animated sign-in panel
+src/components/BrandLogo    the company mark (header, splash, login)
 src/components/SplashScreen animated launch screen
 src/components/Gauge        animated 270° arc gauge
 src/components/Sparkline    tiny trend line for the channel cards
@@ -117,14 +137,19 @@ android/app/src/main/res/   launcher icons and the native launch background
 
 ## Brand assets
 
-`assets/brand/logo-razi.svg` is the vector mark; `app-icon.svg` and
-`app-icon-round.svg` are the launcher icon sources. The PNG mipmaps,
-`icon-1024.png` and the splash bitmap were rasterised from those SVGs with
-`sharp`, so the artwork stays editable:
+`logo.png` at the repository root of this folder is the artwork supplied by the
+company. The build assets are derived from it with `sharp`, never redrawn:
 
-```bash
-npx sharp-cli -i assets/brand/app-icon.svg -o android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png resize 192 192
-```
+- the white paper is knocked out to transparency (`alpha = 255 - min(r,g,b)`),
+  the mark is trimmed and tinted;
+- `assets/brand/mark-light.png` (light blue, for the dark UI) and
+  `mark-plain.png` (brand blue) feed `BrandLogo`, the splash and the launcher
+  icons;
+- `icon-1024.png` / `icon-round-1024.png` place the mark on the navy gradient,
+  and the mipmap PNGs plus `splash_logo.png` are resized from those.
+
+Replace `logo.png` with a new export and re-run the generator to refresh every
+icon at once.
 
 ## Checks
 

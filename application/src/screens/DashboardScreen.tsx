@@ -22,6 +22,7 @@ import {BrandLogo} from '../components/BrandLogo';
 import {ChannelCard} from '../components/ChannelCard';
 import {Gauge} from '../components/Gauge';
 import {TemperatureChart} from '../components/TemperatureChart';
+import type {Session} from '../data/auth';
 import {channelById} from '../data/channels';
 import type {FeedSource} from '../data/feed';
 import {useTemperatureFeed} from '../data/feed';
@@ -154,7 +155,9 @@ function AppBackground() {
   );
 }
 
-export function DashboardScreen() {
+type Props = {session: Session; onSignOut: () => void};
+
+export function DashboardScreen({session, onSignOut}: Props) {
   const feed = useTemperatureFeed();
   const {width} = useWindowDimensions();
   const [selectedId, setSelectedId] = useState(1);
@@ -373,6 +376,15 @@ export function DashboardScreen() {
           <Text style={styles.footerTime}>
             آخرین به‌روزرسانی: {formatClock(feed.lastUpdate)}
           </Text>
+
+          <View style={styles.accountRow}>
+            <Text style={styles.accountText}>
+              {session.displayName} · {session.role}
+            </Text>
+            <Pressable onPress={onSignOut} style={styles.signOut} hitSlop={6}>
+              <Text style={styles.signOutText}>خروج از حساب</Text>
+            </Pressable>
+          </View>
         </Reveal>
       </ScrollView>
     </View>
@@ -534,4 +546,27 @@ const styles = StyleSheet.create({
   footer: {marginTop: space(6), alignItems: 'center'},
   footerText: {color: colors.muted, fontSize: 10.5, textAlign: 'center'},
   footerTime: {...tabular, color: colors.muted, fontSize: 10, marginTop: space(1.5)},
+  accountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space(3),
+    marginTop: space(4),
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    paddingLeft: space(2),
+    paddingRight: space(4),
+    paddingVertical: space(2),
+  },
+  accountText: {color: colors.textSoft, fontSize: 10.5},
+  signOut: {
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(255, 122, 69, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 122, 69, 0.35)',
+    paddingHorizontal: space(3),
+    paddingVertical: space(1.5),
+  },
+  signOutText: {color: colors.warm, fontSize: 10.5, fontWeight: '700'},
 });

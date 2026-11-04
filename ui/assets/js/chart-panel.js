@@ -139,7 +139,7 @@ export class TemperatureChart {
   }
 
   /**
-   * Re-read the CSS custom properties after the operator switches theme.
+   * Re-read the CSS custom properties after a palette change.
    * Chart.js bakes colours into its resolved options, so they are assigned
    * again here instead of being resolved from CSS on every paint.
    */

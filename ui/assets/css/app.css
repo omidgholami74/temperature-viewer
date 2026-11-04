@@ -233,10 +233,6 @@ main {
   padding: 7px 12px;
 }
 
-:root[data-theme="light"] .btn--primary {
-  color: #ffffff;
-}
-
 .btn svg {
   flex: none;
 }
@@ -1080,16 +1076,6 @@ input[type="datetime-local"]:focus-visible {
   outline-offset: 1px;
 }
 
-.segmented--themes {
-  width: 100%;
-  max-width: 320px;
-}
-
-.segmented--themes button {
-  flex: 1 1 auto;
-  padding: 7px 12px;
-}
-
 .settings-row {
   display: flex;
   align-items: center;
@@ -1789,7 +1775,7 @@ input[type="datetime-local"]:focus-visible {
 }
 
 /* -------------------------------------------------------------------------
-   Dialog on small screens + light-theme details
+   Dialog on small screens
    ------------------------------------------------------------------------- */
 
 @media (max-width: 560px) {
@@ -1854,39 +1840,11 @@ input[type="datetime-local"]:focus-visible {
   }
 }
 
-:root[data-theme="light"] .panel::before {
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.9), transparent);
-}
-
-:root[data-theme="light"] .timer-display::after {
-  opacity: 0.35;
-}
-
-:root[data-theme="light"] .chip {
-  background: rgba(22, 45, 70, 0.03);
-}
-
-:root[data-theme="light"] .status__dot {
-  box-shadow: none;
-}
-
-:root[data-theme="light"] .furnace-card__dot {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--channel) 15%, transparent);
-}
-
-:root[data-theme="light"] .counter__digits {
-  text-shadow: none;
-}
-
-:root[data-theme="light"] .dialog::backdrop {
-  background: rgba(12, 25, 38, 0.38);
-}
-
 /* -------------------------------------------------------------------------
-   Control-deck finish
-   A warm industrial palette over the same one-screen layout. The rules below
-   are deliberately additive: the responsive grid and all behaviour stay in
-   the component rules above.
+   Dark control-deck finish
+   A cool, high-contrast palette over the one-screen layout. The rules below
+   are additive: the responsive grid and all behaviour stay in the component
+   rules above.
    ------------------------------------------------------------------------- */
 
 body::after {
@@ -1967,21 +1925,8 @@ body::after {
 
 .timer-card {
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 28%),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 30%),
     var(--panel-bg);
-}
-
-.timer-card::after {
-  content: "LIVE THERMAL WINDOW";
-  position: absolute;
-  top: clamp(10px, 1.5vh, 21px);
-  right: clamp(14px, 2vw, 28px);
-  color: color-mix(in srgb, var(--accent) 56%, transparent);
-  font-family: var(--font-mono);
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  pointer-events: none;
 }
 
 .timer-display {
@@ -1989,12 +1934,12 @@ body::after {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.055),
     inset 0 -36px 70px -42px rgba(0, 0, 0, 0.95),
-    0 0 48px -26px color-mix(in srgb, var(--accent) 55%, transparent);
+    0 0 32px -22px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .counter__digits {
-  color: color-mix(in srgb, var(--text-1) 88%, var(--accent));
-  text-shadow: 0 0 52px color-mix(in srgb, var(--accent) 24%, transparent);
+  color: var(--text-1);
+  text-shadow: 0 0 42px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .furnace-grid {
@@ -2030,15 +1975,15 @@ body::after {
 }
 
 .furnace-card[data-level="hot"] {
-  --heat: color-mix(in srgb, var(--ch-1) 23%, transparent);
+  --heat: color-mix(in srgb, var(--danger) 19%, transparent);
 }
 
 .furnace-card[data-level="warm"] {
-  --heat: color-mix(in srgb, var(--ch-3) 14%, transparent);
+  --heat: color-mix(in srgb, var(--warn) 15%, transparent);
 }
 
 .furnace-card[data-level="cool"] {
-  --heat: color-mix(in srgb, var(--ch-2) 12%, transparent);
+  --heat: color-mix(in srgb, var(--info) 12%, transparent);
 }
 
 .furnace-card.is-fault {
@@ -2082,8 +2027,7 @@ body::after {
 }
 
 @media (max-width: 720px) {
-  .brand__tagline,
-  .timer-card::after {
+  .brand__tagline {
     display: none;
   }
 
@@ -2097,17 +2041,4 @@ body::after {
   .brand__tagline {
     display: none;
   }
-}
-
-:root[data-theme="light"] .brand__logo {
-  background: #ffffff;
-}
-
-:root[data-theme="light"] .alarm-bar {
-  color: #9f1239;
-}
-
-:root[data-theme="light"] .status,
-:root[data-theme="light"] .legend__item {
-  background: rgba(255, 255, 255, 0.72);
 }

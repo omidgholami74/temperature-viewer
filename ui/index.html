@@ -3,21 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="color-scheme" content="dark light">
+  <meta name="color-scheme" content="dark">
   <meta name="description" content="Live thermal telemetry for the Razi Applied Science Foundation: furnace temperatures, sensor health, run timing and analysis.">
   <title>Thermal Command · Razi Applied Science Foundation</title>
-  <meta name="theme-color" content="#070a0e" data-role="theme-color">
+  <meta name="theme-color" content="#05080c">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Razi Furnace">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="assets/img/icon-180.png">
-  <link rel="stylesheet" href="assets/css/tokens.css?v=8">
-  <link rel="stylesheet" href="assets/css/app.css?v=9">
-  <!-- Resolve the saved theme before the first paint, so a light-mode phone
-       never flashes the dark dashboard. -->
-  <script src="assets/js/theme-boot.js?v=7"></script>
+  <link rel="stylesheet" href="assets/css/tokens.css?v=9">
+  <link rel="stylesheet" href="assets/css/app.css?v=10">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -227,23 +224,13 @@
       </header>
 
       <div class="tabs" role="tablist" aria-label="Settings sections">
-        <button class="tab" id="tab-btn-appearance" type="button" role="tab" aria-selected="true" aria-controls="tab-appearance" data-tab="appearance">Appearance</button>
+        <button class="tab" id="tab-btn-session" type="button" role="tab" aria-selected="true" aria-controls="tab-session" data-tab="session">Session</button>
         <button class="tab" id="tab-btn-analysis" type="button" role="tab" aria-selected="false" aria-controls="tab-analysis" data-tab="analysis">Analysis</button>
         <button class="tab" id="tab-btn-data" type="button" role="tab" aria-selected="false" aria-controls="tab-data" data-tab="data">Export</button>
       </div>
 
       <div class="dialog__body">
-        <section class="tab-panel" id="tab-appearance" role="tabpanel" aria-labelledby="tab-btn-appearance" data-panel="appearance">
-          <div class="field">
-            <span class="field__label" id="theme-label">Theme</span>
-            <div class="segmented segmented--themes" role="group" aria-labelledby="theme-label" data-role="themes">
-              <button type="button" data-theme-choice="dark" aria-pressed="true">Dark</button>
-              <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
-              <button type="button" data-theme-choice="system" aria-pressed="false">System</button>
-            </div>
-            <p class="field__hint">Saved on this device only. System follows the phone setting automatically.</p>
-          </div>
-
+        <section class="tab-panel" id="tab-session" role="tabpanel" aria-labelledby="tab-btn-session" data-panel="session">
           <div class="settings-row">
             <div class="settings-row__text">
               <p class="settings-row__title">Recording</p>
@@ -427,6 +414,6 @@
        bump it whenever config.js or main.js changes meaning. -->
   <script src="config.js?v=7"></script>
   <script src="assets/vendor/chart.umd.min.js"></script>
-  <script type="module" src="assets/js/main.js?v=11"></script>
+  <script type="module" src="assets/js/main.js?v=12"></script>
 </body>
 </html>

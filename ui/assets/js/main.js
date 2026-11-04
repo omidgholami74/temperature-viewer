@@ -15,15 +15,14 @@ import {
 } from './format.js';
 
 const CHANNELS = [
-  { name: 'Furnace 1', fallback: '#ffb257' },
-  { name: 'Furnace 2', fallback: '#5ad7ff' },
-  { name: 'Furnace 3', fallback: '#ff7d8a' },
-  { name: 'Furnace 4', fallback: '#b999ff' },
+  { name: 'Furnace 1', fallback: '#38e0a5' },
+  { name: 'Furnace 2', fallback: '#49bdf0' },
+  { name: 'Furnace 3', fallback: '#f3b45a' },
+  { name: 'Furnace 4', fallback: '#a78bfa' },
 ];
 
 const WINDOWS = [60, 600, 3600, 21600, 86400, 0];
 const WINDOW_STORAGE_KEY = 'furnace.window';
-const THEME_STORAGE_KEY = 'furnace.theme';
 const DEFAULT_RANGE = 86400;
 const PAUSED_AFTER_MS = 2500;
 const DEFAULT_WINDOW = 600;
@@ -60,8 +59,6 @@ const el = {
   dialogClose: $('[data-role="settings-close"]'),
   tabs: $$('[data-tab]'),
   panels: $$('[data-panel]'),
-  themeButtons: $$('[data-theme-choice]'),
-  themeColor: $('[data-role="theme-color"]'),
   newRun: $('[data-role="new-run"]'),
   cards: $$('.furnace-card').map((root) => ({
     root,
@@ -139,7 +136,6 @@ const state = {
   reason: null,
   windowSeconds: DEFAULT_WINDOW,
   windowStored: false,
-  theme: document.documentElement.dataset.themePreference ?? 'system',
   bounds: null,
   boundsError: null,
   range: { preset: DEFAULT_RANGE, fromMs: null, toMs: null },
@@ -729,41 +725,6 @@ function startCounter() {
   requestAnimationFrame(frame);
 }
 
-/* --- theme -------------------------------------------------------------- */
-
-const lightQuery = window.matchMedia('(prefers-color-scheme: light)');
-
-function resolveTheme(preference) {
-  return preference === 'system' ? (lightQuery.matches ? 'light' : 'dark') : preference;
-}
-
-function applyTheme(preference, { persist = true } = {}) {
-  const safe = ['dark', 'light', 'system'].includes(preference) ? preference : 'system';
-  const resolved = resolveTheme(safe);
-
-  state.theme = safe;
-  document.documentElement.dataset.theme = resolved;
-  document.documentElement.dataset.themePreference = safe;
-
-  if (el.themeColor) {
-    el.themeColor.content = resolved === 'light' ? '#f5efe7' : '#070a0e';
-  }
-
-  for (const button of el.themeButtons) {
-    button.setAttribute('aria-pressed', String(button.dataset.themeChoice === safe));
-  }
-
-  if (persist) {
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, safe);
-    } catch {
-      // Private mode: the theme applies to this visit only.
-    }
-  }
-
-  chart?.setTheme();
-}
-
 /**
  * Apply the operator's public-dashboard settings. The threshold is no longer
  * read from localStorage and has no control on this page: an operator changes
@@ -815,19 +776,6 @@ async function loadDashboardSettings() {
   }
 }
 
-function handleThemeChange() {
-  if (state.theme === 'system') {
-    applyTheme('system', { persist: false });
-  }
-}
-
-// Safari before 14 only has the deprecated addListener form.
-if (typeof lightQuery.addEventListener === 'function') {
-  lightQuery.addEventListener('change', handleThemeChange);
-} else if (typeof lightQuery.addListener === 'function') {
-  lightQuery.addListener(handleThemeChange);
-}
-
 /* --- settings dialog ---------------------------------------------------- */
 
 function selectTab(name) {
@@ -848,7 +796,7 @@ function selectTab(name) {
   }
 }
 
-function openSettings(tab = 'appearance') {
+function openSettings(tab = 'session') {
   selectTab(tab);
 
   if (!el.dialog.open) {
@@ -1370,7 +1318,7 @@ function registerWorker() {
 /* --- events ------------------------------------------------------------- */
 
 function bindEvents() {
-  el.settingsButton.addEventListener('click', () => openSettings('appearance'));
+  el.settingsButton.addEventListener('click', () => openSettings('session'));
   el.dialogClose.addEventListener('click', closeSettings);
 
   // Clicking the dimmed area (the dialog element itself) closes the sheet.
@@ -1393,10 +1341,6 @@ function bindEvents() {
       next.focus();
       selectTab(next.dataset.tab);
     });
-  }
-
-  for (const button of el.themeButtons) {
-    button.addEventListener('click', () => applyTheme(button.dataset.themeChoice));
   }
 
   el.newRun.addEventListener('click', startNewRun);
@@ -1467,7 +1411,6 @@ function bindEvents() {
 }
 
 function bootstrap() {
-  applyTheme(state.theme, { persist: false });
   applyDashboardSettings(DEFAULT_DASHBOARD);
   void loadDashboardSettings();
 

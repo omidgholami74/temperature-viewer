@@ -37,7 +37,7 @@ This folder is deployed on its **own web server**, separate from the PHP API:
 
 ![Settings and range analysis](../artifacts/settings-analysis.png)
 5. Settings dialog with three tabs:
-   - **Appearance** — dark / light / system theme and *Start new run*;
+   - **Session** — *Start new run* and the recording note;
    - **Analysis** — range presets (1 h, 6 h, 24 h, 7 d, 30 d, all, custom) or
      custom date-time pickers, coldest / hottest / average highlights, and
      min/max/avg/points per furnace;
@@ -126,13 +126,12 @@ index.html                  markup, timer, furnace cards, chart, settings dialog
 manifest.webmanifest        PWA name, colours, 192/512/maskable icons
 sw.js                       offline shell cache (never caches the API)
 config.js                   API origin for the current deployment
-assets/css/tokens.css       design tokens, dark + light palettes, reset
+assets/css/tokens.css       design tokens, fixed dark palette, reset
 assets/css/app.css          layout, cards, chart, dialog and responsive rules
-assets/js/theme-boot.js     applies the saved theme before the first paint
 assets/js/main.js           state, DOM updates, events, timer, settings, export
 assets/js/feed.js           chained /api/live polling with backoff
 assets/js/api.js            fetch wrapper, bounds/summary/export, timeouts
-assets/js/chart-panel.js    Chart.js setup, buffers, window, theme refresh
+assets/js/chart-panel.js    Chart.js setup, buffers, window, palette refresh
 assets/js/format.js         duration, axis, temperature and delta formatting
 assets/vendor/chart.umd.min.js  Chart.js 4.5.1 (MIT, see CHARTJS-LICENSE.md)
 assets/img/logo-razi.svg    foundation mark used in the header
@@ -185,16 +184,15 @@ The manifest uses `start_url: "./"` and `scope: "./"` for the same reason.
 - channel identity `--ch-1` … `--ch-4` reused by cards, legend, card borders
   and chart;
 - composite surfaces (`--page-bg`, `--panel-bg`, `--timer-bg`,
-  `--tooltip-bg`) that the light palette replaces as a whole;
+  `--tooltip-bg`) used by the single dark palette;
 - spacing scale (4 px base), radii, elevation, motion tokens;
 - type scale with a fluid counter size `clamp(30px, min(11vw, 7.5vh), 96px)`
   that is capped by viewport height as well as width.
 
-`:root[data-theme="light"]` overrides the palette, including darker channel
-colours for contrast on white. The preference is stored as `furnace.theme`
-(`dark`, `light` or `system`); `theme-boot.js` resolves it synchronously in
-`<head>` so a light-mode phone never flashes a dark page. Switching theme calls
-`TemperatureChart.setTheme()`, which re-reads the tokens and recolours the
+The dashboard is dark-only: `:root` owns the palette and there is no theme
+switch or stored preference. Channel colours are chosen for contrast on the
+deep blue-black surfaces, and `TemperatureChart.setTheme()` remains available
+for a future palette change by re-reading the tokens and recolouring the
 datasets, grid and tooltip.
 
 Components only use these tokens. The layout is one viewport tall

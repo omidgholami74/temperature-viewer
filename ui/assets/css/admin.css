@@ -1335,3 +1335,223 @@ td {
     display: none;
   }
 }
+
+/* -------------------------------------------------------------------------
+   Compact dark workbench
+   The operator page is a two-column control surface: live controls stay in
+   the wide column, deployment and history sit in a narrower rail. Header,
+   metrics and section chrome are tightened so the common tasks need far less
+   vertical travel than the old single-column form.
+   ------------------------------------------------------------------------- */
+
+.admin-shell {
+  width: min(1520px, 100%);
+  gap: 14px;
+}
+
+.admin-head {
+  padding: 18px 22px;
+  gap: 16px;
+}
+
+.admin-head h1 {
+  font-size: clamp(24px, 3vw, 34px);
+}
+
+.admin-sub {
+  max-width: 88ch;
+  margin-top: 6px;
+  font-size: var(--text-sm);
+}
+
+.admin-actions {
+  gap: 8px;
+}
+
+.key-field input {
+  width: 190px;
+  min-height: 36px;
+}
+
+.admin-note {
+  min-height: 30px;
+  margin: 0;
+  padding: 5px 12px;
+}
+
+.admin-overview {
+  gap: 8px;
+  margin: 0;
+}
+
+.metric {
+  padding: 10px 12px 9px;
+  border-radius: var(--radius-md);
+}
+
+.metric__label {
+  font-size: 9px;
+}
+
+.metric__value {
+  margin: 3px 0 1px;
+  font-size: clamp(20px, 2.2vw, 26px);
+}
+
+.metric__hint {
+  font-size: 10px;
+}
+
+.admin-nav {
+  top: 8px;
+  padding: 5px;
+}
+
+.admin-nav a {
+  padding: 6px 11px;
+}
+
+.admin-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.82fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.admin-workbench__main,
+.admin-workbench__rail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.admin-workbench__rail .admin-columns {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.admin-workbench .admin-columns > .admin-panel {
+  height: auto;
+}
+
+.admin-workbench .admin-panel {
+  padding: 16px 18px;
+  gap: 12px;
+}
+
+.admin-workbench .admin-panel::before {
+  top: 18px;
+  right: 18px;
+}
+
+.admin-workbench .admin-panel__head {
+  padding-right: 86px;
+}
+
+.admin-workbench .admin-panel__head h2 {
+  font-size: clamp(17px, 1.6vw, 20px);
+}
+
+.admin-workbench .admin-panel__head p {
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.admin-workbench .settings-grid {
+  gap: 10px;
+}
+
+.admin-workbench .field {
+  gap: 5px;
+}
+
+.admin-workbench .input,
+.admin-workbench .key-field input {
+  min-height: 36px;
+}
+
+.admin-workbench .admin-hint {
+  font-size: var(--text-sm);
+}
+
+.admin-workbench .admin-warning {
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+.admin-workbench .calibrator,
+.admin-workbench .preset-row {
+  padding: 9px 10px;
+}
+
+.admin-workbench .admin-buttons .btn--primary {
+  min-width: 0;
+}
+
+.device {
+  padding: 14px;
+  gap: 11px;
+}
+
+.device__name {
+  font-size: 17px;
+}
+
+.device__facts {
+  padding-top: 10px;
+}
+
+#events .table-wrap {
+  max-height: 280px;
+}
+
+@media (max-width: 1120px) {
+  .admin-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-workbench__rail .admin-columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .admin-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .admin-head {
+    padding: 16px;
+  }
+
+  .admin-head h1 {
+    font-size: 26px;
+  }
+
+  .admin-sub {
+    margin-top: 5px;
+  }
+
+  .admin-workbench .admin-panel {
+    padding: 14px;
+  }
+
+  .admin-workbench .admin-panel__head {
+    padding-right: 0;
+  }
+
+  .admin-workbench .admin-panel::before {
+    position: static;
+    display: block;
+    order: -1;
+  }
+
+  .admin-workbench__rail .admin-columns {
+    display: flex;
+  }
+}

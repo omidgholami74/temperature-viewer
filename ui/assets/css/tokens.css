@@ -8,24 +8,24 @@
   color-scheme: dark;
 
   /* Surfaces */
-  --bg-0: #06090d;
-  --bg-1: #090f16;
-  --surface-1: #0c131c;
-  --surface-2: #101a25;
-  --surface-3: #162432;
-  --surface-glass: rgba(9, 15, 22, 0.78);
+  --bg-0: #05080c;
+  --bg-1: #080d13;
+  --surface-1: #0c141d;
+  --surface-2: #111c27;
+  --surface-3: #172636;
+  --surface-glass: rgba(8, 13, 19, 0.8);
 
-  /* Composite surfaces, swapped as a whole by the light theme. */
+  /* Composite surfaces for the single dark control-room shell. */
   --page-bg:
-    radial-gradient(1100px 620px at 12% -12%, rgba(255, 178, 87, 0.11), transparent 62%),
-    radial-gradient(900px 580px at 98% -4%, rgba(90, 215, 255, 0.075), transparent 58%),
-    linear-gradient(180deg, #090f16 0%, #070b10 48%, #05080c 100%);
+    radial-gradient(1100px 620px at 10% -12%, rgba(56, 224, 165, 0.08), transparent 62%),
+    radial-gradient(900px 580px at 98% -4%, rgba(73, 189, 240, 0.065), transparent 58%),
+    linear-gradient(180deg, #090f16 0%, #060b11 48%, #04070a 100%);
   --grid-line: rgba(255, 255, 255, 0.018);
-  --panel-bg: linear-gradient(160deg, rgba(21, 32, 44, 0.94), rgba(7, 12, 18, 0.98));
+  --panel-bg: linear-gradient(160deg, rgba(18, 29, 41, 0.95), rgba(6, 11, 17, 0.98));
   --timer-bg:
-    radial-gradient(120% 130% at 50% 0%, rgba(255, 178, 87, 0.105), transparent 62%),
-    linear-gradient(180deg, rgba(5, 9, 13, 0.78), rgba(7, 13, 19, 0.52));
-  --tooltip-bg: rgba(7, 13, 21, 0.97);
+    radial-gradient(120% 130% at 50% 0%, rgba(56, 224, 165, 0.08), transparent 62%),
+    linear-gradient(180deg, rgba(4, 8, 12, 0.8), rgba(6, 12, 18, 0.54));
+  --tooltip-bg: rgba(6, 12, 19, 0.98);
   --tooltip-text: #f2f6fb;
 
   /* Lines */
@@ -39,17 +39,17 @@
   --text-3: #718499;
 
   /* Semantic */
-  --accent: #ffb257;
-  --accent-dim: rgba(255, 178, 87, 0.15);
-  --info: #5ad7ff;
-  --warn: #ffc266;
+  --accent: #38e0a5;
+  --accent-dim: rgba(56, 224, 165, 0.14);
+  --info: #49bdf0;
+  --warn: #f3b45a;
   --danger: #ff6b78;
 
   /* Channel identity, reused by cards, legend and chart */
-  --ch-1: #ffb257;
-  --ch-2: #5ad7ff;
-  --ch-3: #ff7d8a;
-  --ch-4: #b999ff;
+  --ch-1: #38e0a5;
+  --ch-2: #49bdf0;
+  --ch-3: #f3b45a;
+  --ch-4: #a78bfa;
 
   /* Typography */
   --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
@@ -82,67 +82,11 @@
 
   /* Elevation */
   --shadow-panel: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 26px 54px -34px rgba(0, 0, 0, 0.95);
-  --glow-accent: 0 0 0 1px rgba(255, 178, 87, 0.26), 0 0 30px -6px rgba(255, 178, 87, 0.35);
+  --glow-accent: 0 0 0 1px rgba(56, 224, 165, 0.26), 0 0 30px -6px rgba(56, 224, 165, 0.3);
 
   /* Motion */
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
   --duration: 170ms;
-}
-
-/* =========================================================================
-   Light theme
-   Chart, card and legend colours are darker here: the same mint that glows on
-   a night screen has too little contrast on white.
-   ========================================================================= */
-
-:root[data-theme="light"] {
-  color-scheme: light;
-
-  --bg-0: #f2ede5;
-  --bg-1: #fbf8f2;
-  --surface-1: #fffdf9;
-  --surface-2: #ffffff;
-  --surface-3: #f2ece3;
-  --surface-glass: rgba(255, 253, 249, 0.86);
-
-  --page-bg:
-    radial-gradient(1000px 560px at 8% -14%, rgba(180, 83, 9, 0.12), transparent 60%),
-    radial-gradient(880px 520px at 98% -6%, rgba(8, 126, 164, 0.08), transparent 58%),
-    linear-gradient(180deg, #fcfaf6 0%, #f2ede5 55%, #ebe4d9 100%);
-  --grid-line: rgba(80, 57, 32, 0.045);
-  --panel-bg: linear-gradient(165deg, #ffffff, #fbf7f1);
-  --timer-bg:
-    radial-gradient(120% 130% at 50% 0%, rgba(180, 83, 9, 0.1), transparent 62%),
-    linear-gradient(180deg, #fffdf9, #f4ece1);
-  --tooltip-bg: rgba(255, 255, 255, 0.98);
-  --tooltip-text: #17202a;
-
-  --line: rgba(22, 45, 70, 0.13);
-  --line-strong: rgba(22, 45, 70, 0.22);
-  --line-faint: rgba(22, 45, 70, 0.07);
-
-  --text-1: #17202a;
-  --text-2: #465564;
-  --text-3: #6d7b89;
-
-  --accent: #b45309;
-  --accent-dim: rgba(180, 83, 9, 0.12);
-  --info: #087ea4;
-  --warn: #a16207;
-  --danger: #be123c;
-
-  --ch-1: #b45309;
-  --ch-2: #087ea4;
-  --ch-3: #be123c;
-  --ch-4: #6d4aff;
-
-  --shadow-panel: inset 0 1px 0 #ffffff, 0 22px 44px -32px rgba(80, 57, 32, 0.32);
-  --glow-accent: 0 0 0 1px rgba(180, 83, 9, 0.24), 0 0 24px -8px rgba(180, 83, 9, 0.3);
-}
-
-:root[data-theme="light"] ::selection {
-  background: rgba(15, 159, 112, 0.2);
-  color: #082019;
 }
 
 /* =========================================================================

@@ -3,12 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#06090d">
+  <meta name="theme-color" content="#05080c">
   <meta name="robots" content="noindex">
   <title>Control room — Furnace Monitor</title>
-  <link rel="stylesheet" href="assets/css/tokens.css?v=8">
-  <link rel="stylesheet" href="assets/css/admin.css?v=10">
-  <script src="assets/js/theme-boot.js"></script>
+  <link rel="stylesheet" href="assets/css/tokens.css?v=9">
+  <link rel="stylesheet" href="assets/css/admin.css?v=11">
 </head>
 <body>
   <div class="admin-shell">
@@ -17,10 +16,6 @@
         <p class="eyebrow">Razi Applied Science Foundation</p>
         <h1>Furnace control room</h1>
         <p class="admin-sub">Fleet health, calibration, source delivery and live controls · <span data-role="api">API</span></p>
-        <div class="admin-head__badges">
-          <span class="status-pill"><span class="status-pill__dot" aria-hidden="true"></span> Operator console</span>
-          <span class="status-pill status-pill--quiet">No public admin link</span>
-        </div>
       </div>
       <div class="admin-actions">
         <label class="key-field">
@@ -70,6 +65,9 @@
     </nav>
 
     <section class="admin-grid" id="boards" data-role="devices" aria-label="Boards"></section>
+
+    <div class="admin-workbench">
+      <div class="admin-workbench__main">
 
     <section class="panel admin-panel admin-panel--wide" id="module" data-section="01 · Live module" data-role="module-panel" aria-labelledby="module-title">
       <header class="admin-panel__head">
@@ -219,7 +217,10 @@
       </div>
     </section>
 
-    <div class="admin-columns">
+      </div>
+
+      <aside class="admin-workbench__rail" aria-label="Secondary controls">
+        <div class="admin-columns">
       <section class="panel admin-panel" id="furnaces" data-section="05 · Furnaces" aria-labelledby="furnaces-title">
         <header class="admin-panel__head">
           <h2 id="furnaces-title">Furnaces</h2>
@@ -316,6 +317,8 @@
         </table>
       </div>
     </section>
+      </aside>
+    </div>
   </div>
 
   <script src="config.js"></script>

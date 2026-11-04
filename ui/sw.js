@@ -8,7 +8,7 @@
  * Bump CACHE_VERSION whenever the shell changes; the old cache is removed on
  * activate.
  */
-const CACHE_VERSION = 'furnace-v13';
+const CACHE_VERSION = 'furnace-v14';
 
 const SHELL = [
   './',
@@ -17,7 +17,6 @@ const SHELL = [
   './manifest.webmanifest',
   './assets/css/tokens.css',
   './assets/css/app.css',
-  './assets/js/theme-boot.js',
   './assets/js/main.js',
   './assets/js/api.js',
   './assets/js/feed.js',

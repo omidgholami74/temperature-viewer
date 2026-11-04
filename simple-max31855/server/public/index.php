@@ -61,6 +61,7 @@ try {
             'ok' => true,
             'latest_id' => last_id($state),
             'samples' => count($state['samples']),
+            'total_samples' => total_samples($state),
             'server_time_ms' => now_ms(),
         ]);
     }
@@ -144,6 +145,11 @@ function last_id(array $state): int
     }
 
     return (int) $state['samples'][count($state['samples']) - 1]['id'];
+}
+
+function total_samples(array $state): int
+{
+    return max(0, (int) $state['next_id'] - 1);
 }
 
 function write_state(string $path, array $state): bool
@@ -327,6 +333,7 @@ function receive_samples(string $dataDir, string $recentPath, string $lockPath):
         'ok' => true,
         'accepted' => $count,
         'latest_id' => $nextId - 1,
+        'total_samples' => max(0, $nextId - 1),
         'server_time_ms' => now_ms(),
     ]);
 }
@@ -356,6 +363,7 @@ function send_recent(string $path): void
     json_response([
         'samples' => $samples,
         'last_id' => $latestId,
+        'total_samples' => total_samples($state),
         'server_time_ms' => now_ms(),
     ]);
 }

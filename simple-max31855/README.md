@@ -229,8 +229,8 @@ The collector uses the first endpoint; the browser uses the second:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/ingest` | Accept `{"samples":[...]}` with `X-Api-Key` |
-| `GET` | `/api/recent?since=<id>&limit=600` | Samples newer than `id`, plus `last_id` |
-| `GET` | `/api/health` | Count and latest id, without exposing data |
+| `GET` | `/api/recent?since=<id>&limit=600` | Samples newer than `id`, plus `last_id` and `total_samples` |
+| `GET` | `/api/health` | Buffer count, total counter and latest id |
 
 ```bash
 curl -s https://temp.futurefounderco.com/api/health
@@ -240,7 +240,12 @@ curl -s 'https://temp.futurefounderco.com/api/recent?since=0&limit=3'
 `recent.json` keeps the newest 1,800 samples (three minutes at 10 Hz) and is
 replaced atomically under a file lock. There is no long-term history. The UI
 requests new samples every **150 ms** (every 1 s while the tab is hidden), keeps
-the last 60 seconds and draws all three channels without a chart library.
+the last 60 seconds and draws all three channels without a chart library. The
+**Counter** is the total accepted sample count from the server, so it survives a
+page reload. When a sample or channel is missing, the cards keep the last known
+value marked **Held**, and the chart carries that value forward to `now` instead
+of breaking or leaving a gap. A stalled request is retried after one second and
+the previous points stay visible while reconnecting.
 
 ### Collector check
 

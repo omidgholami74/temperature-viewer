@@ -7,7 +7,7 @@
   <meta name="description" content="Live MAX31855 furnace temperatures from the simple USB collector.">
   <title>Furnace command deck · Live</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
   <div class="app-shell">
@@ -37,7 +37,8 @@
           <h2 id="overview-title">Live temperatures</h2>
         </div>
         <div class="overview__stats">
-          <span class="stat"><span class="stat__label">Samples</span><b class="stat__value" data-role="samples">0</b></span>
+          <span class="stat"><span class="stat__label">Counter</span><b class="stat__value" data-role="counter">0</b></span>
+          <span class="stat"><span class="stat__label">Buffer</span><b class="stat__value" data-role="samples">0</b></span>
           <span class="stat"><span class="stat__label">Rate</span><b class="stat__value" data-role="rate">—</b></span>
           <span class="stat"><span class="stat__label">Last update</span><b class="stat__value" data-role="last-update">—</b></span>
         </div>
@@ -110,6 +111,6 @@
     </footer>
   </div>
 
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=2"></script>
 </body>
 </html>

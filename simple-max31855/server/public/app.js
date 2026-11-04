@@ -1,6 +1,8 @@
 const CHANNELS = 3;
 const POLL_MS = 150;
 const HIDDEN_POLL_MS = 1000;
+const RETRY_MS = 1000;
+const REQUEST_TIMEOUT_MS = 15_000;
 const WINDOW_MS = 60_000;
 const MAX_POINTS = 900;
 const STALE_MS = 2_000;
@@ -20,6 +22,7 @@ const el = {
   status: $('[data-role="status"]'),
   statusLabel: $('[data-role="status-label"]'),
   statusMeta: $('[data-role="status-meta"]'),
+  counter: $('[data-role="counter"]'),
   samples: $('[data-role="samples"]'),
   rate: $('[data-role="rate"]'),
   lastUpdate: $('[data-role="last-update"]'),
@@ -47,6 +50,12 @@ function setText(node, value) {
   if (node && node.textContent !== value) {
     node.textContent = value;
   }
+}
+
+function formatCount(value) {
+  return Number.isFinite(value)
+    ? Math.max(0, Math.round(value)).toLocaleString('en-US')
+    : '0';
 }
 
 function serverNow() {
@@ -84,29 +93,35 @@ function trendFor(delta) {
   return { label: 'Holding', tone: 'live' };
 }
 
-function previousAt(index, targetAt) {
-  let previous = null;
+function lastValidTemperature(index, cutoff = Number.POSITIVE_INFINITY) {
+  for (let position = state.samples.length - 1; position >= 0; position--) {
+    const sample = state.samples[position];
 
-  for (const sample of state.samples) {
-    if (sample.at <= targetAt) {
-      previous = sample;
-    } else {
-      break;
+    if (Number(sample.at) > cutoff) {
+      continue;
+    }
+
+    const value = sample.t?.[index];
+
+    if (Number.isFinite(value)) {
+      return value;
     }
   }
 
-  return previous?.t?.[index] ?? null;
+  return null;
 }
 
 function renderCards() {
   const latest = state.latest;
 
   el.cards.forEach((card, index) => {
-    const value = latest?.t?.[index] ?? null;
+    const measured = latest?.t?.[index] ?? null;
     const bits = Number(latest?.f?.[index] ?? 0);
-    const fault = Boolean(latest) && (value === null || bits > 0);
+    const held = measured === null ? lastValidTemperature(index) : null;
+    const value = measured ?? held;
+    const fault = Boolean(latest) && (measured === null || bits > 0);
     const previous = latest && value !== null
-      ? previousAt(index, latest.at - 10_000)
+      ? lastValidTemperature(index, Number(latest.at) - 10_000)
       : null;
     const delta = value !== null && previous !== null
       ? value - previous
@@ -115,7 +130,12 @@ function renderCards() {
     setText(card.value, formatTemp(value));
     card.root.classList.toggle('is-fault', fault);
     card.fault.hidden = !fault;
-    setText(card.fault, fault ? faultText(bits) : '');
+    setText(
+      card.fault,
+      fault
+        ? `${measured === null && value !== null ? 'Held · ' : ''}${faultText(bits)}`
+        : '',
+    );
 
     if (!latest) {
       card.trend.className = 'chip';
@@ -141,17 +161,17 @@ function renderCards() {
 }
 
 function renderStatus() {
+  const latest = state.latest;
+  const age = latest ? Math.max(0, serverNow() - Number(latest.at)) : null;
   let tone = 'waiting';
   let label = 'Connecting';
   let meta = 'Waiting for the API';
 
   if (state.error) {
-    tone = 'offline';
-    label = 'API offline';
+    tone = latest ? 'delayed' : 'offline';
+    label = latest ? 'Reconnecting' : 'API offline';
     meta = state.error;
-  } else if (state.latest) {
-    const age = Math.max(0, serverNow() - Number(state.latest.at));
-
+  } else if (latest) {
     if (age > LOST_MS) {
       tone = 'offline';
       label = 'No signal';
@@ -164,6 +184,9 @@ function renderStatus() {
     }
 
     meta = `Last sample ${formatAge(age)} ago`;
+  }
+
+  if (age !== null) {
     setText(el.lastUpdate, formatAge(age));
   } else {
     setText(el.lastUpdate, '—');
@@ -175,7 +198,8 @@ function renderStatus() {
 }
 
 function renderStats() {
-  setText(el.samples, String(state.total));
+  setText(el.counter, formatCount(state.total));
+  setText(el.samples, formatCount(state.samples.length));
 
   if (state.samples.length > 1) {
     const first = state.samples[0];
@@ -183,7 +207,7 @@ function renderStats() {
     const seconds = (Number(last.at) - Number(first.at)) / 1000;
 
     if (seconds > 0) {
-      setText(el.rate, `${((state.samples.length / seconds)).toFixed(1)} /s`);
+      setText(el.rate, `${(state.samples.length / seconds).toFixed(1)} /s`);
     } else {
       setText(el.rate, '—');
     }
@@ -210,29 +234,69 @@ function drawChart() {
   }
 
   const context = canvas.getContext('2d');
+
+  if (!context) {
+    return;
+  }
+
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
   context.clearRect(0, 0, width, height);
 
   if (!state.latest) {
+    el.empty.textContent = 'Waiting for the first sample…';
     el.empty.hidden = false;
     return;
   }
 
-  const end = Number(state.latest.at);
+  const latest = state.latest;
+  const end = Math.max(Number(latest.at), serverNow());
   const start = end - WINDOW_MS;
-  const visible = state.samples.filter((sample) => Number(sample.at) >= start);
+  const visible = state.samples.filter(
+    (sample) => Number(sample.at) >= start && Number(sample.at) <= end,
+  );
+  const series = [];
   const values = [];
 
-  for (const sample of visible) {
-    for (let index = 0; index < CHANNELS; index++) {
-      if (Number.isFinite(sample.t?.[index])) {
-        values.push(sample.t[index]);
+  for (let index = 0; index < CHANNELS; index++) {
+    let held = lastValidTemperature(index, start);
+
+    if (held === null) {
+      for (const sample of visible) {
+        if (Number.isFinite(sample.t?.[index])) {
+          held = sample.t[index];
+          break;
+        }
       }
+    }
+
+    if (held === null) {
+      series.push([]);
+      continue;
+    }
+
+    const points = [{ at: start, value: held }];
+
+    for (const sample of visible) {
+      if (Number.isFinite(sample.t?.[index])) {
+        held = sample.t[index];
+      }
+
+      points.push({ at: Number(sample.at), value: held });
+    }
+
+    if (points[points.length - 1].at < end) {
+      points.push({ at: end, value: held });
+    }
+
+    series.push(points);
+
+    for (const point of points) {
+      values.push(point.value);
     }
   }
 
   if (values.length === 0) {
-    el.empty.textContent = 'Waiting for valid readings…';
+    el.empty.textContent = 'No valid readings — holding the last known line…';
     el.empty.hidden = false;
     return;
   }
@@ -286,31 +350,21 @@ function drawChart() {
   context.textAlign = 'left';
 
   for (let index = 0; index < CHANNELS; index++) {
+    const points = series[index];
+
+    if (points.length === 0) {
+      continue;
+    }
+
     context.beginPath();
     context.strokeStyle = SERIES_COLORS[index];
     context.lineWidth = 2;
     context.lineJoin = 'round';
     context.lineCap = 'round';
+    context.moveTo(xFor(points[0].at), yFor(points[0].value));
 
-    let drawing = false;
-
-    for (const sample of visible) {
-      const value = sample.t?.[index];
-
-      if (!Number.isFinite(value)) {
-        drawing = false;
-        continue;
-      }
-
-      const x = xFor(sample.at);
-      const y = yFor(value);
-
-      if (!drawing) {
-        context.moveTo(x, y);
-        drawing = true;
-      } else {
-        context.lineTo(x, y);
-      }
+    for (let position = 1; position < points.length; position++) {
+      context.lineTo(xFor(points[position].at), yFor(points[position].value));
     }
 
     context.stroke();
@@ -324,7 +378,17 @@ function render() {
   drawChart();
 }
 
+function safeRender() {
+  try {
+    render();
+  } catch (error) {
+    console.error('Dashboard render failed', error);
+  }
+}
+
 function ingestSamples(samples) {
+  let added = 0;
+
   for (const sample of samples) {
     if (!sample || !Number.isFinite(Number(sample.at)) || !Array.isArray(sample.t)) {
       continue;
@@ -343,7 +407,7 @@ function ingestSamples(samples) {
       f: Array.isArray(sample.f) ? sample.f : [],
     });
     state.lastId = id;
-    state.total += 1;
+    added += 1;
   }
 
   if (state.samples.length > MAX_POINTS) {
@@ -353,11 +417,21 @@ function ingestSamples(samples) {
   if (state.samples.length > 0) {
     state.latest = state.samples[state.samples.length - 1];
   }
+
+  return added;
+}
+
+function errorText(error) {
+  if (error?.name === 'AbortError') {
+    return 'Request timed out; retrying';
+  }
+
+  return error instanceof Error ? error.message : 'API unreachable';
 }
 
 async function poll() {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 3000);
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const since = state.lastId;
 
   try {
@@ -376,22 +450,37 @@ async function poll() {
       state.serverOffset = Number(data.server_time_ms) - Date.now();
     }
 
+    let added = 0;
+
     if (since > 0 && Number(data.last_id) < since) {
       state.samples = [];
       state.lastId = 0;
       state.latest = null;
       state.total = 0;
     } else if (Array.isArray(data.samples)) {
-      ingestSamples(data.samples);
+      added = ingestSamples(data.samples);
+    }
+
+    const serverTotal = Number(data.total_samples);
+
+    if (Number.isFinite(serverTotal) && serverTotal >= 0) {
+      state.total = serverTotal;
+    } else {
+      state.total += added;
     }
 
     state.error = null;
   } catch (error) {
-    state.error = error instanceof Error ? error.message : 'API unreachable';
+    state.error = errorText(error);
   } finally {
     window.clearTimeout(timeout);
-    render();
-    window.setTimeout(poll, document.hidden ? HIDDEN_POLL_MS : POLL_MS);
+    safeRender();
+    window.setTimeout(
+      poll,
+      state.error
+        ? document.hidden ? HIDDEN_POLL_MS : RETRY_MS
+        : document.hidden ? HIDDEN_POLL_MS : POLL_MS,
+    );
   }
 }
 

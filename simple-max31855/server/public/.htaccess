@@ -12,4 +12,10 @@ Options -Indexes
     Header always set X-Content-Type-Options "nosniff"
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
     Header always set X-Frame-Options "DENY"
+
+    # The dashboard polls fast and must pick up fixes immediately after a
+    # deploy; a four-hour static-asset cache would keep an old abort timeout.
+    <FilesMatch "\.(?:html|js|css)$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
 </IfModule>

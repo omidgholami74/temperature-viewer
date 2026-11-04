@@ -27,31 +27,37 @@ export function BrandLogo({size = 48, variant = 'brand', color = '#FFFFFF'}: Pro
         </LinearGradient>
       </Defs>
 
-      {/* Feather ribbons */}
+      {/* Feather ribbons fanning to the lower left */}
       <Path
-        d="M268 212C196 208 118 228 44 288C118 282 196 268 268 246Z"
+        d="M252 252C186 250 116 268 44 306C116 300 190 288 252 274Z"
+        fill={stroke}
+        opacity={0.94}
+      />
+      <Path
+        d="M250 286C184 296 118 330 52 386C122 362 192 336 258 312Z"
+        fill={stroke}
+        opacity={0.98}
+      />
+      <Path
+        d="M260 322C206 346 154 392 104 452C162 416 220 378 274 344Z"
         fill={stroke}
         opacity={0.92}
       />
       <Path
-        d="M262 256C190 264 116 300 48 366C120 342 194 314 266 288Z"
+        d="M288 352C258 392 226 436 196 490C238 450 272 410 302 374Z"
         fill={stroke}
-        opacity={0.96}
-      />
-      <Path
-        d="M270 298C212 320 154 368 96 442C160 402 220 360 282 330Z"
-        fill={stroke}
-        opacity={0.9}
-      />
-      <Path
-        d="M300 342C268 384 232 432 198 492C244 448 282 402 314 366Z"
-        fill={stroke}
-        opacity={0.84}
+        opacity={0.86}
       />
 
-      {/* Body and rising tail */}
+      {/* Rising tail, kept clear of the head */}
       <Path
-        d="M276 96C372 104 444 184 448 286C452 372 408 448 332 496C372 430 392 368 386 306C380 224 336 152 276 112Z"
+        d="M342 120C402 138 440 200 446 268C452 348 414 424 340 496C372 428 384 366 378 306C372 232 352 178 330 140Z"
+        fill={stroke}
+      />
+
+      {/* Neck joining the head to the rising tail */}
+      <Path
+        d="M322 182C354 198 374 230 386 268C392 288 394 312 392 336C378 296 356 254 316 226Z"
         fill={stroke}
       />
 

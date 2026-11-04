@@ -1,0 +1,38 @@
+# systemd unit for the furnace MQTT bridge.
+#
+# MQTT/setup-server.sh installs this as
+# /etc/systemd/system/furnace-mqtt-bridge.service with @APP@ replaced by the
+# checkout path. To do it by hand:
+#
+#   sed "s#@APP@#/srv/furnace#g" MQTT/deploy/furnace-mqtt-bridge.service \
+#     | sudo tee /etc/systemd/system/furnace-mqtt-bridge.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now furnace-mqtt-bridge
+#
+# Everything site-specific lives in /etc/furnace/mqtt-bridge.env (0600), so the
+# same unit works for every installation and the password is never in the file.
+
+[Unit]
+Description=Furnace MQTT to API ingest bridge
+Documentation=file:@APP@/MQTT/bridge/README.md
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=furnace
+Group=furnace
+WorkingDirectory=@APP@/MQTT/bridge
+EnvironmentFile=/etc/furnace/mqtt-bridge.env
+ExecStart=@APP@/MQTT/bridge/.venv/bin/python @APP@/MQTT/bridge/furnace_bridge.py
+Restart=always
+RestartSec=3
+
+# The bridge opens sockets and reads its environment file; nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -60,6 +60,21 @@ Run the existing backend locally:
 cd backend && FURNACE_DB=var/furnace.sqlite php -S 127.0.0.1:8000 index.php
 ```
 
+## Deploy on a server
+
+On the internal Linux server that runs the API, one command installs the
+production broker (no anonymous clients, per-device ACL, 256 KiB limit) and the
+bridge as a systemd service, then verifies all of it:
+
+```bash
+sudo bash MQTT/setup-server.sh
+```
+
+It asks for the site, the board id, the ingest URL, the API key and two broker
+passwords. `DRY_RUN=1` prints the plan without touching anything. TLS on 8883,
+the read-only dashboard account and the runbooks are in
+[docs/operations.md](docs/operations.md).
+
 ## Topics
 
 | Topic | Direction | QoS | Retain | Purpose |

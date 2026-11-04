@@ -138,6 +138,7 @@ export function useTemperatureFeed(): TemperatureFeed {
   useEffect(() => {
     let cancelled = false;
     let failures = 0;
+    let seeded = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     const schedule = (delay: number) => {
@@ -312,8 +313,13 @@ export function useTemperatureFeed(): TemperatureFeed {
           };
         });
 
-        if (cursorRef.current === 0 && start > 0) {
-          await seedHistory(run);
+        // Seed the chart once from stored rows; the cursor is already
+        // advanced by `latest`, so it cannot gate this.
+        if (!seeded) {
+          seeded = true;
+          if (start > 0) {
+            await seedHistory(run);
+          }
         }
 
         schedule(POLL_MS);

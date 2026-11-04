@@ -9,7 +9,7 @@ multi-series chart, in Persian, on a dark glass-style surface.
 | App name (launcher) | اتوماسیون هوشمند رازی |
 | Company | بنیاد علوم کاربردی رازی (Razi Applied Science Foundation) |
 | Package | `com.raziautomation` |
-| Version | 1.0.0 (versionCode 1) |
+| Version | 1.1.0 (versionCode 2) |
 | Min / target SDK | 24 / 34 |
 | JS engine | Hermes, old architecture |
 
@@ -26,24 +26,27 @@ multi-series chart, in Persian, on a dark glass-style surface.
 - **Animated chart** drawn with `react-native-svg`: smooth curves, gradient
   areas, grid, per-series legend toggles, 1 / 5 / 15 minute windows and an
   animated stroke reveal when the window changes.
-- **Data feed** polls `https://apitemp.futurefounderco.com/api/live` every 1.5 s.
-  When the server is unreachable the app switches to a realistic local
-  simulation and labels it **دمو**, retrying the API every 30 s. The footer
-  always states which source is on screen, so a simulated curve is never
-  mistaken for a real firing.
+- **Data feed** reads `http://apitemp.futurefounderco.com/api/live` every 1.5 s.
+  The app contains no simulated data: every number on screen comes from the
+  controller. If the link drops, the last readings stay visible, the pill turns
+  to **قطع** with a retry note in the footer, and polling resumes every 4 s.
+  Channels the controller reports as `null` show `--` instead of a stale value.
 - **RTL-friendly Persian copy**, fixed-width digits so values never shift the
   layout, and a soft blue glow background instead of flat black.
 
-> The production API currently serves a certificate that does not match
-> `apitemp.futurefounderco.com`, so Android rejects it and the app stays in demo
-> mode until the certificate is fixed (or the base URL is changed in
-> `src/data/feed.ts`).
+> **Why plain HTTP?** The controller's TLS certificate is issued for
+> `*.web-hosting.com`, so `https://apitemp.futurefounderco.com` fails hostname
+> verification on Android. The app therefore uses the HTTP endpoint and
+> `android/app/src/main/res/xml/network_security_config.xml` permits cleartext
+> for that one host only (everything else stays HTTPS-only). Once the server has
+> a valid certificate, switch `API_BASE` in `src/data/feed.ts` to `https://` and
+> drop that config.
 
 ## Screens
 
 ```
 SplashScreen  ──2.5 s──▶  DashboardScreen
-                          ├── brand header + live/demo pill
+                          ├── brand header + live/offline pill
                           ├── hero gauge card (selected furnace + stats)
                           ├── 4 channel cards (tap to select)
                           ├── chart card (window chips + legend)
@@ -75,7 +78,7 @@ export ANDROID_HOME=/path/to/android-sdk        # platform 35 + build-tools 35.0
 
 The APK lands in
 `android/app/build/outputs/apk/release/app-release.apk` (arm64-v8a + armeabi-v7a,
-roughly 30 MB). Install it with:
+roughly 47 MB, version 1.1.0). Install it with:
 
 ```bash
 adb install -r android/app/build/outputs/apk/release/app-release.apk
@@ -95,8 +98,8 @@ private keystore and replace `signingConfigs.release` in
 ```
 App.tsx                     splash → dashboard switch, status bar
 src/theme.ts                palette, radii, spacing, shadows
-src/data/channels.ts        channel names, colours, gauge scale, demo baselines
-src/data/feed.ts            API polling + demo generator + useTemperatureFeed()
+src/data/channels.ts        channel names, colours, gauge scales
+src/data/feed.ts            API polling + useTemperatureFeed()
 src/components/BrandLogo    vector peacock mark (header, splash)
 src/components/SplashScreen animated launch screen
 src/components/Gauge        animated 270° arc gauge

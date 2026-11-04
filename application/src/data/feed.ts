@@ -1,21 +1,33 @@
 import {useEffect, useRef, useState} from 'react';
 
 import {CHANNELS} from './channels';
-import {clamp, round1} from '../utils/format';
+import {round1} from '../utils/format';
 
 /**
  * Live temperature feed.
  *
- * The app prefers the production API and silently falls back to a realistic
- * local simulation when the server cannot be reached, so the dashboard is
- * always readable on a phone. The active source is shown in the UI.
+ * Readings come from the controller API only — the app keeps no simulated
+ * series. When the server cannot be reached the last values stay on screen and
+ * the UI reports that the link is down while retrying in the background.
+ *
+ * The controller is served over plain HTTP: its TLS certificate is issued for
+ * `*.web-hosting.com` and does not match `apitemp.futurefounderco.com`, so
+ * Android refuses the `https://` URL for that host. The manifest therefore
+ * carries a network security config that permits cleartext for this host only.
  */
-export const API_BASE = 'https://apitemp.futurefounderco.com';
+export const API_BASE = 'http://apitemp.futurefounderco.com';
+export const API_URL = `${API_BASE}/api/live`;
 
 const POLL_MS = 1500;
-const REQUEST_TIMEOUT_MS = 5000;
-const MAX_POINTS = 720;
-const DEMO_RETRY_MS = 30000;
+const RETRY_MS = 4000;
+const REQUEST_TIMEOUT_MS = 6000;
+/**
+ * The controller bursts samples and then goes quiet for several seconds, and a
+ * single slow request is not a real outage, so the pill only turns to «قطع»
+ * after this many failures in a row. Until then the last curve stays live.
+ */
+const FAILURE_TOLERANCE = 3;
+const MAX_POINTS = 1200;
 
 export type Point = {t: number; v: number};
 
@@ -30,7 +42,7 @@ export type ChannelReading = {
   updatedAt: number;
 };
 
-export type FeedSource = 'connecting' | 'live' | 'demo';
+export type FeedSource = 'connecting' | 'live' | 'offline';
 
 export type TemperatureFeed = {
   source: FeedSource;
@@ -38,42 +50,41 @@ export type TemperatureFeed = {
   lastUpdate: number;
   sampleCount: number;
   startedAt: number | null;
+  /** Persian sentence for the footer, or null while the first request runs. */
   note: string | null;
+  /** Raw failure description, kept for diagnostics. */
+  error: string | null;
 };
 
-type SimState = {value: number; target: number; phase: number};
-
-const createSim = (): SimState[] =>
-  CHANNELS.map((channel, index) => ({
-    value: channel.baseTemp + Math.sin(index * 1.7) * 8,
-    target: channel.baseTemp + (index % 2 === 0 ? 45 : -30),
-    phase: Math.random() * Math.PI * 2,
-  }));
-
-/** Advances the simulated furnaces by `seconds` and returns their readings. */
-const stepSim = (states: SimState[], seconds: number): number[] => {
-  const dt = clamp(seconds, 0.2, 5);
-
-  return states.map((state, index) => {
-    const channel = CHANNELS[index];
-    state.phase += dt * 0.07;
-
-    if (Math.random() < 0.004 * dt) {
-      state.target = clamp(
-        channel.baseTemp + (Math.random() - 0.5) * 180,
-        channel.baseTemp - 130,
-        channel.max - 40,
-      );
-    }
-
-    const pull = (state.target - state.value) * 0.04 * dt;
-    const ripple = Math.sin(state.phase) * 1.4 * dt;
-    const noise = (Math.random() - 0.5) * 1.1;
-
-    state.value = clamp(state.value + pull + ripple + noise, 24, channel.max);
-    return state.value;
-  });
+type LivePayload = {
+  server_time_ms?: number;
+  run?: {started_at_ms?: number; sample_count?: number} | null;
+  latest?: {
+    id?: number;
+    received_at_ms?: number;
+    temps?: (number | null)[];
+    faults?: number[];
+  } | null;
 };
+
+const emptyFeed = (): TemperatureFeed => ({
+  source: 'connecting',
+  channels: CHANNELS.map(channel => ({
+    id: channel.id,
+    name: channel.name,
+    color: channel.color,
+    temp: null,
+    fault: 0,
+    delta: 0,
+    history: [],
+    updatedAt: 0,
+  })),
+  lastUpdate: 0,
+  sampleCount: 0,
+  startedAt: null,
+  note: null,
+  error: null,
+});
 
 const deltaOf = (history: Point[]): number => {
   if (history.length < 2) {
@@ -84,97 +95,64 @@ const deltaOf = (history: Point[]): number => {
   return round1(newest.v - older.v);
 };
 
-const buildChannels = (history: Point[][], updatedAt: number): ChannelReading[] =>
-  CHANNELS.map((channel, index) => {
-    const points = history[index];
-    return {
-      id: channel.id,
-      name: channel.name,
-      color: channel.color,
-      temp: points.length > 0 ? points[points.length - 1].v : null,
-      fault: 0,
-      delta: deltaOf(points),
-      history: points,
-      updatedAt,
-    };
-  });
-
-/** A realistic pre-filled buffer so the chart is never empty on first paint. */
-const seedFeed = (): TemperatureFeed => {
-  const sim = createSim();
-  const now = Date.now();
-  const history: Point[][] = CHANNELS.map(() => []);
-
-  for (let step = 240; step >= 0; step -= 1) {
-    const temps = stepSim(sim, POLL_MS / 1000);
-    const t = now - step * POLL_MS;
-    temps.forEach((value, index) => {
-      history[index].push({t, v: round1(value)});
-    });
-  }
-
-  return {
-    source: 'connecting',
-    channels: buildChannels(history, now),
-    lastUpdate: now,
-    sampleCount: 0,
-    startedAt: null,
-    note: null,
-  };
-};
-
-type LivePayload = {
-  server_time_ms?: number;
-  run?: {started_at_ms?: number; sample_count?: number} | null;
-  latest?: {
-    temps?: (number | null)[];
-    faults?: number[];
-  } | null;
-};
-
 export function useTemperatureFeed(): TemperatureFeed {
-  const [feed, setFeed] = useState<TemperatureFeed>(seedFeed);
-  const simRef = useRef<SimState[] | null>(null);
+  const [feed, setFeed] = useState<TemperatureFeed>(emptyFeed);
+  const lastSampleId = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    let busy = false;
-    let mode: FeedSource = 'connecting';
     let failures = 0;
-    let lastAttempt = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const sim = simRef.current ?? createSim();
-    simRef.current = sim;
+    const schedule = (delay: number) => {
+      if (cancelled) {
+        return;
+      }
+      timer = setTimeout(poll, delay);
+    };
 
     const applyLive = (
+      payload: LivePayload,
       temps: (number | null)[],
       faults: number[],
       at: number,
-      payload: LivePayload,
     ) => {
-      setFeed(previous => {
-        const switching = previous.source !== 'live';
+      const sampleId =
+        typeof payload.latest?.id === 'number' ? payload.latest.id : null;
+      const fresh = sampleId === null || sampleId !== lastSampleId.current;
+      lastSampleId.current = sampleId ?? lastSampleId.current;
 
+      setFeed(previous => {
         const channels = previous.channels.map((channel, index) => {
           const raw = temps[index];
           const value =
             typeof raw === 'number' && Number.isFinite(raw) ? round1(raw) : null;
-          const base = switching ? [] : channel.history;
-          const history =
-            value === null ? base : base.concat({t: at, v: value}).slice(-MAX_POINTS);
+
+          // Keep the curve continuous. History is never discarded on a
+          // reconnect: the controller sends a burst, then pauses for a few
+          // seconds, and clearing the series made the chart look like it kept
+          // dropping and coming back.
+          let history = channel.history;
+          if (value !== null) {
+            history = fresh
+              ? history.concat({t: at, v: value}).slice(-MAX_POINTS)
+              : history
+                  .slice(0, -1)
+                  .concat({t: history[history.length - 1]?.t ?? at, v: value});
+          }
 
           return {
             ...channel,
-            temp: value ?? channel.temp,
-            fault: faults[index] ?? 0,
+            temp: value,
+            fault: typeof faults[index] === 'number' ? faults[index] : 0,
             history,
             delta: deltaOf(history),
             updatedAt: at,
           };
         });
 
-        const startedAt = Number(payload?.run?.started_at_ms);
-        const sampleCount = Number(payload?.run?.sample_count);
+        const startedAt = Number(payload.run?.started_at_ms);
+        const sampleCount = Number(payload.run?.sample_count);
 
         return {
           source: 'live',
@@ -184,119 +162,72 @@ export function useTemperatureFeed(): TemperatureFeed {
           startedAt:
             Number.isFinite(startedAt) && startedAt > 0 ? startedAt : previous.startedAt,
           note: null,
+          error: null,
         };
       });
     };
 
-    const pullLive = async (): Promise<boolean> => {
+    const poll = async () => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
       try {
-        const response = await fetch(`${API_BASE}/api/live`, {
+        const response = await fetch(API_URL, {
           signal: controller.signal,
-          headers: {Accept: 'application/json'},
+          headers: {Accept: 'application/json', 'Cache-Control': 'no-cache'},
         });
 
         if (!response.ok) {
-          return false;
+          throw new Error(`HTTP ${response.status}`);
         }
 
         const payload = (await response.json()) as LivePayload;
         const latest = payload?.latest;
 
         if (!latest || !Array.isArray(latest.temps)) {
-          return false;
+          throw new Error('پاسخ سرور خوانا نبود');
         }
 
-        const at = Number(payload?.server_time_ms) || Date.now();
-        applyLive(
-          latest.temps,
-          Array.isArray(latest.faults) ? latest.faults : [],
-          at,
-          payload,
-        );
+        if (!cancelled) {
+          const at = Number(payload.server_time_ms) || Date.now();
+          failures = 0;
+          applyLive(
+            payload,
+            latest.temps,
+            Array.isArray(latest.faults) ? latest.faults : [],
+            at,
+          );
+          schedule(POLL_MS);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message =
+            error instanceof Error ? error.message : 'خطای نامشخص در ارتباط';
+          failures += 1;
 
-        return true;
-      } catch {
-        return false;
+          if (failures >= FAILURE_TOLERANCE) {
+            setFeed(previous => ({
+              ...previous,
+              source: 'offline',
+              note: 'ارتباط با سرور پایش دما قطع است — تلاش مجدد خودکار',
+              error: message,
+            }));
+          }
+
+          schedule(RETRY_MS);
+        }
       } finally {
         clearTimeout(timeout);
       }
     };
 
-    const pushDemo = () => {
-      setFeed(previous => {
-        const at = Date.now();
-        const temps = stepSim(sim, POLL_MS / 1000);
-
-        const channels = previous.channels.map((channel, index) => {
-          const history = channel.history
-            .concat({t: at, v: round1(temps[index])})
-            .slice(-MAX_POINTS);
-
-          return {
-            ...channel,
-            temp: history[history.length - 1].v,
-            fault: 0,
-            history,
-            delta: deltaOf(history),
-            updatedAt: at,
-          };
-        });
-
-        return {
-          ...previous,
-          source: 'demo',
-          channels,
-          lastUpdate: at,
-          note: 'اتصال به سرور برقرار نیست — نمایش داده آزمایشی',
-        };
-      });
-    };
-
-    const tick = async () => {
-      if (cancelled || busy) {
-        return;
-      }
-
-      busy = true;
-
-      try {
-        const retryDue =
-          mode !== 'demo' || Date.now() - lastAttempt > DEMO_RETRY_MS;
-
-        if (retryDue) {
-          lastAttempt = Date.now();
-          const ok = await pullLive();
-
-          if (ok) {
-            mode = 'live';
-            failures = 0;
-            return;
-          }
-
-          failures += 1;
-          const threshold = mode === 'connecting' ? 1 : 2;
-          if (failures >= threshold) {
-            mode = 'demo';
-          }
-        }
-
-        if (mode === 'demo' && !cancelled) {
-          pushDemo();
-        }
-      } finally {
-        busy = false;
-      }
-    };
-
-    tick();
-    const timer = setInterval(tick, POLL_MS);
+    poll();
 
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      if (timer) {
+        clearTimeout(timer);
+      }
     };
   }, []);
 

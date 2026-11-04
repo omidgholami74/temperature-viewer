@@ -3,21 +3,19 @@ export type ChannelMeta = {
   name: string;
   room: string;
   color: string;
-  /** Typical working temperature used by the built-in demo generator. */
-  baseTemp: number;
+  /** Full-scale value of this channel's gauge. */
   max: number;
 };
 
 /**
- * The four measurement channels of a Razi furnace controller board.
- * Names match the web dashboard; the demo generator uses `baseTemp` so the
- * simulated curves look like real firings instead of noise.
+ * The four measurement channels of a Razi furnace controller board. Names match
+ * the web dashboard; every reading shown in the app comes from the controller.
  */
 export const CHANNELS: ChannelMeta[] = [
-  {id: 1, name: 'کوره ۱', room: 'سالن اصلی', color: '#FF7A45', baseTemp: 862, max: 1200},
-  {id: 2, name: 'کوره ۲', room: 'سالن شرقی', color: '#37D4FF', baseTemp: 641, max: 1200},
-  {id: 3, name: 'کوره ۳', room: 'سالن غربی', color: '#3EE0A5', baseTemp: 418, max: 1200},
-  {id: 4, name: 'کوره ۴', room: 'آزمایشگاه', color: '#B98CFF', baseTemp: 1034, max: 1200},
+  {id: 1, name: 'کوره ۱', room: 'سالن اصلی', color: '#FF7A45', max: 1200},
+  {id: 2, name: 'کوره ۲', room: 'سالن شرقی', color: '#37D4FF', max: 1200},
+  {id: 3, name: 'کوره ۳', room: 'سالن غربی', color: '#3EE0A5', max: 1200},
+  {id: 4, name: 'کوره ۴', room: 'آزمایشگاه', color: '#B98CFF', max: 1200},
 ];
 
 export const channelById = (id: number): ChannelMeta =>

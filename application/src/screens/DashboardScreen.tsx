@@ -86,7 +86,7 @@ function Reveal({children, delay = 0, style}: RevealProps) {
 
 const SOURCE_COPY: Record<FeedSource, {label: string; color: string}> = {
   live: {label: 'زنده', color: colors.mint},
-  demo: {label: 'دمو', color: colors.warm},
+  offline: {label: 'قطع', color: colors.warm},
   connecting: {label: 'اتصال…', color: colors.textSoft},
 };
 

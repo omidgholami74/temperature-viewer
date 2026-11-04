@@ -300,8 +300,9 @@ phones keep the old HTML.
 called **اتوماسیون هوشمند رازی** for the Razi Applied Science Foundation. It
 opens on an animated splash screen, then shows the four channels with an
 animated arc gauge, channel cards and a multi-series SVG chart in Persian. It
-polls `/api/live` every 1.5 s and, when the API cannot be reached, switches to
-a clearly labelled demo feed. Build the signed APK with
+polls `/api/live` every 1.5 s and shows only those readings: when the API cannot
+be reached the last values stay on screen behind an *offline* pill while it
+retries. Build the signed APK with
 `cd application/android && ./gradlew assembleRelease`; the README in that
 folder covers the SDK requirements and the internal signing key.
 

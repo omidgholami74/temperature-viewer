@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The temperature controller is served over plain HTTP because its TLS
+  certificate is issued for *.web-hosting.com. Cleartext stays disabled
+  everywhere except that single host.
+-->
+<network-security-config>
+  <base-config cleartextTrafficPermitted="false" />
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">apitemp.futurefounderco.com</domain>
+  </domain-config>
+</network-security-config>

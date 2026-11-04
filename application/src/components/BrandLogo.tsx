@@ -1,5 +1,5 @@
 import React from 'react';
-import Svg, {Circle, Defs, LinearGradient, Path, Stop} from 'react-native-svg';
+import Svg, {Circle, Defs, G, LinearGradient, Path, Stop} from 'react-native-svg';
 
 type Props = {
   size?: number;
@@ -8,90 +8,77 @@ type Props = {
   color?: string;
 };
 
+/** The traced artwork lives in a 360 × 620 box and is centred in a square. */
+const SCALE = 0.7364;
+const OFFSET_X = 119.2;
+const OFFSET_Y = 35.1;
+
+/** Peacock silhouette: beak, head, neck, body and the rising tail blade. */
+const BODY =
+  'M138 242C162 234 184 222 200 206C184 186 188 156 206 138C2' +
+  '24 122 250 128 262 148C272 162 278 178 288 194C302 166 302 96 302 8C350 88 358 176 338 244C320 306 292 362 264 416C246 452 2' +
+  '32 484 222 512C214 540 208 566 205 592C198 556 204 514 218 474C236 428 256 390 280 348C268 330 252 3' +
+  '20 236 316C220 312 208 300 206 284C204 268 208 254 216 244C190 246 162 246 138 242Z';
+
+/** Three long feathers fanning to the lower left. */
+const FEATHERS = [
+  'M282 288C240 344 176 438 90 578C152 492 216 402 278 330Z',
+  'M284 266C216 294 134 344 14 422C106 370 198 318 276 288Z',
+  'M274 238C202 244 122 258 32 286C120 286 202 280 270 260Z',
+];
+
+/** Crown of three curled plumes on top of the head. */
+const CROWN_STEMS = [
+  'M208 142C200 122 190 110 180 98',
+  'M222 138C220 114 221 96 223 78',
+  'M236 142C244 122 256 110 268 100',
+];
+
+const CROWN_TIPS: [number, number][] = [
+  [178, 95],
+  [223, 75],
+  [270, 98],
+];
+
 /**
- * Foundation mark: a stylised peacock, drawn as flowing feathers around a
- * curved body with a crowned head. Vector only, so it stays crisp from the
- * 34 px header badge up to the splash screen.
+ * Foundation mark, drawn as vector paths so it stays crisp from the 26 px
+ * header badge up to the splash screen.
  */
 export function BrandLogo({size = 48, variant = 'brand', color = '#FFFFFF'}: Props) {
-  const stroke = variant === 'mono' ? color : 'url(#razi-mark)';
-  const dot = variant === 'mono' ? color : 'url(#razi-mark)';
+  const paint = variant === 'mono' ? color : 'url(#razi-mark)';
 
   return (
     <Svg width={size} height={size} viewBox="0 0 512 512">
       <Defs>
-        <LinearGradient id="razi-mark" x1="90" y1="60" x2="430" y2="470" gradientUnits="userSpaceOnUse">
-          <Stop offset="0" stopColor="#7CC0FF" />
-          <Stop offset="0.45" stopColor="#2E7BFF" />
-          <Stop offset="1" stopColor="#0B3B8C" />
+        <LinearGradient
+          id="razi-mark"
+          x1="150"
+          y1="80"
+          x2="420"
+          y2="480"
+          gradientUnits="userSpaceOnUse">
+          <Stop offset="0" stopColor="#8FD0FF" />
+          <Stop offset="0.45" stopColor="#3E8CFF" />
+          <Stop offset="1" stopColor="#1B57BE" />
         </LinearGradient>
       </Defs>
 
-      {/* Feather ribbons fanning to the lower left */}
-      <Path
-        d="M252 252C186 250 116 268 44 306C116 300 190 288 252 274Z"
-        fill={stroke}
-        opacity={0.94}
-      />
-      <Path
-        d="M250 286C184 296 118 330 52 386C122 362 192 336 258 312Z"
-        fill={stroke}
-        opacity={0.98}
-      />
-      <Path
-        d="M260 322C206 346 154 392 104 452C162 416 220 378 274 344Z"
-        fill={stroke}
-        opacity={0.92}
-      />
-      <Path
-        d="M288 352C258 392 226 436 196 490C238 450 272 410 302 374Z"
-        fill={stroke}
-        opacity={0.86}
-      />
+      <G transform={`translate(${OFFSET_X} ${OFFSET_Y}) scale(${SCALE})`}>
+        {FEATHERS.map(d => (
+          <Path key={d} d={d} fill={paint} />
+        ))}
+        <Path d={BODY} fill={paint} />
 
-      {/* Rising tail, kept clear of the head */}
-      <Path
-        d="M342 120C402 138 440 200 446 268C452 348 414 424 340 496C372 428 384 366 378 306C372 232 352 178 330 140Z"
-        fill={stroke}
-      />
+        <G stroke={paint} strokeWidth={6} strokeLinecap="round" fill="none">
+          {CROWN_STEMS.map(d => (
+            <Path key={d} d={d} />
+          ))}
+        </G>
 
-      {/* Neck joining the head to the rising tail */}
-      <Path
-        d="M322 182C354 198 374 230 386 268C392 288 394 312 392 336C378 296 356 254 316 226Z"
-        fill={stroke}
-      />
-
-      {/* Head with beak */}
-      <Path
-        d="M262 122C306 120 330 152 326 186C322 218 296 238 266 240C250 241 238 236 230 227L190 236L214 206C210 176 224 140 262 122Z"
-        fill={stroke}
-      />
-
-      {/* Crown of knowledge */}
-      <Path
-        d="M258 118C252 96 246 80 238 64"
-        stroke={stroke}
-        strokeWidth={9}
-        strokeLinecap="round"
-        fill="none"
-      />
-      <Path
-        d="M271 116C277 92 285 74 295 60"
-        stroke={stroke}
-        strokeWidth={9}
-        strokeLinecap="round"
-        fill="none"
-      />
-      <Path
-        d="M283 124C295 106 309 94 325 86"
-        stroke={stroke}
-        strokeWidth={9}
-        strokeLinecap="round"
-        fill="none"
-      />
-      <Circle cx={236} cy={56} r={11} fill={dot} />
-      <Circle cx={296} cy={50} r={10} fill={dot} />
-      <Circle cx={328} cy={82} r={9} fill={dot} />
+        {CROWN_TIPS.map(([cx, cy]) => (
+          <Circle key={`${cx}-${cy}`} cx={cx} cy={cy} r={5} fill={paint} />
+        ))}
+      </G>
     </Svg>
   );
 }

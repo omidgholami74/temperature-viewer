@@ -1,11 +1,12 @@
-# Collector — Pico samples to the API
+# Collector — USB serial samples to the API
 
 > Where this sits in the stack: [docs/system-architecture.md](../docs/system-architecture.md).
 > Timestamps and retention: [docs/data-model.md](../docs/data-model.md).
 
-The Pico is a plain, non-networked board: it prints one CSV line per sample on
-USB serial (`105,781.25,660.00,940.00,545.75`) and cannot call the API itself.
-This console program runs on the PC and does two things:
+A Pico is a plain, non-networked board. An ESP32-S3 can also be put in
+`USB_ONLY` mode, where it does not join Wi-Fi or call the API either. Both print
+one CSV line per sample on USB serial (`105,781.25,660.00,940.00,545.75`). This
+console program runs on a PC or a small Linux host and does two things:
 
 1. converts those lines into samples and writes them into a JSON file on the
    computer, and
@@ -38,7 +39,7 @@ Sent 100 samples (total 200) | temperatures:  781.4   660.1   940.4   545.6
 | Constant          | Default                     | Meaning                                     |
 | ----------------- | --------------------------- | ------------------------------------------- |
 | `SOURCE`          | `"serial"`                  | `"serial"` live capture, or `"file"`        |
-| `SERIAL_PORT`     | `""`                        | `COM5` / `/dev/ttyACM0`; empty auto-detects |
+| `SERIAL_PORT`     | `""`                        | `COM5` / `/dev/serial/by-id/...`; empty auto-detects |
 | `BAUD_RATE`       | `115200`                    | Must match the Pico                         |
 | `SOURCE_FILE`     | `""`                        | Log to upload when `SOURCE = "file"`        |
 | `LOG_ENDED_AT`    | `""`                        | ISO 8601 end of that log; empty uses mtime  |
@@ -90,11 +91,95 @@ dashboard, which uses its own `ui/config.js` origin.
 
 ## Serial mode
 
-Default. The program detects a Pico-style USB serial device, turns each CSV
-line into a sample, appends it to `<DATA_DIR>/samples.jsonl` and a background
-thread uploads from it
-every second. If the cable is unplugged, it retries the port every 3 s; the Pico
-keeps logging to its own flash when `LOG_TO_FLASH` is enabled.
+Default. The program detects a Pico or ESP32-S3 USB serial device, turns each
+CSV line into a sample, appends it to `<DATA_DIR>/samples.jsonl` and a
+background thread uploads from it every second. If the cable is unplugged, it
+retries the port every 3 s; the Pico keeps logging to its own flash when
+`LOG_TO_FLASH` is enabled.
+
+## USB-only ESP32-S3 through a USB-to-LAN host
+
+This is the no-Wi-Fi layout: the board's USB-UART (CH343) port goes to a
+Raspberry Pi or OpenWrt host, and the host's **USB-to-LAN adapter** goes to the
+LAN. The adapter belongs on the host: a USB-to-LAN adapter is a USB device and
+cannot provide a network interface when plugged into the ESP32-S3's USB device
+port. The board only streams CSV; the host runs this collector.
+
+On the board, in `esp32-s3/config.py`:
+
+```python
+USB_ONLY = True
+SERIAL_ECHO = True
+```
+
+`USB_ONLY` skips WLAN, NTP, heartbeat, OTA and the direct uploader; the firmware
+forces serial echo on. `API_URL` and `API_KEY` on the board are unused in this
+mode. An existing `/settings.json` still controls `sample_ms`; delete it or set
+the interval you want if it was saved by the old Wi-Fi setup. Connect the
+**CH343 / USB-UART** port (the one Thonny uses) to the host at 115200 baud.
+
+On the host:
+
+1. Plug the USB-to-LAN adapter into the host and confirm that it has a LAN
+   address and a default route:
+
+   ```bash
+   ip -br addr
+   ip route
+   ping -c 3 apitemp.futurefounderco.com
+   ```
+
+2. Install Python and the serial dependency:
+
+   ```bash
+   cd /home/pi/temperature-viewer
+   python3 -m venv .venv
+   .venv/bin/pip install -r collector/requirements.txt
+   sudo usermod -aG dialout "$USER"   # log out and back in afterwards
+   ```
+
+3. Find the board's stable serial path:
+
+   ```bash
+   ls -l /dev/serial/by-id/*
+   ```
+
+   Prefer the `by-id` path over `/dev/ttyUSB0`, which can change after a reboot.
+
+4. Edit the constants at the top of `collector/collector.py`:
+
+   ```python
+   SERIAL_PORT = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
+   API_URL = "https://apitemp.futurefounderco.com"
+   API_KEY = "the same value as FURNACE_INGEST_KEY"
+   DATA_DIR = "/var/lib/furnace"
+   ```
+
+   The collector stamps samples with the host clock, so keep the host's time
+   synchronised (`timedatectl` on Raspberry Pi OS).
+
+5. Run it once in the foreground and confirm that samples arrive:
+
+   ```bash
+   sudo mkdir -p /var/lib/furnace
+   sudo chown "$USER":"$USER" /var/lib/furnace
+   .venv/bin/python collector/collector.py
+   ```
+
+6. For unattended operation, copy the supplied systemd unit and adjust its
+   user, checkout path and virtualenv path:
+
+   ```bash
+   sudo cp collector/furnace-collector.service /etc/systemd/system/
+   sudo systemctl edit --full furnace-collector
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now furnace-collector
+   journalctl -u furnace-collector -f
+   ```
+
+OpenWrt does not use systemd; run the same command from its init system
+(procd) or a container. It needs Python 3 and pyserial. Keep the USB-to-LAN
+adapter on the host either way.
 
 ## File mode
 
@@ -139,11 +224,12 @@ arrives, which compresses a long backlog into a few seconds.
 | ------------------------ | --------------------------------------------- |
 | `samples.jsonl`          | Live serial capture, one JSON sample per line |
 
-A CSV line has five numbers: uptime in ms and four channel temperatures, with
-`-1000.00` for a channel that faulted. The CSV carries no fault bits, so a
-`-1000.00` column is uploaded as `null` with fault `8`; the dashboard then
-shows the channel as broken instead of 0 °C. JSON lines are accepted too, which
-is what `SOURCE = "file"` reads from the Pico's own log.
+A CSV line has four or five numbers: uptime in ms and three (MAX31855) or four
+(MAX31865/Pico) channel temperatures, with `-1000.00` for a channel that
+faulted. The CSV carries no fault bits, so a `-1000.00` column is uploaded as
+`null` with fault `8`; an absent fourth channel is padded as `null` with fault
+`0`. JSON lines are accepted too, which is what `SOURCE = "file"` reads from
+the Pico's own log.
 | `checkpoint.json`        | `{"source": ..., "offset": ...}`              |
 
 Both are ignored by git. They are safe to keep: deleting the spool only loses
@@ -156,9 +242,8 @@ samples that had not been uploaded yet.
   sample keep the 10 Hz grid intact.
 - A line without a trailing newline is treated as still being written and is
   left for the next cycle.
-- Lines that are neither a sample JSON object nor five CSV numbers (boot
-  banners, header rows, truncated writes) are
-  skipped and logged.
+- Lines that are neither a sample JSON object nor four/five CSV numbers (boot
+  banners, header rows, truncated writes) are skipped and logged.
 - A payload the server refuses outright (`400`, `413`, `422`) is dropped so a
   single bad line cannot block the queue. Other statuses (`401`, `403`, `404`,
   `405`) keep the data and retry, because they mean the URL or key is wrong.

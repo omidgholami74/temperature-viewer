@@ -1,0 +1,20 @@
+[Unit]
+Description=Furnace USB serial collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# Change User, WorkingDirectory and ExecStart to match the checkout and the
+# account that can open the board's USB serial port (usually the dialout group).
+User=pi
+WorkingDirectory=/home/pi/temperature-viewer
+ExecStart=/home/pi/temperature-viewer/.venv/bin/python /home/pi/temperature-viewer/collector/collector.py
+
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

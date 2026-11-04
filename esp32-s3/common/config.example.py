@@ -2,6 +2,11 @@
 # config.py is ignored by git.
 
 # --- Wi-Fi (2.4 GHz only: the ESP32-S3 has no 5 GHz radio) ---------------
+# Set USB_ONLY = True to skip Wi-Fi entirely. The board then writes CSV on its
+# USB-UART port and a host (Raspberry Pi / OpenWrt) runs collector/; the host
+# owns the USB-to-LAN adapter. There is no heartbeat, OTA or direct upload in
+# that mode, and SERIAL_ECHO is forced on.
+USB_ONLY = False
 WIFI_SSID = "your-network"
 WIFI_PASSWORD = "your-password"
 WIFI_HOSTNAME = "furnace-esp32"   # shown by the router's client list
@@ -90,7 +95,7 @@ OTA_TIMEOUT_S = 20
 # It goes to UART0 (the CH343 port), which never blocks when nothing listens;
 # on a board whose console is the native USB-Serial-JTAG, set it to False
 # before running without a PC.
-SERIAL_ECHO = True
+SERIAL_ECHO = True               # keep True in USB_ONLY mode
 
 # --- Wi-Fi security note -------------------------------------------------
 # TLS_VERIFY = True makes the firmware validate the server certificate. The

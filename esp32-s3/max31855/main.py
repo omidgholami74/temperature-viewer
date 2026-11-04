@@ -1,4 +1,4 @@
-"""ESP32-S3 + 3x MAX31855, Wi-Fi, straight to the PHP API.
+"""ESP32-S3 + 3x MAX31855, Wi-Fi or USB-only, straight to the API.
 
 Three furnaces are read every 400 ms, each through a median/EMA noise filter;
 the ``ms,f1,f2,f3`` line goes out on USB serial for Thonny / Serial Studio /
@@ -33,13 +33,26 @@ from machine import Pin, SPI
 import config
 import settings as settings_module
 import supervisor
-import wifi
-from ingest import Ingest
 
-try:
-    import ota
-except ImportError:  # a board flashed before OTA existed still samples
+# USB-only mode turns the board into a serial source for a host collector.
+# It must not create a WLAN, a heartbeat thread or a TLS uploader: the host
+# (Raspberry Pi/OpenWrt) owns the USB-to-LAN adapter and the API connection.
+USB_ONLY = bool(getattr(config, "USB_ONLY", False))
+
+if not USB_ONLY:
+    import wifi
+    from ingest import Ingest
+else:
+    wifi = None
+    Ingest = None
+
+if USB_ONLY:
     ota = None
+else:
+    try:
+        import ota
+    except ImportError:  # a board flashed before OTA existed still samples
+        ota = None
 
 # ==========================================
 # ESP32-S3 + 3x MAX31855
@@ -321,61 +334,110 @@ def csv_value(temperature):
     return FAULT_SENTINEL if temperature is None else temperature
 
 
+class _UsbSink:
+    """Stand-in uploader: in USB-only mode the serial line is the transport."""
+
+    def __init__(self):
+        self.pending = []
+        self.dropped = 0
+        self.frames = 0
+
+    def add(self, *args, **kwargs):
+        self.frames += 1
+
+    def needs_network_reset(self):
+        return False
+
+    def alive(self):
+        return True
+
+    def reset_network(self):
+        pass
+
+    def start(self):
+        return False
+
+    def stop(self):
+        pass
+
+    def stats(self):
+        return "USB-only: %d frames on serial" % (self.frames,)
+
+
+class _UsbNetwork:
+    """The loop's link check is a no-op; the host owns the LAN link."""
+
+    def isconnected(self):
+        return True
+
+
 # ==========================================
 # Main loop
 # ==========================================
 
 def session(watch):
-    """One sampling session: connect, then sample until something breaks."""
-    wlan = wifi.connect(config, watch=watch)
+    """One sampling session: connect (unless USB-only), then sample."""
+    if USB_ONLY:
+        print("# network: USB-only; Wi-Fi and direct upload are disabled")
+        wlan = _UsbNetwork()
+        clock_ok = False
+        ingest = _UsbSink()
+        updater = None
+        link = None
+        watch.feed()
+    else:
+        wlan = wifi.connect(config, watch=watch)
 
-    clock_ok = False
+        clock_ok = False
 
-    if wlan.isconnected() and getattr(config, "NTP_ENABLED", True):
-        clock_ok = wifi.sync_time(config)
+        if wlan.isconnected() and getattr(config, "NTP_ENABLED", True):
+            clock_ok = wifi.sync_time(config)
 
-    watch.feed()
+        watch.feed()
 
-    ingest = Ingest(config)
+        ingest = Ingest(config)
 
-    # Upload from a thread: a request (or a TLS handshake) takes 0.5-1 s here,
-    # and the sampling loop must stay on the frame grid while it happens.
-    if ingest.start():
-        print("# upload runs in a background thread")
+        # Upload from a thread: a request (or a TLS handshake) takes 0.5-1 s
+        # here, and the sampling loop must stay on the frame grid.
+        if ingest.start():
+            print("# upload runs in a background thread")
 
-    updater = None
+        updater = None
 
-    if ota is not None:
+        if ota is not None:
+            try:
+                updater = ota.Updater(config)
+            except Exception as error:
+                print("# OTA: disabled: %s" % (error,))
+
+        link = None
+
         try:
-            updater = ota.Updater(config)
+            import device
+
+            link = device.DeviceLink(
+                config,
+                wlan,
+                ingest,
+                updater,
+                channels=list(range(1, len(CS_PINS) + 1)),
+                settings=runtime,
+                source="max31855",
+            )
+
+            if link.start():
+                print("# device: %s, heartbeat every %d s" % (link.id, link.heartbeat_s))
+            else:
+                print("# device: heartbeat unavailable")
         except Exception as error:
-            print("# OTA: disabled: %s" % (error,))
+            print("# device: disabled: %s" % (error,))
 
-    link = None
+    # USB-only has no second transport: never let SERIAL_ECHO silence it.
+    echo = True if USB_ONLY else bool(getattr(config, "SERIAL_ECHO", True))
 
-    try:
-        import device
-
-        link = device.DeviceLink(
-            config,
-            wlan,
-            ingest,
-            updater,
-            channels=list(range(1, len(CS_PINS) + 1)),
-            settings=runtime,
-            source="max31855",
-        )
-
-        if link.start():
-            print("# device: %s, heartbeat every %d s" % (link.id, link.heartbeat_s))
-        else:
-            print("# device: heartbeat unavailable")
-    except Exception as error:
-        print("# device: disabled: %s" % (error,))
-
-    echo = bool(getattr(config, "SERIAL_ECHO", True))
-
-    if not clock_ok:
+    if USB_ONLY:
+        print("# USB-only: the host collector stamps time and uploads")
+    elif not clock_ok:
         print("# no clock: samples are stamped by the server on arrival")
 
     if echo:

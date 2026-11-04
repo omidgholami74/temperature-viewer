@@ -1,13 +1,12 @@
-# ESP32-S3 firmware — Wi-Fi straight to the API
+# ESP32-S3 firmware — Wi-Fi or USB-only
 
 > Pins, probe wiring and power: [docs/hardware.md](../docs/hardware.md).
 > The sampling loop, watchdog and fault handling: [docs/firmware.md](../docs/firmware.md).
 
 Firmware for an **ESP32-S3** that samples the furnace channels at a configurable
 frame interval (400 ms by default) and uploads them **directly to the PHP API**
-over Wi-Fi. There is no middle layer:
-no PC, no `collector/`, no USB cable, and no file on a flash drive. The board is
-the collector.
+over Wi-Fi, or streams them over USB to `collector/` on a host that owns the
+network. The board is the collector in Wi-Fi mode; in USB-only mode the host is.
 
 The MAX31855 build is wired for **three furnaces** (CS 15/16/17). The MAX31865
 build keeps four. The API frame is four slots wide either way: a slot with no
@@ -41,7 +40,9 @@ The Arduino sketch covers the same two sensors (switch with one `#define`),
 uses no extra library beyond the ESP32 core, and its maths/JSON are tested on a
 PC with `g++`. Details: [`arduino/README.md`](arduino/README.md).
 
-## Why no collector
+## Why no collector (Wi-Fi mode)
+
+The USB-only path below is the exception: it uses `collector/` on a host.
 
 ```
    ESP32-S3 (Wi-Fi)                        API                    Browser
@@ -207,7 +208,8 @@ The board is meant to sit next to the furnace on a plain USB charger: the
 charger only supplies 5 V, everything else happens over Wi-Fi. Any 5 V supply
 with at least 500 mA works. With the files from [Install](#install) at the
 board root, MicroPython runs `main.py` on every power-up, so there is nothing
-to start and nothing to plug in.
+to start and nothing to plug in. For a USB-only board the host's USB port
+supplies power and data; see [USB-only host mode](#usb-only-host-mode-no-wi-fi).
 
 | Situation | What the firmware does on its own |
 | --------- | --------------------------------- |
@@ -264,6 +266,31 @@ shifting bytes out with nothing connected, so it never stalls the loop; set
 console is the native USB-Serial-JTAG instead (no CH343 chip), turn the echo
 off before running from a charger.
 
+## USB-only host mode (no Wi-Fi)
+
+For a board that must not join Wi-Fi, set in `config.py`:
+
+```python
+USB_ONLY = True
+SERIAL_ECHO = True
+```
+
+The board then prints only the CSV line on its **USB-UART (CH343) port** at
+115200 baud. It does not construct a WLAN, fetch NTP, start the heartbeat/OTA
+threads or open a TLS uploader; `SERIAL_ECHO` is forced on. The host runs
+`collector/`, which stamps time and uploads through its own USB-to-LAN adapter.
+The adapter must be plugged into the host, not into the ESP32-S3's USB device
+port: a USB-to-LAN adapter needs a USB host and cannot provide the board with a
+network interface directly.
+
+The host setup and systemd service are documented in
+[`collector/README.md`](../collector/README.md#usb-only-esp32-s3-through-a-usb-to-lan-host).
+An existing `/settings.json` still controls `sample_ms`; delete it or set the
+interval you want if it was saved by the old Wi-Fi setup. The admin panel cannot
+reach a USB-only board, and OTA is unavailable: update firmware over USB. The
+native USB-Serial-JTAG port is not the console these prints use on every board;
+use the CH343/UART port that Thonny already sees.
+
 ## Remote updates (OTA)
 
 After the first USB flash, the board updates only when an operator asks it to
@@ -317,9 +344,11 @@ Pressing Update before a bundle exists shows `# OTA: no bundle published for
 command. `401/403` means `OTA_API_KEY`/`API_KEY` does not match
 `FURNACE_INGEST_KEY`.
 
-This covers the **MicroPython** firmware. The Arduino sketch in
-[`arduino/`](arduino/README.md) still needs a USB flash, because it is compiled
-into a single image rather than living as files on the board.
+USB-only boards skip this OTA path: they have no heartbeat to receive the
+command, so update them over USB. This covers the **MicroPython** firmware. The
+Arduino sketch in [`arduino/`](arduino/README.md) still needs a USB flash,
+because it is compiled into a single image rather than living as files on the
+board.
 
 ## Configuration
 
@@ -328,6 +357,7 @@ a microcontroller.
 
 | Setting         | Default                          | Meaning                                        |
 | --------------- | -------------------------------- | ---------------------------------------------- |
+| `USB_ONLY`      | `False`                          | Skip Wi-Fi/API and stream CSV to a host collector |
 | `WIFI_SSID`     | —                                | 2.4 GHz network; the ESP32-S3 has no 5 GHz     |
 | `WIFI_PASSWORD` | —                                |                                                |
 | `WIFI_HOSTNAME` | `furnace-esp32`                  | Name in the router's client list               |
@@ -345,7 +375,7 @@ a microcontroller.
 | `WATCHDOG_S`    | `30`                             | Reboot when the loop stops feeding it; `0` = off |
 | `NTP_ENABLED`   | `True`                           | Send absolute `at` timestamps                  |
 | `NTP_HOST`      | `pool.ntp.org`                   |                                                |
-| `SERIAL_ECHO`   | `True`                           | Also print the CSV line on USB serial          |
+| `SERIAL_ECHO`   | `True`                           | CSV on USB serial; forced on in USB-only mode  |
 | `TLS_VERIFY`    | `False`                          | Validate the `https` certificate (see below)   |
 | `DEVICE_ID`     | `esp32-1`                        | Name the admin panel uses; keep it unique      |
 | `DEVICE_NAME`   | `Furnace monitor`                | Label shown in the panel                       |
@@ -456,7 +486,8 @@ python3 -m unittest discover -s esp32-s3/tests -v
 
 | Symptom | Check |
 | ------- | ----- |
-| `Wi-Fi: no association…` | The network is 2.4 GHz, the password is right, the access point allows new clients. A 5 GHz-only SSID is invisible to this chip. |
+| `Wi-Fi: no association…` | The network is 2.4 GHz, the password is right, the access point allows new clients. A 5 GHz-only SSID is invisible to this chip. In USB-only mode this line must not appear at all. |
+| USB-only board never appears in `collector` | Use the CH343/UART port at 115200, set `USB_ONLY = True` and `SERIAL_ECHO = True`, check the `by-id` path on the host, and keep the USB-to-LAN adapter on the host. |
 | `API: … not sent: [Errno 103] ECONNABORTED` / `-202` | The API host is unreachable from that network; check `API_URL` and DNS (`socket.getaddrinfo`), not the dashboard host. |
 | `API 401` | `API_KEY` does not match `FURNACE_INGEST_KEY`. The key is kept and retried, so fix the config and restart. |
 | `API 404` | `API_URL` points at the dashboard (use the `apitemp` API host) or at a path without `/api/ingest`. A complete `/api/ingest` URL is accepted; heartbeat/OTA strip it automatically. |

@@ -22,6 +22,13 @@ class SerialLineTests(unittest.TestCase):
         self.assertEqual(sample["t"], [781.25, 660.0, 940.5, 545.75])
         self.assertEqual(sample["f"], [0, 0, 0, 0])
 
+    def test_three_channel_esp32_line_is_padded_to_the_api_frame(self):
+        sample = collector.parse_line(b"105,781.25,660.00,940.50")
+
+        self.assertEqual(sample["u"], 105)
+        self.assertEqual(sample["t"], [781.25, 660.0, 940.5, None])
+        self.assertEqual(sample["f"], [0, 0, 0, 0])
+
     def test_fault_sentinel_becomes_null_and_a_fault(self):
         sample = collector.parse_line(b"100,781.25,-1000.00,940.00,-1000.00")
 

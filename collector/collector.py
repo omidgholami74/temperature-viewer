@@ -55,8 +55,10 @@ BATCH_SIZE = 100  # samples per request
 POLL_INTERVAL_S = 1.0  # pause when there is nothing new to upload
 RETRY_DELAYS_S = (1, 2, 5, 10, 30)  # backoff between failed uploads
 
-# Serial line shape: uptime in ms followed by one column per channel.
+# Serial line shape: uptime in ms followed by three (MAX31855) or four
+# (MAX31865 / Pico) channel temperatures. The API frame is always four wide.
 CSV_COLUMNS = 5
+API_CHANNELS = 4
 CSV_FAULT_SENTINEL = -1000.0  # the firmware's "this channel faulted" value
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -202,14 +204,18 @@ def parse_csv_line(text):
     """``12300,781.25,-1000.00,940.00,545.75`` to an API sample, or None.
 
     The boards print CSV on USB serial and only JSON in the flash log, so the
-    serial capture converts the five numbers back into ``u``/``t``/``f``.
+    serial capture converts four or five numbers back into ``u``/``t``/``f``.
+    The ESP32-S3 MAX31855 build sends three probes, so it needs the fourth
+    API slot padded; MAX31865 and the Pico send all four.
     ``-1000.00`` is what the firmware prints for a channel that faulted: the
     line carries no fault bits, so the reading becomes ``null`` with fault 8
     (read error) and the dashboard shows the channel as broken, not as 0 °C.
     """
     parts = text.split(",")
 
-    if len(parts) != CSV_COLUMNS:
+    # MAX31855 sends uptime + 3 probes; MAX31865 and the Pico send uptime + 4.
+    # Reject a 2-column line so a partial row is not turned into a sample.
+    if len(parts) not in (4, CSV_COLUMNS):
         return None
 
     try:
@@ -218,12 +224,18 @@ def parse_csv_line(text):
     except ValueError:
         return None  # a header row, a banner, or a half-written line
 
-    temperatures = [None if value == CSV_FAULT_SENTINEL else value for value in readings]
+    readings = [None if value == CSV_FAULT_SENTINEL else value for value in readings]
+    faults = [8 if value is None else 0 for value in readings]
+
+    # The API wire format is four channels wide; an uninstalled furnace is
+    # null with no fault, not a phantom probe. A real fault keeps bit 8.
+    temperatures = readings + [None] * (API_CHANNELS - len(readings))
+    faults += [0] * (API_CHANNELS - len(faults))
 
     return {
         "u": uptime,
         "t": temperatures,
-        "f": [8 if value is None else 0 for value in temperatures],
+        "f": faults,
     }
 
 
@@ -465,7 +477,18 @@ def pick_port():
     for port in ports:
         description = f"{port.description or ''} {port.manufacturer or ''}".lower()
 
-        if any(key in description for key in ("pico", "micropython", "usb serial", "usb-serial")):
+        if any(key in description for key in (
+            "pico",
+            "micropython",
+            "usb serial",
+            "usb-serial",
+            "ch343",
+            "ch340",
+            "cp210",
+            "ft232",
+            "esp32",
+            "jtag",
+        )):
             return port.device
 
     return ports[0].device if ports else None

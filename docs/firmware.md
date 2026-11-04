@@ -12,12 +12,12 @@ sensor driver and how a frame leaves the board.
 
 | | `esp32-s3/` MicroPython | `esp32-s3/arduino/` | `module/` Pico |
 | --- | --- | --- | --- |
-| Target | ESP32-S3, Wi-Fi | ESP32-S3 (or ESP32), Wi-Fi | Raspberry Pi Pico, USB |
+| Target | ESP32-S3, Wi-Fi or USB-only | ESP32-S3 (or ESP32), Wi-Fi | Raspberry Pi Pico, USB |
 | Toolchain | Thonny / `mpremote` | Arduino IDE 2.x / `arduino-cli` | Thonny |
 | Sensor | 3× MAX31855 or 4× MAX31865 | MAX31855 or MAX31865 | MAX31855 |
-| Transport | HTTP batch | HTTP batch | CSV over USB (+ flash log) |
+| Transport | HTTP batch or USB-only CSV | HTTP batch | CSV over USB (+ flash log) |
 | Buffer | 600 frames (4 min at 400 ms) | 60 s ring | none on the wire; flash log rotates at 1 MB |
-| Clock | NTP, `at` per batch | NTP, `at` per batch | none; collector stamps time |
+| Clock | NTP, `at` per batch; host collector in USB-only | NTP, `at` per batch | none; collector stamps time |
 | Watchdog | hardware WDT + supervisor | task watchdog + retry loop | none (PC is expected) |
 
 ## The sampling loop
@@ -98,14 +98,19 @@ The Pico prints one CSV line per sample:
 
 `collector.py` parses it, maps uptime to wall-clock time, appends JSON lines to
 a checkpointed spool and uploads batches of 100. `-1000.00` becomes `null` with
-fault bit 8. See [`collector/README.md`](../collector/README.md).
+fault bit 8. An ESP32-S3 can use this transport without Wi-Fi: set
+`USB_ONLY = True` in `config.py`, connect its CH343 USB-UART port to a
+Raspberry Pi/OpenWrt host, and run the collector there. The host owns the
+USB-to-LAN adapter; the board never creates a WLAN or uploader. See
+[`collector/README.md`](../collector/README.md#usb-only-esp32-s3-through-a-usb-to-lan-host).
 
 ## Remote updates
 
 The MicroPython board updates when an operator presses **Update firmware** in
 the admin panel; there is no periodic check. The next heartbeat delivers the
-`ota` command, and only then does the board fetch a bundle. The Arduino build
-still needs a USB flash. A bundle is a manifest plus plain `.py` files:
+`ota` command, and only then does the board fetch a bundle. A USB-only board has
+no heartbeat, so update it over USB. The Arduino build still needs a USB flash.
+A bundle is a manifest plus plain `.py` files:
 
 ```
 admin panel ── ota ──▶ heartbeat reply ── check ──▶ GET /api/firmware/manifest?channel=max31855
@@ -177,7 +182,7 @@ feeding the watchdog, which is the fastest way to tell a crash from a power cut.
 `supervisor.py` wraps a session:
 
 ```
-start → connect Wi-Fi → NTP (optional) → sampling loop
+start → connect Wi-Fi (unless USB-only) → NTP (optional) → sampling loop
    ▲                                          │
    └── restart after 5–60 s backoff ◀── exception / hang
 ```

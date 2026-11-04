@@ -54,7 +54,8 @@ Pico / ESP32-S3 ──USB CSV──▶ collector.py ──JSON batches──▶ 
 The collector stamps each line with an absolute time and keeps a checkpointed
 spool, which makes a replay after a laptop crash idempotent enough for a
 monitoring prototype. It is the only path that can upload history with real
-timestamps.
+timestamps. Set `USB_ONLY = True` on an ESP32-S3 to use this path with no Wi-Fi;
+the host owns the USB-to-LAN adapter and the board only writes CSV on USB.
 
 ## A frame's journey
 

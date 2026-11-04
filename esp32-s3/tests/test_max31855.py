@@ -133,6 +133,20 @@ class Max31855Tests(unittest.TestCase):
         self.assertEqual(self.driver.miso.init_calls[-1], (FakePin.IN, FakePin.PULL_UP))
         self.assertIs(self.driver.spi.options["miso"], self.driver.miso)
 
+    def test_usb_only_does_not_import_network_modules(self):
+        modules = board_modules()
+        modules["config"].USB_ONLY = True
+
+        with mock.patch.dict(sys.modules, modules):
+            driver = load(
+                "esp32s3_max31855_usb",
+                os.path.join(ROOT, "max31855", "main.py"),
+            )
+
+        self.assertTrue(driver.USB_ONLY)
+        self.assertIsNone(driver.wifi)
+        self.assertIsNone(driver.Ingest)
+
     def test_the_datasheet_frame_decodes(self):
         self.assertEqual(self.driver._decode(0x01900000), (25.0, 0))
         self.assertEqual(self.driver._decode(frame(25.0)), (25.0, 0))

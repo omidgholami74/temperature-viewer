@@ -189,8 +189,10 @@ Two supported boards, pick one:
 Wiring, firmware upload and calibration are documented in
 [`module/README.md`](module/README.md).
 
-**ESP32-S3 (Wi-Fi, no PC).** The board uploads to the API itself, so the PC
-and `collector/` drop out of the picture.
+**ESP32-S3 (Wi-Fi or USB-only).** With Wi-Fi the board uploads to the API
+itself, so the PC and `collector/` drop out of the picture. For a no-Wi-Fi
+site, set `USB_ONLY = True` and let a Raspberry Pi/OpenWrt host run
+`collector/` with a USB-to-LAN adapter.
 
 - 3x MAX31855 + K-type probes (SCK 14, MISO 12, CS 15/16/17), or
 - 4x MAX31865 + PT100/PT1000 RTDs (SCK 14, **MOSI 11**, MISO 12, CS 15/16/17/18).

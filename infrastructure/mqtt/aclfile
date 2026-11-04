@@ -1,0 +1,25 @@
+# Broker ACL — /etc/mosquitto/aclfile
+#
+# One block per client. A board may publish only under its own prefix and read
+# only its own command topic, so a compromised board cannot forge another
+# device's readings or listen to another furnace's data.
+#
+# After editing: sudo systemctl reload mosquitto
+
+# --- the server consumer (backend/mqtt/bridge.py) ---------------------------
+user furnace-bridge
+topic read  factory/+/+/telemetry
+topic read  factory/+/+/status
+topic read  factory/+/+/event
+topic read  factory/+/+/cmd/ack
+topic write factory/+/+/cmd
+
+# --- devices ----------------------------------------------------------------
+# Copy this block per board and change the id in both places.
+
+user esp32_001
+topic write factory/razi/esp32_001/telemetry
+topic write factory/razi/esp32_001/status
+topic write factory/razi/esp32_001/event
+topic write factory/razi/esp32_001/cmd/ack
+topic read  factory/razi/esp32_001/cmd

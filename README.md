@@ -99,6 +99,7 @@ extreme, CSV export with its own date picker, and an installable PWA manifest.
 | `serial-web/`| Browser dashboard reading the COM port directly (Web Serial)     |
 | `tests/`    | Node unit tests for the timer and formatting helpers             |
 | `artifacts/`| Dashboard, settings and serial screenshots                      |
+| `docs/`     | Design documents: architecture, MQTT protocol, database schema  |
 
 The ESP32-S3 firmware removes the PC from that diagram: the board itself posts
 the same payload to `/api/ingest` over Wi-Fi (400 ms frames by default).
@@ -114,6 +115,22 @@ explains how they fit:
 - [`docs/data-model.md`](docs/data-model.md) — tables, run lifecycle, retention arithmetic
 - [`docs/testing.md`](docs/testing.md) — every suite and what it proves without hardware
 - [`MQTT/README.md`](MQTT/README.md) — the MQTT transport, bridge and design system
+
+## Design documents
+
+How the system is put together, and where it is going beyond one board:
+
+- [Architecture](docs/architecture.md) — as-built vs target layers, module
+  boundaries, key decisions, failure modes, scaling path and roadmap.
+- [MQTT protocol](docs/mqtt-protocol.md) — topic tree, payload versions,
+  status/last-will, commands and per-device ACLs.
+- [MQTT setup](docs/mqtt-setup.md) — step-by-step broker, bridge and board
+  setup that feeds the existing `/api/ingest`.
+- [Database schema](docs/database-schema.md) — the SQLite schema as it is, the
+  TimescaleDB target for many devices and alerting, and the migration path.
+
+The documents mark what exists in this repository and what is only designed, so
+nothing in them reads as already working.
 
 ## Quick start (no hardware)
 
@@ -338,6 +355,83 @@ one host (no CORS and one certificate), use the wrapper in
 Detailed Apache/Nginx examples and security notes are in
 [backend/README.md](backend/README.md#deployment) and
 [ui/README.md](ui/README.md#hosting).
+
+## MQTT on the internal Linux server
+
+In front of the API, an optional broker lets the boards push with MQTT instead
+of HTTPS. One command sets it up on the server that already runs the API:
+
+```bash
+ssh user@server
+cd /srv/furnace && git pull
+sudo bash infrastructure/mqtt/setup-server.sh
+```
+
+It asks six things — site namespace, board id, ingest URL, the API key and two
+broker passwords — then does the rest:
+
+| Step | Result |
+| ---- | ------ |
+| installs | `mosquitto`, `mosquitto-clients`, `python3-venv` |
+| users | `furnace-bridge` (consumer) and one user per board |
+| ACL | a board may write only its own topics, read only its own `cmd` |
+| listener | `1883` from `infrastructure/mqtt/furnace.conf`, no anonymous clients |
+| firewall | `1883` open to the board's subnet only (ufw or firewalld) |
+| bridge | `.venv` + `paho-mqtt`, `/etc/furnace/mqtt-bridge.env`, systemd unit |
+| checks | broker listening, service active, `/api/health` answering |
+
+It is idempotent and only touches `/etc/mosquitto`, `/etc/furnace`, the systemd
+unit and the repository's own `.venv`. The API, the SQLite file and the
+dashboard are not modified, and every file it writes comes from this repository.
+Re-running it rotates the two passwords (and prints the board's new config).
+
+Passwords are read with `read -rsp`, so they never reach the shell history.
+Override any answer with environment variables, and print the plan without
+changing anything first:
+
+```bash
+sudo DRY_RUN=1 bash infrastructure/mqtt/setup-server.sh
+sudo SITE=razi DEVICE=esp32_001 LAN_CIDR=10.20.0.0/16 \
+  bash infrastructure/mqtt/setup-server.sh
+```
+
+It prints at the end what to paste into the board's `config.py`:
+
+```python
+MQTT_SITE = "razi"
+MQTT_DEVICE_ID = "esp32_001"
+MQTT_HOST = "10.20.0.5"        # the server on the LAN
+MQTT_PORT = 1883
+MQTT_USER = MQTT_DEVICE_ID
+MQTT_PASSWORD = "…"
+```
+
+Verify it without hardware (the bridge is the only writer, so this proves the
+broker, the ACL and the API in one go):
+
+```bash
+mosquitto_pub -h 127.0.0.1 -u esp32_001 -P '<device password>' \
+  -t factory/razi/esp32_001/telemetry -q 1 -f /tmp/telemetry.json
+curl -s 'https://apitemp.futurefounderco.com/api/live?since=0' | head -c 400
+
+journalctl -u furnace-mqtt-bridge -f                    # bridge log
+systemctl status furnace-mqtt-bridge mosquitto --no-pager
+```
+
+Undo:
+
+```bash
+sudo systemctl disable --now furnace-mqtt-bridge
+sudo rm /etc/systemd/system/furnace-mqtt-bridge.service \
+        /etc/furnace/mqtt-bridge.env /etc/mosquitto/conf.d/furnace.conf
+sudo systemctl restart mosquitto
+```
+
+The board side (config keys, the two-line `main.py` change) and the manual
+walkthrough — TLS on 8883, per-device ACLs, troubleshooting — are in
+[docs/mqtt-setup.md](docs/mqtt-setup.md). The broker must not stay on a public
+port: keep it on the internal LAN, or move it to 8883 with TLS and a source-IP
+allow-list.
 
 ## Tests
 

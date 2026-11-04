@@ -29,3 +29,6 @@ logs/
 # Operating system
 .DS_Store
 Thumbs.db
+
+# local virtual environments (bridge/tests)
+.venv/

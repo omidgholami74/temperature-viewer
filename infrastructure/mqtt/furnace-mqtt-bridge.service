@@ -1,0 +1,33 @@
+# systemd unit for the MQTT -> /api/ingest bridge.
+#
+#   sudo cp infrastructure/mqtt/furnace-mqtt-bridge.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now furnace-mqtt-bridge
+#   journalctl -u furnace-mqtt-bridge -f
+#
+# Adjust WorkingDirectory and ExecStart to where the repository lives.
+
+[Unit]
+Description=Furnace MQTT to HTTP ingest bridge
+Documentation=file:/opt/furnace/docs/mqtt-setup.md
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=furnace
+Group=furnace
+WorkingDirectory=/opt/furnace
+EnvironmentFile=/etc/furnace/mqtt-bridge.env
+ExecStart=/opt/furnace/.venv/bin/python /opt/furnace/backend/mqtt/bridge.py
+Restart=always
+RestartSec=5
+
+# The bridge only needs to open sockets and read its environment file.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+# This directory is outside the public document root. Deny access anyway so a
+# misconfigured document root cannot expose recent.json.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

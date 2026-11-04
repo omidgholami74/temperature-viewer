@@ -48,7 +48,7 @@ DATA_DIR = "data"
 SPOOL_FILE = os.path.join(DATA_DIR, "samples.jsonl")  # serial capture
 CHECKPOINT_FILE = os.path.join(DATA_DIR, "checkpoint.json")  # accepted offset
 
-API_URL = "http://127.0.0.1:8080"  # backend base URL, no trailing slash
+API_URL = "https://temp.futurefounderco.com"  # backend base URL, no trailing slash
 API_KEY = ""  # must match FURNACE_INGEST_KEY when the API requires a key
 
 # Cloudflare's Browser Integrity Check blocks Python's stock urllib user agent
@@ -56,8 +56,8 @@ API_KEY = ""  # must match FURNACE_INGEST_KEY when the API requires a key
 # browser; the contact URL also gives an operator something to match on.
 USER_AGENT = "FurnaceCollector/1.0 (+https://github.com/omidgholami74/temperature-viewer)"
 
-BATCH_SIZE = 100  # samples per request
-POLL_INTERVAL_S = 1.0  # pause when there is nothing new to upload
+BATCH_SIZE = 5  # samples per request; small batches keep the live UI fresh
+POLL_INTERVAL_S = 0.2  # pause when there is nothing new to upload
 RETRY_DELAYS_S = (1, 2, 5, 10, 30)  # backoff between failed uploads
 
 # Serial line shape: uptime in ms followed by three (MAX31855) or four
@@ -605,7 +605,7 @@ def main():
     if not api_url_is_valid():
         print(f"API_URL is not a valid URL: {API_URL!r}", flush=True)
         print(
-            'It needs the scheme separator, for example "https://apitemp.futurefounderco.com".',
+            'It needs the scheme separator, for example "https://temp.futurefounderco.com".',
             flush=True,
         )
         return 2

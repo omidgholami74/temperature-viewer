@@ -30,8 +30,8 @@ Output looks like this:
 
 ```
 Reading /dev/ttyACM0 at 115200 baud into /home/you/collector/data/samples.jsonl
-Sent 100 samples (total 100) | temperatures:  781.2   660.0   940.5   545.7
-Sent 100 samples (total 200) | temperatures:  781.4   660.1   940.4   545.6
+Sent 5 samples (total 5) | temperatures:  781.2   660.0   940.5   545.7
+Sent 5 samples (total 10) | temperatures:  781.4   660.1   940.4   545.6
 ```
 
 ## Settings
@@ -46,11 +46,11 @@ Sent 100 samples (total 200) | temperatures:  781.4   660.1   940.4   545.6
 | `DATA_DIR`        | `data`                      | Folder written on this computer             |
 | `SPOOL_FILE`      | `<DATA_DIR>/samples.jsonl`  | File that grows at 10 Hz in serial mode     |
 | `CHECKPOINT_FILE` | `<DATA_DIR>/checkpoint.json`| Accepted byte offset per file               |
-| `API_URL`         | `http://127.0.0.1:8080`     | Backend base URL, no trailing slash         |
+| `API_URL`         | `https://temp.futurefounderco.com` | Backend base URL, no trailing slash |
 | `API_KEY`         | `""`                        | Must equal `FURNACE_INGEST_KEY` when set    |
 | `USER_AGENT`      | `FurnaceCollector/1.0 ...`  | Sent to avoid Cloudflare's Python-UA block |
-| `BATCH_SIZE`      | `100`                       | Samples per request                         |
-| `POLL_INTERVAL_S` | `1.0`                       | Idle wait between upload checks             |
+| `BATCH_SIZE`      | `5`                         | Samples per request (fresh live UI)         |
+| `POLL_INTERVAL_S` | `0.2`                       | Idle wait between upload checks             |
 | `RETRY_DELAYS_S`  | `(1, 2, 5, 10, 30)`         | Backoff between failed uploads              |
 
 Relative paths are resolved against this folder, so the program works from any
@@ -75,7 +75,7 @@ follow it, so moving the data folder keeps the upload position consistent.
 For production set:
 
 ```python
-API_URL = "https://apitemp.futurefounderco.com"
+API_URL = "https://temp.futurefounderco.com"
 API_KEY = "the same value as FURNACE_INGEST_KEY"
 ```
 
@@ -84,7 +84,7 @@ is reported at startup instead of crashing on the first upload.
 
 If uploads fail with a certificate error (`CERTIFICATE_VERIFY_FAILED`,
 `SSLCertVerificationError`, or "hostname mismatch"), the host is serving a
-certificate that does not match `apitemp.futurefounderco.com` — typically the
+certificate that does not match `temp.futurefounderco.com` — typically the
 hosting provider's default certificate. Either install a certificate for the
 subdomain or point `API_URL` at `http://` for now. The collector talks to the
 API server-side, so switching its scheme has no effect on the browser
@@ -94,7 +94,7 @@ dashboard, which uses its own `ui/config.js` origin.
 
 Default. The program detects a Pico or ESP32-S3 USB serial device, turns each
 CSV line into a sample, appends it to `<DATA_DIR>/samples.jsonl` and a
-background thread uploads from it every second. If the cable is unplugged, it
+background thread uploads new samples every 200 ms, in batches of five. If the cable is unplugged, it
 retries the port every 3 s; the Pico keeps logging to its own flash when
 `LOG_TO_FLASH` is enabled.
 
@@ -127,7 +127,7 @@ On the host:
    ```bash
    ip -br addr
    ip route
-   ping -c 3 apitemp.futurefounderco.com
+   ping -c 3 temp.futurefounderco.com
    ```
 
 2. Install Python and the serial dependency:
@@ -151,7 +151,7 @@ On the host:
 
    ```python
    SERIAL_PORT = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
-   API_URL = "https://apitemp.futurefounderco.com"
+   API_URL = "https://temp.futurefounderco.com"
    API_KEY = "the same value as FURNACE_INGEST_KEY"
    DATA_DIR = "/var/lib/furnace"
    ```

@@ -18,6 +18,10 @@ build/
 module/samples.jsonl.old
 collector/data/
 
+# Live server state (recent samples and the file lock)
+simple-max31855/server/data/*.json
+simple-max31855/server/data/*.lock
+
 # Python
 __pycache__/
 *.py[cod]

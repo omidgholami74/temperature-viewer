@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Live MAX31855 furnace temperatures from the simple USB collector.">
+  <title>Furnace command deck · Live</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <img class="brand__logo" src="logo.svg" alt="" width="44" height="44">
+        <div class="brand__text">
+          <p class="eyebrow">Razi · Thermal systems <span>/</span> Live telemetry</p>
+          <h1>Furnace command deck</h1>
+          <p class="brand__tagline">Simple MAX31855 stream · collector → server</p>
+        </div>
+      </div>
+
+      <div class="status" data-role="status" data-state="waiting">
+        <span class="status__dot" aria-hidden="true"></span>
+        <span class="status__copy">
+          <span class="status__label" role="status" data-role="status-label">Connecting</span>
+          <span class="status__meta" data-role="status-meta">Waiting for the API</span>
+        </span>
+      </div>
+    </header>
+
+    <main>
+      <section class="overview" aria-labelledby="overview-title">
+        <div>
+          <p class="eyebrow">Current run</p>
+          <h2 id="overview-title">Live temperatures</h2>
+        </div>
+        <div class="overview__stats">
+          <span class="stat"><span class="stat__label">Samples</span><b class="stat__value" data-role="samples">0</b></span>
+          <span class="stat"><span class="stat__label">Rate</span><b class="stat__value" data-role="rate">—</b></span>
+          <span class="stat"><span class="stat__label">Last update</span><b class="stat__value" data-role="last-update">—</b></span>
+        </div>
+      </section>
+
+      <section class="card-grid" aria-label="Furnace temperatures">
+        <article class="furnace-card" data-channel="0">
+          <header class="furnace-card__head">
+            <span class="furnace-card__name"><span class="channel-dot" aria-hidden="true"></span>Furnace 1</span>
+            <span class="chip" data-role="trend">Waiting</span>
+          </header>
+          <p class="furnace-card__value"><span data-role="value">--.-</span><span class="furnace-card__unit">°C</span></p>
+          <footer class="furnace-card__foot">
+            <span class="furnace-card__delta" data-role="delta">10 s change —</span>
+            <span class="furnace-card__fault" data-role="fault" hidden></span>
+          </footer>
+        </article>
+
+        <article class="furnace-card" data-channel="1">
+          <header class="furnace-card__head">
+            <span class="furnace-card__name"><span class="channel-dot" aria-hidden="true"></span>Furnace 2</span>
+            <span class="chip" data-role="trend">Waiting</span>
+          </header>
+          <p class="furnace-card__value"><span data-role="value">--.-</span><span class="furnace-card__unit">°C</span></p>
+          <footer class="furnace-card__foot">
+            <span class="furnace-card__delta" data-role="delta">10 s change —</span>
+            <span class="furnace-card__fault" data-role="fault" hidden></span>
+          </footer>
+        </article>
+
+        <article class="furnace-card" data-channel="2">
+          <header class="furnace-card__head">
+            <span class="furnace-card__name"><span class="channel-dot" aria-hidden="true"></span>Furnace 3</span>
+            <span class="chip" data-role="trend">Waiting</span>
+          </header>
+          <p class="furnace-card__value"><span data-role="value">--.-</span><span class="furnace-card__unit">°C</span></p>
+          <footer class="furnace-card__foot">
+            <span class="furnace-card__delta" data-role="delta">10 s change —</span>
+            <span class="furnace-card__fault" data-role="fault" hidden></span>
+          </footer>
+        </article>
+      </section>
+
+      <section class="chart-panel panel" aria-labelledby="chart-title">
+        <header class="chart-panel__head">
+          <div>
+            <p class="eyebrow">History</p>
+            <h2 id="chart-title">Last 60 seconds</h2>
+          </div>
+          <div class="legend" aria-hidden="true">
+            <span><i class="legend__dot legend__dot--1"></i>Furnace 1</span>
+            <span><i class="legend__dot legend__dot--2"></i>Furnace 2</span>
+            <span><i class="legend__dot legend__dot--3"></i>Furnace 3</span>
+          </div>
+        </header>
+
+        <div class="chart-frame">
+          <canvas id="chart" role="img" aria-label="Line chart of the three furnace temperatures over the last 60 seconds"></canvas>
+          <div class="chart-empty" data-role="empty">
+            <span class="chart-empty__pulse" aria-hidden="true"></span>
+            Waiting for the first sample…
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>MAX31855 · 10 Hz · USB collector</span>
+      <span>Prototype monitor, not a safety-rated furnace controller.</span>
+    </footer>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

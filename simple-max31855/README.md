@@ -23,6 +23,10 @@ flash or filling its small filesystem.
 | --- | --- | --- |
 | `main.py` | ESP32-S3 / Pico | Read MAX31855 and print CSV on USB serial |
 | `test_logic.py` | PC | Tests for decoding and temperature-range offsets |
+| `server/public/index.php` | PHP host | `temp` API and the small router |
+| `server/public/index.html` | Browser | Dark three-furnace dashboard |
+| `server/public/app.js` | Browser | Fast `/api/recent` polling and chart |
+| `server/data/` | PHP host | Runtime `recent.json`; outside the document root |
 
 ## Wiring
 
@@ -124,8 +128,10 @@ editing at the top of `collector/collector.py`:
 
 ```python
 SERIAL_PORT = "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
-API_URL = "https://apitemp.futurefounderco.com"
+API_URL = "https://temp.futurefounderco.com"
 API_KEY = "the same value as FURNACE_INGEST_KEY"
+BATCH_SIZE = 5
+POLL_INTERVAL_S = 0.2
 DATA_DIR = "/var/lib/furnace"
 ```
 
@@ -137,12 +143,118 @@ python3 collector/collector.py
 ```
 
 It detects the CH343/ESP32 serial port when `SERIAL_PORT` is empty, appends each
-sample to `DATA_DIR/samples.jsonl`, and uploads it in batches. The file and
-`checkpoint.json` are on the host. A serial disconnect only pauses capture; a
-network outage only delays upload, because the file remains on disk.
+sample to `DATA_DIR/samples.jsonl`, and uploads it in small batches. The file
+and `checkpoint.json` are on the host. A serial disconnect only pauses capture;
+a network outage only delays upload, because the file remains on disk.
 
 The collector already accepts this 3-channel row. A 4-channel board (four pins)
 is accepted as well.
+
+## Live server and dashboard
+
+`server/public/` is the complete app for **https://temp.futurefounderco.com**.
+It serves the dark UI and accepts the collector batches on the same origin, so
+the browser needs no CORS setup. There is no database, framework or build step.
+
+```text
+server/
+  public/               <- document root
+    index.php           API + router + static file headers
+    index.html
+    style.css
+    app.js
+    logo.svg
+    favicon.svg
+    .htaccess            Apache routing and headers
+  data/                 <- outside public; must be writable by PHP
+    recent.json         created automatically
+    recent.lock
+```
+
+### Deploy
+
+Requirements: PHP 8.1 or newer with the standard JSON extension, and an HTTPS
+certificate for the hostname. Use PHP-FPM behind Apache or Nginx; do not expose
+`server/data`.
+
+1. Upload the project and point the site's document root at
+   **`simple-max31855/server/public`**. Do not point it at `server/`.
+2. Create `simple-max31855/server/data` and give the PHP user write permission:
+
+   ```bash
+   mkdir -p simple-max31855/server/data
+   chown www-data:www-data simple-max31855/server/data   # use your PHP user
+   chmod 775 simple-max31855/server/data
+   ```
+
+3. Set the ingest key in the PHP environment. In a hosting panel this is
+   usually a “custom environment variable”/FastCGI parameter named
+   `FURNACE_INGEST_KEY`; on Apache you can use `SetEnv FURNACE_INGEST_KEY ...`.
+   Leave it empty only for a private/test host. Set the same value as
+   `API_KEY` in the collector.
+
+   Optionally set `FURNACE_DATA_DIR` to an absolute path outside the web root.
+   The default is `server/data`.
+
+4. Apache: allow `.htaccess` (`AllowOverride All`). Nginx: route requests to
+   `index.php` and pass PHP to FPM, for example:
+
+   ```nginx
+   root /var/www/simple-max31855/server/public;
+   index index.php;
+
+   location / {
+       try_files $uri $uri/ /index.php?$query_string;
+   }
+
+   location ~ \.php$ {
+       include fastcgi_params;
+       fastcgi_pass unix:/run/php/php8.3-fpm.sock;
+       fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+   }
+   ```
+
+5. Open `https://temp.futurefounderco.com/`. The header should say
+   **Connecting** until the collector posts the first batch, then **Live**.
+
+> This app takes over the site root. If `temp.futurefounderco.com` currently
+> serves another dashboard, back it up first or deploy this under a separate
+> hostname/subdirectory. The collector must post to the same origin that serves
+> this `index.php`.
+
+### API
+
+The collector uses the first endpoint; the browser uses the second:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/ingest` | Accept `{"samples":[...]}` with `X-Api-Key` |
+| `GET` | `/api/recent?since=<id>&limit=600` | Samples newer than `id`, plus `last_id` |
+| `GET` | `/api/health` | Count and latest id, without exposing data |
+
+```bash
+curl -s https://temp.futurefounderco.com/api/health
+curl -s 'https://temp.futurefounderco.com/api/recent?since=0&limit=3'
+```
+
+`recent.json` keeps the newest 1,800 samples (three minutes at 10 Hz) and is
+replaced atomically under a file lock. There is no long-term history. The UI
+requests new samples every **150 ms** (every 1 s while the tab is hidden), keeps
+the last 60 seconds and draws all three channels without a chart library.
+
+### Collector check
+
+After deploying, run the collector once in the foreground. It should print
+`Sent 5 samples` repeatedly and the page should move from *Connecting* to
+*Live* within a second:
+
+```bash
+python3 collector/collector.py
+```
+
+If the page stays on *Connecting*, check `/api/health` first, then the collector
+output. A `401` means `API_KEY` and `FURNACE_INGEST_KEY` differ. A Cloudflare
+`403`/`1010` is an edge rule, not a PHP error; see `collector/README.md`.
 
 ## Test without hardware
 

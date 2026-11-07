@@ -46,7 +46,8 @@ export function Gauge({
     }).start();
   }, [animated, fraction]);
 
-  const radius = (size - thickness) / 2;
+  // Inset the path so the stroke and its round caps stay inside the viewport.
+  const radius = (size - thickness) / 2 - 2;
   const circumference = 2 * Math.PI * radius;
   const arcLength = circumference * 0.75;
   const center = size / 2;

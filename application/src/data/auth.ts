@@ -1,3 +1,5 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 /**
  * Sign-in for the app.
  *
@@ -29,6 +31,7 @@ const ACCOUNTS: Account[] = [
   },
 ];
 
+const STORAGE_KEY = 'razi.session';
 const REVEAL_DELAY_MS = 450;
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -57,4 +60,45 @@ export async function signIn(username: string, password: string): Promise<Sessio
     displayName: account.displayName,
     role: account.role,
   };
+}
+
+/** The session saved on this device, or null when the user signed out. */
+export async function loadSession(): Promise<Session | null> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      typeof (parsed as Session).username === 'string' &&
+      typeof (parsed as Session).displayName === 'string' &&
+      typeof (parsed as Session).role === 'string'
+    ) {
+      return parsed as Session;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveSession(session: Session): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+  } catch {
+    // A failed write only means the next launch asks again.
+  }
+}
+
+export async function clearSession(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Nothing to do: the in-memory session is cleared by the caller.
+  }
 }

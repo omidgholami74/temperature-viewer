@@ -157,7 +157,7 @@ export function SplashScreen({onDone}: Props) {
         <View style={styles.track}>
           <Animated.View style={[styles.fill, {width: barWidth}]} />
         </View>
-        <Text style={styles.version}>نسخه ۱.۲.۱</Text>
+        <Text style={styles.version}>نسخه ۱.۲.۲</Text>
       </View>
     </View>
   );

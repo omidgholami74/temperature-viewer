@@ -243,7 +243,8 @@ export function DashboardScreen({session, onSignOut}: Props) {
               <Rect width="100%" height="100%" rx={radius.xl} fill="url(#hero-glow)" />
             </Svg>
 
-            <View style={styles.heroTop}>
+            <View style={styles.heroContent}>
+              <View style={styles.heroTop}>
               <View style={styles.heroTitleBlock}>
                 <Text style={styles.eyebrow}>پایش زنده دما</Text>
                 <View style={styles.heroTitleRow}>
@@ -270,7 +271,12 @@ export function DashboardScreen({session, onSignOut}: Props) {
             </View>
 
             <View style={styles.gaugeWrap}>
-              <Gauge value={selected.temp} min={0} max={meta.max} color={meta.color} size={236}>
+              <Gauge
+                value={selected.temp}
+                min={0}
+                max={meta.max}
+                color={meta.color}
+                size={Math.min(236, width - SCREEN_PADDING * 2 - space(10))}>
                 <Text style={styles.gaugeValue}>{formatTemp(selected.temp)}</Text>
                 <Text style={styles.gaugeUnit}>درجه سلسیوس</Text>
                 <View style={styles.gaugeDelta}>
@@ -291,9 +297,10 @@ export function DashboardScreen({session, onSignOut}: Props) {
                 <Text style={styles.statLabel}>میانگین</Text>
                 <Text style={styles.statValue}>{formatTemp(stats.avg)}°</Text>
               </View>
-              <View style={styles.statCell}>
-                <Text style={styles.statLabel}>بیشینه</Text>
-                <Text style={styles.statValue}>{formatTemp(stats.max)}°</Text>
+                <View style={styles.statCell}>
+                  <Text style={styles.statLabel}>بیشینه</Text>
+                  <Text style={styles.statValue}>{formatTemp(stats.max)}°</Text>
+                </View>
               </View>
             </View>
           </View>
@@ -447,11 +454,13 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.border,
+    overflow: 'hidden',
+    ...shadow.card,
+  },
+  heroContent: {
     paddingHorizontal: space(5),
     paddingTop: space(5),
     paddingBottom: space(4),
-    overflow: 'hidden',
-    ...shadow.card,
   },
   heroTop: {
     flexDirection: 'row-reverse',
@@ -505,11 +514,15 @@ const styles = StyleSheet.create({
     letterSpacing: -1.8,
   },
   gaugeUnit: {color: colors.muted, fontSize: 11, marginTop: -space(1)},
-  gaugeDelta: {flexDirection: 'row', alignItems: 'center', marginTop: space(2.5)},
+  gaugeDelta: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    marginTop: space(2.5),
+  },
   gaugeDeltaText: {...tabular, fontSize: 14, fontWeight: '800'},
-  gaugeDeltaHint: {color: colors.muted, fontSize: 10, marginLeft: space(1.5)},
+  gaugeDeltaHint: {color: colors.muted, fontSize: 10, marginRight: space(1.5)},
   statsRow: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
     marginTop: space(4),
     borderTopWidth: 1,
     borderTopColor: 'rgba(124, 176, 255, 0.1)',
